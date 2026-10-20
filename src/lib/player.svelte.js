@@ -24,6 +24,8 @@ export const player = $state({
   muted: false,
   shuffle: false,
   repeat: "off", // "off" | "all" | "one"
+  loading: false,
+  error: null,
 });
 
 audio.volume = player.volume;
@@ -36,8 +38,15 @@ export function currentTrack() {
 }
 
 function sourceUrl(track) {
-  return track.source === "local" ? convertFileSrc(track.path) : track.streamUrl;
+  if (track.source === "local") return Promise.resolve(convertFileSrc(track.path));
+  // YouTube-Stream-URLs laufen ab, deshalb immer frisch holen
+  return invoke("ytm_stream", { id: track.id });
 }
+
+// Verhindert, dass ein langsam geladener Song einen später gewählten überschreibt
+let loadToken = 0;
+// Ein Wiederholungsversuch pro Song, falls die Stream-URL abgelaufen ist
+let retried = false;
 
 function shuffled(list) {
   const a = [...list];
@@ -48,15 +57,32 @@ function shuffled(list) {
   return a;
 }
 
-function load(index) {
+async function load(index, startAt = 0) {
   const track = player.queue[index];
   if (!track) return;
+  const token = ++loadToken;
   player.index = index;
-  player.position = 0;
+  player.position = startAt;
   player.duration = track.duration || 0;
-  audio.src = sourceUrl(track);
-  audio.play().catch((e) => console.error("Wiedergabe fehlgeschlagen:", e));
+  player.loading = true;
+  player.error = null;
+  if (startAt === 0) retried = false;
   updateMediaSession(track);
+
+  let src;
+  try {
+    src = await sourceUrl(track);
+  } catch (e) {
+    if (token !== loadToken) return;
+    player.loading = false;
+    player.error = `„${track.title}“ konnte nicht geladen werden: ${e}`;
+    return;
+  }
+  if (token !== loadToken) return;
+
+  audio.src = src;
+  if (startAt) audio.currentTime = startAt;
+  audio.play().catch((e) => console.error("Wiedergabe fehlgeschlagen:", e));
 }
 
 /** Spielt eine Liste ab, beginnend bei `index`. */
@@ -139,6 +165,8 @@ audio.addEventListener("play", () => {
   player.playing = true;
   sendPresence();
 });
+audio.addEventListener("playing", () => (player.loading = false));
+audio.addEventListener("waiting", () => (player.loading = true));
 audio.addEventListener("pause", () => {
   player.playing = false;
   sendPresence();
@@ -153,7 +181,16 @@ audio.addEventListener("ended", () => {
   }
 });
 audio.addEventListener("error", () => {
-  console.error("Datei konnte nicht abgespielt werden:", currentTrack()?.path);
+  const track = currentTrack();
+  if (!track || !audio.src) return;
+  // Abgelaufene YouTube-URL: einmal neu holen und an gleicher Stelle weitermachen
+  if (track.source === "youtube" && !retried) {
+    retried = true;
+    load(player.index, audio.currentTime || player.position);
+    return;
+  }
+  player.loading = false;
+  player.error = `„${track.title}“ konnte nicht abgespielt werden.`;
   if (player.index + 1 < player.queue.length) next();
 });
 

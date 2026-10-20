@@ -11,6 +11,13 @@
     "allow-get-library",
     "allow-add-folder",
     "allow-remove-folder",
-    "allow-get-cover"
+    "allow-get-cover",
+    "allow-ytm-status",
+    "allow-ytm-login",
+    "allow-ytm-logout",
+    "allow-ytm-library",
+    "allow-ytm-collection",
+    "allow-ytm-search",
+    "allow-ytm-stream"
   ]
 }

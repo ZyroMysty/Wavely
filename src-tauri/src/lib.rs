@@ -1,5 +1,6 @@
 mod library;
 mod presence;
+mod ytm;
 
 use std::sync::Mutex;
 
@@ -73,7 +74,18 @@ pub fn run() {
             add_folder,
             remove_folder,
             get_cover,
+            ytm::ytm_status,
+            ytm::ytm_login,
+            ytm::ytm_logout,
+            ytm::ytm_library,
+            ytm::ytm_collection,
+            ytm::ytm_search,
+            ytm::ytm_stream,
         ])
+        .setup(|app| {
+            app.manage(ytm::Ytm::new(app.handle())?);
+            Ok(())
+        })
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 

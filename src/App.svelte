@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { refreshLibrary } from "./lib/library.svelte.js";
   import { togglePlay } from "./lib/player.svelte.js";
+  import { initYtm } from "./lib/ytm.svelte.js";
   import Sidebar from "./components/Sidebar.svelte";
   import LocalView from "./components/LocalView.svelte";
   import YouTubeView from "./components/YouTubeView.svelte";
@@ -9,7 +10,10 @@
 
   let view = $state("local");
 
-  onMount(refreshLibrary);
+  onMount(() => {
+    refreshLibrary();
+    initYtm();
+  });
 
   // Leertaste = Play/Pause (außer beim Tippen)
   function onKeydown(e) {

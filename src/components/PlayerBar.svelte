@@ -31,7 +31,13 @@
       <Cover {track} size={56} />
       <div class="meta">
         <strong>{track.title}</strong>
-        <small>{track.artist ?? "Unbekannter Künstler"}</small>
+        {#if player.error}
+          <small class="error" title={player.error}>{player.error}</small>
+        {:else if player.loading}
+          <small>Lädt…</small>
+        {:else}
+          <small>{track.artist ?? "Unbekannter Künstler"}</small>
+        {/if}
       </div>
     {/if}
   </div>
@@ -134,6 +140,9 @@
   .meta small {
     color: var(--text-dim);
     font-size: 13px;
+  }
+  .meta small.error {
+    color: var(--accent);
   }
   .center {
     display: flex;

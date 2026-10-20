@@ -1,6 +1,6 @@
 # Wavely
 
-Leichtgewichtiger Desktop-Musikplayer mit eigenem Design – für lokale Musik und (bald) YouTube Music, mit Discord Rich Presence.
+Leichtgewichtiger Desktop-Musikplayer mit eigenem Design – für lokale Musik und YouTube Music, mit Discord Rich Presence.
 
 Gebaut mit [Tauri 2](https://tauri.app) (Rust) und [Svelte 5](https://svelte.dev).
 
@@ -9,7 +9,8 @@ Gebaut mit [Tauri 2](https://tauri.app) (Rust) und [Svelte 5](https://svelte.dev
 - Lokale Musik: Ordner hinzufügen, MP3/FLAC/M4A/OGG/OPUS/WAV werden mit Titel, Künstler, Album und Cover eingelesen
 - Eigener Player: Play/Pause, Vor/Zurück, Zufall, Wiederholen, Suchleiste, Lautstärke, Leertaste, Windows-Medientasten
 - Discord Rich Presence: „Hört …“ mit Titel, Künstler und Fortschritt
-- Geplant: YouTube Music mit Konto (Playlists, Likes, Suche), später Spotify
+- YouTube Music: Anmeldung mit Google, deine Playlists, Alben und Lieblingssongs, Suche – abgespielt im eigenen Player
+- Geplant: Spotify
 
 ## Aufbau
 
@@ -21,6 +22,8 @@ Gebaut mit [Tauri 2](https://tauri.app) (Rust) und [Svelte 5](https://svelte.dev
 | `src/lib/library.svelte.js` | Lokale Bibliothek laden, Ordner verwalten |
 | `src-tauri/src/library.rs` | Ordner durchsuchen, Tags und Cover lesen |
 | `src-tauri/src/presence.rs` | Verbindung zu Discord |
+| `src-tauri/src/ytm.rs` | YouTube Music: Anmeldung, Bibliothek, Suche, Audio-Streams (über RustyPipe) |
+| `src/lib/ytm.svelte.js` | YouTube-Music-Zustand in der Oberfläche |
 
 ## Einrichtung
 

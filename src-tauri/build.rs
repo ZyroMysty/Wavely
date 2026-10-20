@@ -7,6 +7,13 @@ fn main() {
             "add_folder",
             "remove_folder",
             "get_cover",
+            "ytm_status",
+            "ytm_login",
+            "ytm_logout",
+            "ytm_library",
+            "ytm_collection",
+            "ytm_search",
+            "ytm_stream",
         ]),
     ))
     .expect("failed to run tauri-build");

@@ -1,8 +1,8 @@
 <script>
   import { library, addFolder, refreshLibrary } from "../lib/library.svelte.js";
-  import { player, playList, currentTrack, toggleShuffle } from "../lib/player.svelte.js";
-  import { formatTime } from "../lib/format.js";
+  import { player, playList, toggleShuffle } from "../lib/player.svelte.js";
   import Icon from "./Icon.svelte";
+  import TrackList from "./TrackList.svelte";
 
   let query = $state("");
 
@@ -58,32 +58,7 @@
       <button class="primary" onclick={addFolder}><Icon name="plus" size={18} /> Ordner hinzufügen</button>
     </div>
   {:else}
-    <div class="table">
-      <div class="row head">
-        <span>#</span><span>Titel</span><span>Album</span><span class="right">Dauer</span>
-      </div>
-      {#each filtered as track, i (track.id)}
-        {@const active = currentTrack()?.id === track.id}
-        <div
-          class="row"
-          class:active
-          role="button"
-          tabindex="-1"
-          ondblclick={() => playList(filtered, i)}
-          onkeydown={(e) => e.key === "Enter" && playList(filtered, i)}
-        >
-          <span class="num">
-            {#if active && player.playing}<Icon name="volume" size={16} />{:else}{i + 1}{/if}
-          </span>
-          <span class="title">
-            <strong>{track.title}</strong>
-            <small>{track.artist ?? "Unbekannter Künstler"}</small>
-          </span>
-          <span class="dim ellipsis">{track.album ?? ""}</span>
-          <span class="dim right">{formatTime(track.duration)}</span>
-        </div>
-      {/each}
-    </div>
+    <TrackList tracks={filtered} />
   {/if}
 </section>
 
@@ -111,110 +86,6 @@
     display: flex;
     gap: 8px;
     align-items: center;
-  }
-  .search {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background: var(--surface-2);
-    border-radius: 999px;
-    padding: 0 14px;
-    height: 38px;
-    color: var(--text-dim);
-  }
-  .search input {
-    background: none;
-    border: none;
-    outline: none;
-    width: 180px;
-  }
-  .primary {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    height: 38px;
-    padding: 0 18px;
-    border-radius: 999px;
-    background: var(--accent);
-    color: #fff;
-    font-weight: 600;
-  }
-  .primary:hover {
-    filter: brightness(1.1);
-  }
-  .ghost {
-    width: 38px;
-    height: 38px;
-    border-radius: 50%;
-    display: grid;
-    place-items: center;
-    color: var(--text-dim);
-  }
-  .ghost:hover {
-    background: var(--hover);
-    color: var(--text);
-  }
-  .table {
-    display: flex;
-    flex-direction: column;
-  }
-  .row {
-    display: grid;
-    grid-template-columns: 40px minmax(0, 2fr) minmax(0, 1fr) 70px;
-    gap: 16px;
-    align-items: center;
-    padding: 8px 12px;
-    border-radius: 8px;
-  }
-  .row:not(.head):hover {
-    background: var(--surface-2);
-  }
-  .row.head {
-    color: var(--text-dim);
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    border-bottom: 1px solid var(--border);
-    border-radius: 0;
-    margin-bottom: 6px;
-  }
-  .row.active {
-    background: var(--accent-soft);
-  }
-  .row.active strong,
-  .row.active .num {
-    color: var(--accent);
-  }
-  .num {
-    color: var(--text-dim);
-    text-align: center;
-    display: grid;
-    place-items: center;
-  }
-  .title {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-  }
-  .title strong,
-  .title small,
-  .ellipsis {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .title strong {
-    font-weight: 500;
-  }
-  .title small {
-    color: var(--text-dim);
-    font-size: 13px;
-  }
-  .dim {
-    color: var(--text-dim);
-  }
-  .right {
-    text-align: right;
   }
   .empty {
     display: flex;
