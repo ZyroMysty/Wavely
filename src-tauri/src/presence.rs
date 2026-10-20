@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 /// Application ID aus dem Discord Developer Portal (https://discord.com/developers/applications).
 /// Der Name der Discord-App erscheint im Status als „Hört <Name>“.
-const DISCORD_CLIENT_ID: &str = "DEINE_DISCORD_APPLICATION_ID";
+const DISCORD_CLIENT_ID: &str = "1562117922736971816";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
