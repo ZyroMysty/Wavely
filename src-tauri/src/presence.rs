@@ -1,7 +1,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use discord_rich_presence::{
-    activity::{Activity, ActivityType, Assets, Button, Timestamps},
+    activity::{Activity, ActivityType, Assets, Button, StatusDisplayType, Timestamps},
     DiscordIpc, DiscordIpcClient,
 };
 use serde::Deserialize;
@@ -37,7 +37,7 @@ impl Presence {
             return None; // Noch keine Discord-App eingetragen
         }
         if self.client.is_none() {
-            let mut client = DiscordIpcClient::new(DISCORD_CLIENT_ID).ok()?;
+            let mut client = DiscordIpcClient::new(DISCORD_CLIENT_ID);
             // Schlägt fehl, wenn Discord nicht läuft; beim nächsten Update wird es erneut versucht.
             if client.connect().is_ok() {
                 self.client = Some(client);
@@ -65,6 +65,8 @@ impl Presence {
 
         let mut activity = Activity::new()
             .activity_type(ActivityType::Listening)
+            // In der Mitgliederliste „Hört <Songtitel>“ statt „Hört Wavely“ anzeigen
+            .status_display_type(StatusDisplayType::Details)
             .details(&details)
             .state(&state)
             .assets(assets);
