@@ -154,7 +154,7 @@
     {:else if results}
       {#if results.tracks.length}
         <h2>Songs</h2>
-        <TrackList tracks={results.tracks} covers />
+        <TrackList tracks={results.tracks} covers single />
       {/if}
       {#if results.albums.length}
         <h2>Alben</h2>

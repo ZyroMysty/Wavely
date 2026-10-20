@@ -1,11 +1,17 @@
 <script>
   import { player, playList, currentTrack } from "../lib/player.svelte.js";
   import { formatTime } from "../lib/format.js";
+  import { openTrackMenu } from "../lib/ui.svelte.js";
   import Cover from "./Cover.svelte";
   import Icon from "./Icon.svelte";
 
-  /** covers: kleine Cover in jeder Zeile anzeigen (für YouTube Music) */
-  let { tracks, covers = false } = $props();
+  /**
+   * covers: kleine Cover in jeder Zeile anzeigen (für YouTube Music)
+   * single: nur den angeklickten Song spielen (danach übernimmt Autoplay), z. B. bei Suchergebnissen
+   */
+  let { tracks, covers = false, single = false } = $props();
+
+  const play = (i) => (single ? playList([tracks[i]]) : playList(tracks, i));
 </script>
 
 <div class="table">
@@ -20,8 +26,9 @@
       class:active
       role="button"
       tabindex="-1"
-      ondblclick={() => playList(tracks, i)}
-      onkeydown={(e) => e.key === "Enter" && playList(tracks, i)}
+      ondblclick={() => play(i)}
+      onkeydown={(e) => e.key === "Enter" && play(i)}
+      oncontextmenu={(e) => openTrackMenu(e, track)}
     >
       <span class="num">
         {#if active && player.playing}<Icon name="volume" size={16} />{:else}{i + 1}{/if}

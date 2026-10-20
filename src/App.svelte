@@ -7,6 +7,9 @@
   import LocalView from "./components/LocalView.svelte";
   import YouTubeView from "./components/YouTubeView.svelte";
   import PlayerBar from "./components/PlayerBar.svelte";
+  import SidePanel from "./components/SidePanel.svelte";
+  import TrackMenu from "./components/TrackMenu.svelte";
+  import { ui } from "./lib/ui.svelte.js";
 
   let view = $state("local");
 
@@ -26,7 +29,7 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-<div class="app">
+<div class="app" class:with-panel={ui.panel}>
   <Sidebar bind:view />
   <main>
     {#if view === "local"}
@@ -35,18 +38,26 @@
       <YouTubeView />
     {/if}
   </main>
+  {#if ui.panel}<SidePanel />{/if}
   <PlayerBar />
 </div>
+<TrackMenu />
 
 <style>
   .app {
     height: 100%;
     display: grid;
-    grid-template-columns: var(--sidebar-width) 1fr;
+    grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) auto;
     grid-template-areas:
       "sidebar main"
       "player player";
+  }
+  .app.with-panel {
+    grid-template-columns: var(--sidebar-width) minmax(0, 1fr) auto;
+    grid-template-areas:
+      "sidebar main panel"
+      "player player player";
   }
   main {
     grid-area: main;

@@ -12,6 +12,7 @@
     cycleRepeat,
   } from "../lib/player.svelte.js";
   import { formatTime } from "../lib/format.js";
+  import { ui, togglePanel } from "../lib/ui.svelte.js";
   import Cover from "./Cover.svelte";
   import Icon from "./Icon.svelte";
 
@@ -89,6 +90,12 @@
   </div>
 
   <div class="right">
+    <button class="small" class:on={ui.panel === "lyrics"} title="Liedtext" onclick={() => togglePanel("lyrics")}>
+      <Icon name="lyrics" size={20} />
+    </button>
+    <button class="small" class:on={ui.panel === "queue"} title="Warteschlange" onclick={() => togglePanel("queue")}>
+      <Icon name="queue" size={20} />
+    </button>
     <button class="small" title={player.muted ? "Ton an" : "Stumm"} onclick={toggleMute}>
       <Icon name={volume === 0 ? "mute" : "volume"} size={20} />
     </button>

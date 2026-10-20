@@ -1,5 +1,6 @@
 mod artwork;
 mod library;
+mod lyrics;
 mod presence;
 mod ytdlp;
 mod ytm;
@@ -83,6 +84,8 @@ pub fn run() {
             ytm::ytm_collection,
             ytm::ytm_search,
             ytm::ytm_prefetch,
+            ytm::ytm_radio,
+            lyrics::get_lyrics,
         ])
         // YouTube-Audio über eigenen Stream-Dienst: holt die Datei in Stücken mit den Headern, die YouTube erwartet
         .register_asynchronous_uri_scheme_protocol("ytstream", |ctx, request, responder| {

@@ -14,6 +14,8 @@ fn main() {
             "ytm_collection",
             "ytm_search",
             "ytm_prefetch",
+            "ytm_radio",
+            "get_lyrics",
         ]),
     ))
     .expect("failed to run tauri-build");

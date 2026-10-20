@@ -92,6 +92,10 @@ impl Ytm {
         Ok(info)
     }
 
+    pub fn rp(&self) -> &RustyPipe {
+        &self.rp
+    }
+
     pub async fn update_tools(&self) {
         self.ytdlp.update_if_due().await;
     }
@@ -465,4 +469,16 @@ pub async fn ytm_search(ytm: State<'_, Ytm>, query: String) -> Result<YtSearch, 
 pub async fn ytm_prefetch(ytm: State<'_, Ytm>, id: String) -> Result<(), String> {
     ytm.prefetch(&id).await;
     Ok(())
+}
+
+/// „Radio“ zu einem Song: ähnliche Titel, die YouTube Music danach spielen würde.
+#[tauri::command]
+pub async fn ytm_radio(ytm: State<'_, Ytm>, id: String) -> Result<Vec<YtTrack>, String> {
+    let radio = ytm.rp.query().music_radio_track(&id).await.map_err(err)?;
+    Ok(radio
+        .items
+        .into_iter()
+        .filter(|t| t.id != id)
+        .map(Into::into)
+        .collect())
 }
