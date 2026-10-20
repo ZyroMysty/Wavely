@@ -16,6 +16,7 @@ const UPDATE_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 /// Unter Windows kein Konsolenfenster öffnen
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+#[derive(Clone)]
 pub struct YtDlp {
     path: PathBuf,
 }
@@ -89,6 +90,42 @@ impl YtDlp {
             .is_ok_and(|s| s.success());
         if ok {
             let _ = std::fs::write(&marker, b"");
+        }
+    }
+
+    /// Lädt die Audiodatei nach `dir/<video_id>.<ext>` herunter und gibt den Pfad zurück.
+    pub async fn download(&self, video_id: &str, dir: &std::path::Path) -> Result<PathBuf, String> {
+        let template = dir.join(format!("{video_id}.%(ext)s"));
+        let output = self
+            .command()
+            .args([
+                "-f",
+                "bestaudio[ext=webm]/bestaudio",
+                "--no-playlist",
+                "--no-warnings",
+                "--no-progress",
+                "-q",
+                "--print",
+                "after_move:filepath",
+                "-o",
+            ])
+            .arg(&template)
+            .arg(format!("https://music.youtube.com/watch?v={video_id}"))
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await
+            .map_err(err)?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let path = stdout.lines().map(str::trim).rfind(|l| !l.is_empty()).map(PathBuf::from);
+        match path {
+            Some(path) if output.status.success() && path.exists() => Ok(path),
+            _ => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let message = stderr.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("Download fehlgeschlagen");
+                Err(format!("yt-dlp: {message}"))
+            }
         }
     }
 

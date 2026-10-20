@@ -20,6 +20,9 @@
     <button class:active={view === "youtube"} onclick={() => (view = "youtube")}>
       <Icon name="youtube" size={18} /> YouTube Music
     </button>
+    <button class:active={view === "offline"} onclick={() => (view = "offline")}>
+      <Icon name="download" size={18} /> Offline
+    </button>
   </nav>
 
   <div class="section">

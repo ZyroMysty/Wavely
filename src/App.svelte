@@ -3,6 +3,8 @@
   import { refreshLibrary } from "./lib/library.svelte.js";
   import { togglePlay } from "./lib/player.svelte.js";
   import { initYtm } from "./lib/ytm.svelte.js";
+  import { initOffline } from "./lib/offline.svelte.js";
+  import OfflineView from "./components/OfflineView.svelte";
   import Sidebar from "./components/Sidebar.svelte";
   import LocalView from "./components/LocalView.svelte";
   import YouTubeView from "./components/YouTubeView.svelte";
@@ -16,6 +18,7 @@
   onMount(() => {
     refreshLibrary();
     initYtm();
+    initOffline();
   });
 
   // Leertaste = Play/Pause (außer beim Tippen)
@@ -34,6 +37,8 @@
   <main>
     {#if view === "local"}
       <LocalView />
+    {:else if view === "offline"}
+      <OfflineView />
     {:else}
       <YouTubeView />
     {/if}

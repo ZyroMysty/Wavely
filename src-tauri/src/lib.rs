@@ -1,6 +1,7 @@
 mod artwork;
 mod library;
 mod lyrics;
+mod offline;
 mod presence;
 mod ytdlp;
 mod ytm;
@@ -86,6 +87,9 @@ pub fn run() {
             ytm::ytm_prefetch,
             ytm::ytm_radio,
             lyrics::get_lyrics,
+            offline::offline_list,
+            offline::offline_save,
+            offline::offline_remove,
         ])
         // YouTube-Audio über eigenen Stream-Dienst: holt die Datei in Stücken mit den Headern, die YouTube erwartet
         .register_asynchronous_uri_scheme_protocol("ytstream", |ctx, request, responder| {
@@ -112,6 +116,7 @@ pub fn run() {
         .setup(|app| {
             app.manage(artwork::Artwork::new(app.handle())?);
             let ytdlp = ytdlp::YtDlp::init(app.handle())?;
+            app.manage(offline::Offline::new(app.handle(), ytdlp.clone())?);
             app.manage(ytm::Ytm::new(app.handle(), ytdlp)?);
 
             // yt-dlp im Hintergrund aktuell halten (höchstens einmal am Tag)

@@ -1,6 +1,7 @@
 <script>
   import { ui } from "../lib/ui.svelte.js";
   import { playNext, addToQueue } from "../lib/player.svelte.js";
+  import { offline, isOffline, saveTrack, removeTrack } from "../lib/offline.svelte.js";
   import Icon from "./Icon.svelte";
 
   let menu = $state();
@@ -9,7 +10,7 @@
   const position = $derived.by(() => {
     if (!ui.menu) return { x: 0, y: 0 };
     const width = 230;
-    const height = 96;
+    const height = 140;
     return {
       x: Math.min(ui.menu.x, window.innerWidth - width - 8),
       y: Math.min(ui.menu.y, window.innerHeight - height - 8),
@@ -40,6 +41,19 @@
     <button role="menuitem" onclick={() => run(addToQueue)}>
       <Icon name="addQueue" size={18} /> Zur Warteschlange hinzufügen
     </button>
+    {#if ui.menu.track.source === "youtube"}
+      {#if isOffline(ui.menu.track.id)}
+        <button role="menuitem" onclick={() => run((t) => removeTrack(t.id))}>
+          <Icon name="trash" size={18} /> Offline entfernen
+        </button>
+      {:else if offline.pending[ui.menu.track.id]}
+        <button role="menuitem" disabled><Icon name="download" size={18} /> Wird gespeichert…</button>
+      {:else}
+        <button role="menuitem" onclick={() => run(saveTrack)}>
+          <Icon name="download" size={18} /> Offline speichern
+        </button>
+      {/if}
+    {/if}
   </div>
 {/if}
 
@@ -63,7 +77,11 @@
     border-radius: 6px;
     text-align: left;
   }
-  button:hover {
+  button:hover:not(:disabled) {
     background: var(--hover);
+  }
+  button:disabled {
+    color: var(--text-dim);
+    cursor: default;
   }
 </style>

@@ -16,6 +16,9 @@ fn main() {
             "ytm_prefetch",
             "ytm_radio",
             "get_lyrics",
+            "offline_list",
+            "offline_save",
+            "offline_remove",
         ]),
     ))
     .expect("failed to run tauri-build");

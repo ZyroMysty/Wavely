@@ -1,6 +1,7 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { coverFor } from "./covers.js";
 import { library } from "./library.svelte.js";
+import { offlinePath, allTracks as offlineTracks } from "./offline.svelte.js";
 
 // Ein einziges Audio-Element für alle Quellen (lokal und YouTube Music).
 const audio = new Audio();
@@ -57,10 +58,12 @@ export function currentTrack() {
 }
 
 function sourceUrl(track) {
-  // YouTube läuft über den eigenen Stream-Dienst im Rust-Teil (ytstream://<videoId>)
-  return track.source === "local"
-    ? convertFileSrc(track.path)
-    : convertFileSrc(track.id, "ytstream");
+  if (track.source === "local") return convertFileSrc(track.path);
+  // Offline gespeichert: Datei direkt abspielen (auch ohne Internet)
+  const saved = offlinePath(track.id);
+  if (saved) return convertFileSrc(saved);
+  // Sonst über den eigenen Stream-Dienst im Rust-Teil (ytstream://<videoId>)
+  return convertFileSrc(track.id, "ytstream");
 }
 
 function shuffled(list) {
@@ -74,7 +77,7 @@ function shuffled(list) {
 
 function prefetchUpcoming() {
   const upcoming = player.queue[player.index + 1];
-  if (upcoming?.source === "youtube") {
+  if (upcoming?.source === "youtube" && !offlinePath(upcoming.id)) {
     invoke("ytm_prefetch", { id: upcoming.id }).catch(() => {});
   }
 }
@@ -146,8 +149,13 @@ export function jumpTo(index) {
 let autoplayPending = false;
 
 async function youtubeRadio(seed) {
-  const tracks = await invoke("ytm_radio", { id: seed.id });
-  return tracks.map((t) => ({ ...t, source: "youtube" }));
+  try {
+    const tracks = await invoke("ytm_radio", { id: seed.id });
+    return tracks.map((t) => ({ ...t, source: "youtube" }));
+  } catch {
+    // Kein Internet: zufällige Offline-Songs
+    return shuffled(offlineTracks().filter((t) => t.id !== seed.id)).slice(0, 20);
+  }
 }
 
 /** Lokal: bevorzugt gleicher Künstler, gleiches Album und gleicher Ordner, aufgefüllt mit Zufall. */

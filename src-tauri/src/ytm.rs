@@ -48,6 +48,8 @@ struct StreamInfo {
 
 pub struct Ytm {
     rp: RustyPipe,
+    /// Markierungsdatei: angemeldet (damit der Status auch ohne Internet bekannt ist)
+    login_marker: std::path::PathBuf,
     ytdlp: YtDlp,
     http: reqwest::Client,
     streams: Mutex<HashMap<String, StreamInfo>>,
@@ -58,12 +60,14 @@ impl Ytm {
         let dir = app.path().app_data_dir().map_err(err)?.join("ytm");
         std::fs::create_dir_all(&dir).map_err(err)?;
         let rp = RustyPipe::builder()
-            .storage_dir(dir)
+            .storage_dir(&dir)
             .lang(Language::De)
             .country(Country::De)
             .build()
             .map_err(err)?;
+        let login_marker = dir.join("logged_in");
         Ok(Self {
+            login_marker,
             rp,
             ytdlp,
             http: reqwest::Client::new(),
@@ -291,7 +295,15 @@ struct AuthEvent {
 
 #[tauri::command]
 pub async fn ytm_status(ytm: State<'_, Ytm>) -> Result<bool, String> {
-    Ok(ytm.rp.user_auth_check_cookie().await.is_ok())
+    if ytm.login_marker.exists() {
+        return Ok(true);
+    }
+    // Ältere Anmeldungen ohne Markierung einmal online prüfen
+    let logged_in = ytm.rp.user_auth_check_cookie().await.is_ok();
+    if logged_in {
+        let _ = std::fs::write(&ytm.login_marker, b"");
+    }
+    Ok(logged_in)
 }
 
 /// Öffnet ein Fenster mit der Google-Anmeldung. Sobald music.youtube.com angemeldet geladen ist,
@@ -340,7 +352,11 @@ pub async fn ytm_login(app: AppHandle) -> Result<(), String> {
                 let _ = window.close();
 
                 tauri::async_runtime::spawn(async move {
-                    let result = app.state::<Ytm>().rp.user_auth_set_cookie(cookie).await;
+                    let ytm = app.state::<Ytm>();
+                    let result = ytm.rp.user_auth_set_cookie(cookie).await;
+                    if result.is_ok() {
+                        let _ = std::fs::write(&ytm.login_marker, b"");
+                    }
                     let _ = app.emit(
                         "ytm-auth",
                         AuthEvent {
@@ -359,6 +375,7 @@ pub async fn ytm_login(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn ytm_logout(ytm: State<'_, Ytm>) -> Result<(), String> {
     let _ = ytm.rp.user_auth_remove_cookie().await;
+    let _ = std::fs::remove_file(&ytm.login_marker);
     Ok(())
 }
 

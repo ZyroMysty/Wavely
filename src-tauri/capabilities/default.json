@@ -20,6 +20,9 @@
     "allow-ytm-search",
     "allow-ytm-prefetch",
     "allow-ytm-radio",
-    "allow-get-lyrics"
+    "allow-get-lyrics",
+    "allow-offline-list",
+    "allow-offline-save",
+    "allow-offline-remove"
   ]
 }

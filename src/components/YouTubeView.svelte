@@ -2,6 +2,7 @@
   import { ytm, login, logout, loadLibrary, fetchCollection, search } from "../lib/ytm.svelte.js";
   import { player, playList, toggleShuffle } from "../lib/player.svelte.js";
   import { artworkSrc, isLetterboxed } from "../lib/artwork.js";
+  import { isSavedCollection, progressOf, saveCollection, removeCollection } from "../lib/offline.svelte.js";
   import CollectionCard from "./CollectionCard.svelte";
   import TrackList from "./TrackList.svelte";
   import Icon from "./Icon.svelte";
@@ -60,6 +61,15 @@
     });
   }
 
+  // Offline-Status der geöffneten Playlist
+  const saved = $derived(collection ? isSavedCollection(collection.id) : false);
+  const saveProgress = $derived(collection ? progressOf(collection.tracks.map((t) => t.id)) : null);
+
+  function toggleOffline() {
+    if (saved) removeCollection(collection.id);
+    else saveCollection(collection, collection.tracks);
+  }
+
   function playAll(tracks, shuffle) {
     if (!tracks.length) return;
     if (player.shuffle !== shuffle) toggleShuffle();
@@ -85,8 +95,14 @@
     {/if}
   </header>
 
-  {#if ytm.error}<p class="error">{ytm.error}</p>{/if}
-  {#if error}<p class="error">{error}</p>{/if}
+  {#if ytm.error}
+    <p class="error">{ytm.error}</p>
+    <p class="dim">Keine Internetverbindung? Deine gespeicherte Musik findest du unter „Offline“.</p>
+  {/if}
+  {#if error}
+    <p class="error">{error}</p>
+    <p class="dim">Keine Internetverbindung? Deine gespeicherte Musik findest du unter „Offline“.</p>
+  {/if}
 
   {#if page.type === "home"}
     {#if ytm.status === "checking"}
@@ -143,6 +159,21 @@
           </button>
           <button class="secondary" onclick={() => playAll(collection.tracks, true)} disabled={loading}>
             <Icon name="shuffle" size={18} /> Zufall
+          </button>
+          <button
+            class="secondary"
+            class:saved
+            onclick={toggleOffline}
+            disabled={loading || !collection.tracks.length}
+            title={saved ? "Gespeicherte Songs wieder löschen" : "Songs herunterladen, damit sie ohne Internet laufen"}
+          >
+            {#if saved && saveProgress.pending}
+              <Icon name="download" size={18} /> {saveProgress.done} / {saveProgress.total} gespeichert…
+            {:else if saved}
+              <Icon name="downloaded" size={18} /> Offline gespeichert
+            {:else}
+              <Icon name="download" size={18} /> Offline speichern
+            {/if}
           </button>
         </div>
       </div>
@@ -269,6 +300,9 @@
   }
   .collection-head h1 {
     font-size: 36px;
+  }
+  .secondary.saved {
+    color: var(--accent);
   }
   .buttons {
     display: flex;

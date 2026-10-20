@@ -2,6 +2,7 @@
   import { player, playList, currentTrack } from "../lib/player.svelte.js";
   import { formatTime } from "../lib/format.js";
   import { openTrackMenu } from "../lib/ui.svelte.js";
+  import { offline, isOffline } from "../lib/offline.svelte.js";
   import Cover from "./Cover.svelte";
   import Icon from "./Icon.svelte";
 
@@ -37,7 +38,14 @@
         {#if covers}<Cover {track} size={40} />{/if}
         <span class="text">
           <strong>{track.title}</strong>
-          <small>{track.artist ?? "Unbekannter Künstler"}</small>
+          <small>
+            {#if track.source === "youtube" && isOffline(track.id)}
+              <span class="saved" title="Offline gespeichert"><Icon name="downloaded" size={13} /></span>
+            {:else if track.source === "youtube" && offline.pending[track.id]}
+              <span class="saving" title="Wird gespeichert"><Icon name="download" size={13} /></span>
+            {/if}
+            {track.artist ?? "Unbekannter Künstler"}
+          </small>
         </span>
       </span>
       <span class="dim ellipsis">{track.album ?? ""}</span>
@@ -110,6 +118,22 @@
   .text small {
     color: var(--text-dim);
     font-size: 13px;
+  }
+  .saved,
+  .saving {
+    display: inline-flex;
+    vertical-align: -2px;
+    margin-right: 2px;
+    color: var(--accent);
+  }
+  .saving {
+    color: var(--text-dim);
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    50% {
+      opacity: 0.3;
+    }
   }
   .dim {
     color: var(--text-dim);
