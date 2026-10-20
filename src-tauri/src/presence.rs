@@ -33,6 +33,9 @@ pub struct Presence {
 
 impl Presence {
     fn client(&mut self) -> Option<&mut DiscordIpcClient> {
+        if DISCORD_CLIENT_ID.starts_with("DEINE_") {
+            return None; // Noch keine Discord-App eingetragen
+        }
         if self.client.is_none() {
             let mut client = DiscordIpcClient::new(DISCORD_CLIENT_ID).ok()?;
             // Schlägt fehl, wenn Discord nicht läuft; beim nächsten Update wird es erneut versucht.

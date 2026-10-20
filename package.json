@@ -1,13 +1,23 @@
 {
-  "name": "ytmusic-desktop",
+  "name": "wavely",
   "private": true,
   "version": "0.1.0",
+  "type": "module",
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "vite": "vite",
+    "vite:build": "vite build"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.12.4",
+    "@tauri-apps/plugin-dialog": "^2.8.3"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2"
+    "@sveltejs/vite-plugin-svelte": "^5",
+    "@tauri-apps/cli": "^2.12.3",
+    "svelte": "^5.57.2",
+    "vite": "^6"
   }
 }

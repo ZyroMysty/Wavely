@@ -1,18 +1,23 @@
 [package]
-name = "ytmusic-desktop"
+name = "wavely"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "ytmusic_desktop_lib"
+name = "wavely_lib"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 discord-rich-presence = "0.2.5"
+lofty = "0.25"
+walkdir = "2.5"
+base64 = "0.22"
 
 # Kleine Release-Binary
 [profile.release]

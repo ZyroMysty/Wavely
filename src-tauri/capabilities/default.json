@@ -1,10 +1,16 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "ytmusic-remote",
-  "description": "Erlaubt dem eingebetteten YouTube-Music-Skript, die Discord-Presence zu setzen.",
+  "identifier": "default",
+  "description": "Rechte für die eigene Oberfläche im Hauptfenster.",
   "windows": ["main"],
-  "remote": {
-    "urls": ["https://music.youtube.com/*"]
-  },
-  "permissions": ["allow-update-presence", "allow-clear-presence"]
+  "permissions": [
+    "core:default",
+    "dialog:allow-open",
+    "allow-update-presence",
+    "allow-clear-presence",
+    "allow-get-library",
+    "allow-add-folder",
+    "allow-remove-folder",
+    "allow-get-cover"
+  ]
 }

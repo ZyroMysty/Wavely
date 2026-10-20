@@ -1,38 +1,32 @@
-# ytmusic-desktop
+# Wavely
 
-Leichtgewichtige Desktop-Anwendung zum Abspielen von YouTube Music – mit Discord Rich Presence.
+Leichtgewichtiger Desktop-Musikplayer mit eigenem Design – für lokale Musik und (bald) YouTube Music, mit Discord Rich Presence.
 
-Gebaut mit [Tauri 2](https://tauri.app) (Rust + WebView2), dadurch klein und sparsam im Vergleich zu Electron.
+Gebaut mit [Tauri 2](https://tauri.app) (Rust) und [Svelte 5](https://svelte.dev).
 
 ## Funktionen
 
-- YouTube Music in einem eigenen, schlanken Fenster (Login bleibt gespeichert)
-- Discord Rich Presence: „Hört …“ mit Titel, Künstler, Album-Cover, Fortschrittsbalken und Button zum Song
+- Lokale Musik: Ordner hinzufügen, MP3/FLAC/M4A/OGG/OPUS/WAV werden mit Titel, Künstler, Album und Cover eingelesen
+- Eigener Player: Play/Pause, Vor/Zurück, Zufall, Wiederholen, Suchleiste, Lautstärke, Leertaste, Windows-Medientasten
+- Discord Rich Presence: „Hört …“ mit Titel, Künstler und Fortschritt
+- Geplant: YouTube Music mit Konto (Playlists, Likes, Suche), später Spotify
 
 ## Aufbau
 
-| Datei | Zweck |
+| Pfad | Zweck |
 | --- | --- |
-| `src-tauri/src/lib.rs` | Erstellt das Fenster mit music.youtube.com und registriert die Commands |
-| `src-tauri/src/inject.js` | Wird in die Seite injiziert, liest den aktuellen Song aus und meldet Änderungen |
-| `src-tauri/src/presence.rs` | Verbindung zu Discord und Aufbau der Rich Presence |
-| `src-tauri/capabilities/default.json` | Erlaubt nur music.youtube.com, die Presence-Commands aufzurufen |
+| `src/app.css` | Design-Tokens (Farben, Abstände) – hier das Aussehen anpassen |
+| `src/components/` | Oberfläche: Seitenleiste, Bibliothek, Player-Leiste |
+| `src/lib/player.svelte.js` | Wiedergabe, Warteschlange, Discord-Updates, Mediensteuerung |
+| `src/lib/library.svelte.js` | Lokale Bibliothek laden, Ordner verwalten |
+| `src-tauri/src/library.rs` | Ordner durchsuchen, Tags und Cover lesen |
+| `src-tauri/src/presence.rs` | Verbindung zu Discord |
 
 ## Einrichtung
 
-### 1. Voraussetzungen (Windows)
+Voraussetzungen: Rust, Node.js und Visual Studio Build Tools mit „Desktopentwicklung mit C++“.
 
-- [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) mit „Desktopentwicklung mit C++“
-- [Rust](https://rustup.rs) (`rustup-init.exe`)
-- Node.js (für die Tauri-CLI)
-- WebView2 ist bei Windows 11 schon dabei
-
-### 2. Discord-App anlegen
-
-1. Auf https://discord.com/developers/applications eine neue Application erstellen (der Name erscheint im Status, z. B. „YouTube Music“).
-2. Die **Application ID** kopieren und in `src-tauri/src/presence.rs` bei `DISCORD_CLIENT_ID` eintragen.
-
-### 3. Starten
+Für Discord: Auf https://discord.com/developers/applications eine Application anlegen und die **Application ID** in `src-tauri/src/presence.rs` bei `DISCORD_CLIENT_ID` eintragen.
 
 ```bash
 npm install

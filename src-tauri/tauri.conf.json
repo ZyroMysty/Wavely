@@ -1,15 +1,31 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "YTMusic Desktop",
+  "productName": "Wavely",
   "version": "0.1.0",
-  "identifier": "com.ytmusic-desktop.app",
+  "identifier": "com.wavely.app",
   "build": {
-    "frontendDist": "../src"
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist",
+    "beforeDevCommand": "npm run vite",
+    "beforeBuildCommand": "npm run vite:build"
   },
   "app": {
-    "windows": [],
+    "windows": [
+      {
+        "label": "main",
+        "title": "Wavely",
+        "width": 1200,
+        "height": 780,
+        "minWidth": 760,
+        "minHeight": 500
+      }
+    ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": []
+      }
     }
   },
   "bundle": {
