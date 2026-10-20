@@ -19,7 +19,9 @@ lofty = "0.25"
 walkdir = "2.5"
 base64 = "0.22"
 rustypipe = { version = "0.11.4", features = ["userdata"] }
-tokio = { version = "1.54.0", features = ["macros"] }
+tokio = { version = "1.54.0", features = ["macros", "process", "sync", "time"] }
+reqwest = "0.12"
+percent-encoding = "2"
 
 # Kleine Release-Binary
 [profile.release]
@@ -31,3 +33,7 @@ strip = true
 
 [dev-dependencies]
 tokio = { version = "1.54.0", features = ["macros", "rt-multi-thread"] }
+
+# Lokale Kopie von RustyPipe mit Korrekturen für aktuelle YouTube-Music-Antworten (siehe vendor/README.md)
+[patch.crates-io]
+rustypipe = { path = "vendor/rustypipe" }

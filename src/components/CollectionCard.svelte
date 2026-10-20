@@ -1,4 +1,5 @@
 <script>
+  import { artworkSrc, isLetterboxed } from "../lib/artwork.js";
   import Icon from "./Icon.svelte";
 
   let { item, onopen } = $props();
@@ -7,7 +8,7 @@
 <button class="card" onclick={() => onopen(item)}>
   <div class="art">
     {#if item.artworkUrl}
-      <img src={item.artworkUrl} alt="" loading="lazy" />
+      <img src={artworkSrc(item.artworkUrl)} alt="" loading="lazy" class:letterboxed={isLetterboxed(item.artworkUrl)} />
     {:else}
       <Icon name="music" size={40} />
     {/if}
@@ -43,6 +44,9 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
+  }
+  img.letterboxed {
+    transform: scale(1.34);
   }
   strong,
   small {

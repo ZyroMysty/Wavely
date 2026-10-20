@@ -1,5 +1,6 @@
 <script>
   import { coverFor } from "../lib/covers.js";
+  import { isLetterboxed } from "../lib/artwork.js";
   import Icon from "./Icon.svelte";
 
   let { track, size = 56 } = $props();
@@ -16,7 +17,7 @@
 
 <div class="cover" style:width="{size}px" style:height="{size}px">
   {#if src}
-    <img {src} alt="" />
+    <img {src} alt="" class:letterboxed={isLetterboxed(src)} />
   {:else}
     <Icon name="music" size={size * 0.45} />
   {/if}
@@ -36,5 +37,8 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
+  }
+  img.letterboxed {
+    transform: scale(1.34);
   }
 </style>

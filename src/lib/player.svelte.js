@@ -38,15 +38,11 @@ export function currentTrack() {
 }
 
 function sourceUrl(track) {
-  if (track.source === "local") return Promise.resolve(convertFileSrc(track.path));
-  // YouTube-Stream-URLs laufen ab, deshalb immer frisch holen
-  return invoke("ytm_stream", { id: track.id });
+  // YouTube läuft über den eigenen Stream-Dienst im Rust-Teil (ytstream://<videoId>)
+  return track.source === "local"
+    ? convertFileSrc(track.path)
+    : convertFileSrc(track.id, "ytstream");
 }
-
-// Verhindert, dass ein langsam geladener Song einen später gewählten überschreibt
-let loadToken = 0;
-// Ein Wiederholungsversuch pro Song, falls die Stream-URL abgelaufen ist
-let retried = false;
 
 function shuffled(list) {
   const a = [...list];
@@ -57,32 +53,24 @@ function shuffled(list) {
   return a;
 }
 
-async function load(index, startAt = 0) {
+function load(index) {
   const track = player.queue[index];
   if (!track) return;
-  const token = ++loadToken;
   player.index = index;
-  player.position = startAt;
+  player.position = 0;
   player.duration = track.duration || 0;
   player.loading = true;
   player.error = null;
-  if (startAt === 0) retried = false;
   updateMediaSession(track);
 
-  let src;
-  try {
-    src = await sourceUrl(track);
-  } catch (e) {
-    if (token !== loadToken) return;
-    player.loading = false;
-    player.error = `„${track.title}“ konnte nicht geladen werden: ${e}`;
-    return;
-  }
-  if (token !== loadToken) return;
-
-  audio.src = src;
-  if (startAt) audio.currentTime = startAt;
+  audio.src = sourceUrl(track);
   audio.play().catch((e) => console.error("Wiedergabe fehlgeschlagen:", e));
+
+  // Nächsten YouTube-Song schon vorbereiten, damit er ohne Pause startet
+  const upcoming = player.queue[index + 1];
+  if (upcoming?.source === "youtube") {
+    invoke("ytm_prefetch", { id: upcoming.id }).catch(() => {});
+  }
 }
 
 /** Spielt eine Liste ab, beginnend bei `index`. */
@@ -183,12 +171,6 @@ audio.addEventListener("ended", () => {
 audio.addEventListener("error", () => {
   const track = currentTrack();
   if (!track || !audio.src) return;
-  // Abgelaufene YouTube-URL: einmal neu holen und an gleicher Stelle weitermachen
-  if (track.source === "youtube" && !retried) {
-    retried = true;
-    load(player.index, audio.currentTime || player.position);
-    return;
-  }
   player.loading = false;
   player.error = `„${track.title}“ konnte nicht abgespielt werden.`;
   if (player.index + 1 < player.queue.length) next();

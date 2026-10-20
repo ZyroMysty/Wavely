@@ -1,5 +1,7 @@
+mod artwork;
 mod library;
 mod presence;
+mod ytdlp;
 mod ytm;
 
 use std::sync::Mutex;
@@ -80,10 +82,40 @@ pub fn run() {
             ytm::ytm_library,
             ytm::ytm_collection,
             ytm::ytm_search,
-            ytm::ytm_stream,
+            ytm::ytm_prefetch,
         ])
+        // YouTube-Audio über eigenen Stream-Dienst: holt die Datei in Stücken mit den Headern, die YouTube erwartet
+        .register_asynchronous_uri_scheme_protocol("ytstream", |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            let id = request.uri().path().trim_start_matches('/').to_string();
+            let range = request
+                .headers()
+                .get(tauri::http::header::RANGE)
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string);
+            tauri::async_runtime::spawn(async move {
+                let response = app.state::<ytm::Ytm>().serve_stream(&id, range.as_deref()).await;
+                responder.respond(response);
+            });
+        })
+        // Cover-Bilder über Rust laden und zwischenspeichern (artwork://<url>)
+        .register_asynchronous_uri_scheme_protocol("artwork", |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            let encoded = request.uri().path().trim_start_matches('/').to_string();
+            tauri::async_runtime::spawn(async move {
+                responder.respond(app.state::<artwork::Artwork>().serve(&encoded).await);
+            });
+        })
         .setup(|app| {
-            app.manage(ytm::Ytm::new(app.handle())?);
+            app.manage(artwork::Artwork::new(app.handle())?);
+            let ytdlp = ytdlp::YtDlp::init(app.handle())?;
+            app.manage(ytm::Ytm::new(app.handle(), ytdlp)?);
+
+            // yt-dlp im Hintergrund aktuell halten (höchstens einmal am Tag)
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                handle.state::<ytm::Ytm>().update_tools().await;
+            });
             Ok(())
         })
         .build(tauri::generate_context!())

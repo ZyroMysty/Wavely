@@ -8,7 +8,9 @@
     "build": "tauri build",
     "tauri": "tauri",
     "vite": "vite",
-    "vite:build": "vite build"
+    "vite:build": "vite build",
+    "setup:ytdlp": "node scripts/fetch-yt-dlp.mjs",
+    "postinstall": "node scripts/fetch-yt-dlp.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.4",

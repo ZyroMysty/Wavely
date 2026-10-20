@@ -1,6 +1,7 @@
 <script>
   import { ytm, login, logout, loadLibrary, fetchCollection, search } from "../lib/ytm.svelte.js";
   import { player, playList, toggleShuffle } from "../lib/player.svelte.js";
+  import { artworkSrc, isLetterboxed } from "../lib/artwork.js";
   import CollectionCard from "./CollectionCard.svelte";
   import TrackList from "./TrackList.svelte";
   import Icon from "./Icon.svelte";
@@ -13,14 +14,6 @@
   let error = $state(null);
   let collection = $state(null);
   let results = $state(null);
-
-  const likedCard = {
-    id: "LM",
-    kind: "playlist",
-    title: "Lieblingssongs",
-    subtitle: "Deine Likes",
-    artworkUrl: null,
-  };
 
   function go(next) {
     history.push(page);
@@ -47,7 +40,12 @@
     go({ type: "collection" });
     collection = { ...item, tracks: [] };
     run(async () => {
-      collection = await fetchCollection(item.kind, item.id);
+      const detail = await fetchCollection(item.kind, item.id);
+      collection = {
+        ...detail,
+        title: item.title || detail.title,
+        artworkUrl: item.artworkUrl || detail.artworkUrl,
+      };
     });
   }
 
@@ -112,7 +110,6 @@
       {:else if ytm.library}
         <h2>Playlists</h2>
         <div class="grid">
-          <CollectionCard item={likedCard} onopen={openCollection} />
           {#each ytm.library.playlists as item (item.id)}
             <CollectionCard {item} onopen={openCollection} />
           {/each}
@@ -130,13 +127,15 @@
   {:else if page.type === "collection" && collection}
     <div class="collection-head">
       <div class="big-art">
-        {#if collection.artworkUrl}<img src={collection.artworkUrl} alt="" />{:else}<Icon name="music" size={64} />{/if}
+        {#if collection.artworkUrl}<img src={artworkSrc(collection.artworkUrl)} alt="" class:letterboxed={isLetterboxed(collection.artworkUrl)} />{:else}<Icon name="music" size={64} />{/if}
       </div>
       <div>
         <p class="kind">{collection.kind === "album" ? "Album" : "Playlist"}</p>
         <h1>{collection.title}</h1>
         <p class="dim">
-          {#if collection.subtitle}{collection.subtitle} · {/if}{loading ? "Wird geladen…" : `${collection.tracks.length} Titel`}
+          {[collection.subtitle, loading ? "Wird geladen…" : `${collection.tracks.length} Titel`]
+            .filter(Boolean)
+            .join(" · ")}
         </p>
         <div class="buttons">
           <button class="primary" onclick={() => playAll(collection.tracks, false)} disabled={loading}>
@@ -256,6 +255,9 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
+  }
+  .big-art img.letterboxed {
+    transform: scale(1.34);
   }
   .kind {
     margin: 0 0 4px;

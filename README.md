@@ -22,8 +22,11 @@ Gebaut mit [Tauri 2](https://tauri.app) (Rust) und [Svelte 5](https://svelte.dev
 | `src/lib/library.svelte.js` | Lokale Bibliothek laden, Ordner verwalten |
 | `src-tauri/src/library.rs` | Ordner durchsuchen, Tags und Cover lesen |
 | `src-tauri/src/presence.rs` | Verbindung zu Discord |
-| `src-tauri/src/ytm.rs` | YouTube Music: Anmeldung, Bibliothek, Suche, Audio-Streams (über RustyPipe) |
+| `src-tauri/src/ytm.rs` | YouTube Music: Anmeldung, Bibliothek, Suche (RustyPipe), Stream-Dienst für den Player |
 | `src/lib/ytm.svelte.js` | YouTube-Music-Zustand in der Oberfläche |
+| `src-tauri/src/ytdlp.rs` | yt-dlp: Audio-Stream-Adressen für YouTube, tägliches Selbst-Update |
+| `src-tauri/src/artwork.rs` | Cover von YouTube laden und zwischenspeichern |
+| `src-tauri/vendor/rustypipe` | Gepatchte Kopie von RustyPipe (siehe `vendor/README.md`) |
 
 ## Einrichtung
 
@@ -32,7 +35,7 @@ Voraussetzungen: Rust, Node.js und Visual Studio Build Tools mit „Desktopentwi
 Für Discord: Auf https://discord.com/developers/applications eine Application anlegen und die **Application ID** in `src-tauri/src/presence.rs` bei `DISCORD_CLIENT_ID` eintragen.
 
 ```bash
-npm install
+npm install   # lädt auch yt-dlp (mit Prüfsumme) nach src-tauri/binaries
 npm run dev
 ```
 
@@ -41,3 +44,7 @@ Release-Build (Installer landet in `src-tauri/target/release/bundle/nsis/`):
 ```bash
 npm run build
 ```
+
+## Lizenz-Hinweis
+
+Wavely nutzt [RustyPipe](https://codeberg.org/ThetaDev/rustypipe) (GPL-3.0). Wird Wavely weitergegeben, muss es daher ebenfalls unter GPL-3.0 stehen und der Quellcode verfügbar sein. yt-dlp steht unter der Unlicense.

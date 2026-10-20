@@ -1,20 +1,29 @@
-//! YouTube Music: Anmeldung, Bibliothek, Suche und Audio-Streams über RustyPipe.
+//! YouTube Music: Anmeldung, Bibliothek und Suche über RustyPipe,
+//! Audio-Streams über yt-dlp (siehe ytdlp.rs).
 
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
+use std::{
+    collections::HashMap,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::{Duration, Instant},
 };
 
 use rustypipe::{
     client::RustyPipe,
     model::{AlbumItem, MusicPlaylistItem, Thumbnail, TrackItem},
-    param::{Country, Language, StreamFilter},
+    param::{Country, Language},
 };
 use serde::Serialize;
 use tauri::{
-    webview::PageLoadEvent, AppHandle, Emitter, Manager, State, Url, WebviewUrl,
-    WebviewWindowBuilder,
+    http::{header, Response, StatusCode},
+    webview::PageLoadEvent,
+    AppHandle, Emitter, Manager, State, Url, WebviewUrl, WebviewWindowBuilder,
 };
+use tokio::sync::Mutex;
+
+use crate::ytdlp::YtDlp;
 
 const LOGIN_WINDOW: &str = "ytm-login";
 const LOGIN_URL: &str = "https://accounts.google.com/ServiceLogin?service=youtube&continue=https%3A%2F%2Fmusic.youtube.com%2F";
@@ -22,13 +31,30 @@ const LOGIN_URL: &str = "https://accounts.google.com/ServiceLogin?service=youtub
 const LIKED_ID: &str = "LM";
 /// Obergrenze beim Nachladen langer Playlists
 const MAX_TRACKS: usize = 2000;
+/// Größe der Stücke, in denen die Audiodatei an den Player geht
+const CHUNK_SIZE: u64 = 1024 * 1024;
+/// Stream-URLs sind ca. 6 Stunden gültig; etwas früher erneuern
+const STREAM_MAX_AGE: Duration = Duration::from_secs(4 * 60 * 60);
+
+#[derive(Clone)]
+struct StreamInfo {
+    url: String,
+    size: u64,
+    mime: String,
+    /// Header, die YouTube für diese URL erwartet (v. a. User-Agent)
+    headers: Vec<(String, String)>,
+    fetched: Instant,
+}
 
 pub struct Ytm {
     rp: RustyPipe,
+    ytdlp: YtDlp,
+    http: reqwest::Client,
+    streams: Mutex<HashMap<String, StreamInfo>>,
 }
 
 impl Ytm {
-    pub fn new(app: &AppHandle) -> Result<Self, String> {
+    pub fn new(app: &AppHandle, ytdlp: YtDlp) -> Result<Self, String> {
         let dir = app.path().app_data_dir().map_err(err)?.join("ytm");
         std::fs::create_dir_all(&dir).map_err(err)?;
         let rp = RustyPipe::builder()
@@ -37,8 +63,118 @@ impl Ytm {
             .country(Country::De)
             .build()
             .map_err(err)?;
-        Ok(Self { rp })
+        Ok(Self {
+            rp,
+            ytdlp,
+            http: reqwest::Client::new(),
+            streams: Mutex::new(HashMap::new()),
+        })
     }
+
+    async fn stream_info(&self, id: &str, refresh: bool) -> Result<StreamInfo, String> {
+        if !refresh {
+            if let Some(info) = self.streams.lock().await.get(id) {
+                if info.fetched.elapsed() < STREAM_MAX_AGE {
+                    return Ok(info.clone());
+                }
+            }
+        }
+        // Sperre nicht während yt-dlp läuft halten (dauert ein paar Sekunden)
+        let audio = self.ytdlp.audio(id).await?;
+        let info = StreamInfo {
+            url: audio.url,
+            size: audio.size,
+            mime: audio.mime,
+            headers: audio.headers,
+            fetched: Instant::now(),
+        };
+        self.streams.lock().await.insert(id.to_string(), info.clone());
+        Ok(info)
+    }
+
+    pub async fn update_tools(&self) {
+        self.ytdlp.update_if_due().await;
+    }
+
+    /// Holt die Stream-Adresse schon vorab, damit der nächste Song sofort startet.
+    pub async fn prefetch(&self, id: &str) {
+        let _ = self.stream_info(id, false).await;
+    }
+
+    /// Beantwortet eine Anfrage des Players an `ytstream://<videoId>` mit einem Stück der Audiodatei.
+    /// Der Player fordert die restlichen Stücke dann selbst nach.
+    pub async fn serve_stream(&self, id: &str, range: Option<&str>) -> Response<Vec<u8>> {
+        match self.fetch_chunk(id, range).await {
+            Ok(response) => response,
+            Err(message) => Response::builder()
+                .status(StatusCode::BAD_GATEWAY)
+                .body(message.into_bytes())
+                .unwrap(),
+        }
+    }
+
+    async fn fetch_chunk(&self, id: &str, range: Option<&str>) -> Result<Response<Vec<u8>>, String> {
+        let (start, requested_end) = parse_range(range);
+
+        // Beim zweiten Versuch eine frische URL holen (abgelaufen oder gesperrt)
+        for refresh in [false, true] {
+            let info = self.stream_info(id, refresh).await?;
+            if info.size > 0 && start >= info.size {
+                return Ok(Response::builder()
+                    .status(StatusCode::RANGE_NOT_SATISFIABLE)
+                    .header(header::CONTENT_RANGE, format!("bytes */{}", info.size))
+                    .body(Vec::new())
+                    .unwrap());
+            }
+
+            let mut end = start + CHUNK_SIZE - 1;
+            if let Some(requested) = requested_end {
+                end = end.min(requested);
+            }
+            if info.size > 0 {
+                end = end.min(info.size - 1);
+            }
+
+            let mut request = self.http.get(&info.url);
+            for (name, value) in &info.headers {
+                request = request.header(name, value);
+            }
+            let response = request
+                .header(header::RANGE, format!("bytes={start}-{end}"))
+                .send()
+                .await
+                .map_err(err)?;
+            let status = response.status();
+            if status == reqwest::StatusCode::FORBIDDEN || status == reqwest::StatusCode::GONE {
+                continue;
+            }
+            if !status.is_success() {
+                return Err(format!("YouTube antwortete mit {status}"));
+            }
+
+            let bytes = response.bytes().await.map_err(err)?;
+            let end = start + (bytes.len() as u64).saturating_sub(1);
+            let total = if info.size > 0 { info.size.to_string() } else { "*".into() };
+            return Ok(Response::builder()
+                .status(StatusCode::PARTIAL_CONTENT)
+                .header(header::CONTENT_TYPE, info.mime)
+                .header(header::ACCEPT_RANGES, "bytes")
+                .header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{total}"))
+                .header(header::CONTENT_LENGTH, bytes.len())
+                .body(bytes.to_vec())
+                .unwrap());
+        }
+        Err("Stream ist nicht verfügbar".into())
+    }
+}
+
+/// Liest `bytes=START-END` aus dem Range-Header (END optional).
+fn parse_range(range: Option<&str>) -> (u64, Option<u64>) {
+    let Some(spec) = range.and_then(|r| r.strip_prefix("bytes=")) else {
+        return (0, None);
+    };
+    let (start, end) = spec.split_once('-').unwrap_or((spec, ""));
+    (start.trim().parse().unwrap_or(0), end.trim().parse().ok())
 }
 
 fn err(e: impl std::fmt::Display) -> String {
@@ -281,19 +417,28 @@ pub async fn ytm_collection(
         });
     }
 
-    let mut playlist = if id == LIKED_ID {
-        query.music_liked_tracks().await
+    // Öffentliche Playlists gehen ohne Anmeldung; private findet YouTube nur mit Anmeldung
+    let (query, playlist) = if id == LIKED_ID {
+        let playlist = query.music_liked_tracks().await;
+        (query, playlist)
     } else {
-        query.music_playlist(&id).await
-    }
-    .map_err(err)?;
+        match query.music_playlist(&id).await {
+            Ok(playlist) => (query, Ok(playlist)),
+            Err(_) => {
+                let query = ytm.rp.query().authenticated();
+                let playlist = query.music_playlist(&id).await;
+                (query, playlist)
+            }
+        }
+    };
+    let mut playlist = playlist.map_err(err)?;
     playlist.tracks.extend_limit(&query, MAX_TRACKS).await.map_err(err)?;
 
     Ok(YtCollectionDetail {
         info: YtCollection {
             id: playlist.id,
             kind: "playlist",
-            title: if id == LIKED_ID { "Lieblingssongs".into() } else { playlist.name },
+            title: playlist.name,
             subtitle: playlist.channel.map(|c| c.name),
             artwork_url: best_thumbnail(&playlist.thumbnail),
         },
@@ -316,15 +461,8 @@ pub async fn ytm_search(ytm: State<'_, Ytm>, query: String) -> Result<YtSearch, 
     })
 }
 
-// --- Wiedergabe ----------------------------------------------------------
-
-/// Liefert eine direkte Audio-URL. Die URLs laufen nach einigen Stunden ab,
-/// deshalb wird sie erst beim Abspielen geholt.
 #[tauri::command]
-pub async fn ytm_stream(ytm: State<'_, Ytm>, id: String) -> Result<String, String> {
-    let player = ytm.rp.query().player(&id).await.map_err(err)?;
-    player
-        .select_audio_stream(&StreamFilter::default())
-        .map(|s| s.url.clone())
-        .ok_or_else(|| "Kein Audio-Stream gefunden".into())
+pub async fn ytm_prefetch(ytm: State<'_, Ytm>, id: String) -> Result<(), String> {
+    ytm.prefetch(&id).await;
+    Ok(())
 }

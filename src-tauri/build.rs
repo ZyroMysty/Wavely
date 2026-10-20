@@ -13,7 +13,7 @@ fn main() {
             "ytm_library",
             "ytm_collection",
             "ytm_search",
-            "ytm_stream",
+            "ytm_prefetch",
         ]),
     ))
     .expect("failed to run tauri-build");

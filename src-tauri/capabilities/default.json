@@ -18,6 +18,6 @@
     "allow-ytm-library",
     "allow-ytm-collection",
     "allow-ytm-search",
-    "allow-ytm-stream"
+    "allow-ytm-prefetch"
   ]
 }
