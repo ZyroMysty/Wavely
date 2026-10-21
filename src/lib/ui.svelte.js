@@ -13,7 +13,7 @@ function stored(key, fallback) {
 export const ui = $state({
   /** Hauptansicht: "local" | "youtube" | "offline" | "settings" */
   view: settings.startView,
-  /** Rechte Seitenleiste: null | "queue" | "lyrics" */
+  /** Rechte Seitenleiste: null | "queue" | "lyrics" | "history" */
   panel: null,
   /** Kontextmenü für einen Song: { x, y, track } oder null */
   menu: null,

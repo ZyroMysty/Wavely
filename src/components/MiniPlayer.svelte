@@ -9,12 +9,13 @@
   import Logo from "./Logo.svelte";
 
   /** Zustand kommt vom Hauptfenster (der Mini-Player spielt selbst nichts ab) */
-  let state = $state({ key: null, title: null, artist: null, playing: false, loading: false, position: 0, duration: 0, canLike: false, liked: false });
+  let state = $state({ key: null, title: null, artist: null, playing: false, loading: false, position: 0, duration: 0, canLike: false, liked: false, volume: 0.6, muted: false });
   let cover = $state(null);
   const win = getCurrentWindow();
 
   const progress = $derived(state.duration ? Math.min(100, (state.position / state.duration) * 100) : 0);
   const command = (action) => emit("player-command", action);
+  const volume = $derived(state.muted ? 0 : state.volume);
 
   onMount(() => {
     applyAppearance();
@@ -77,6 +78,21 @@
           <Icon name={state.liked ? "heart" : "heartOutline"} size={18} />
         </button>
       {/if}
+      <div class="volume">
+        <button title={state.muted ? "Ton an" : "Stumm"} onclick={() => command("mute")}>
+          <Icon name={volume === 0 ? "mute" : "volume"} size={17} />
+        </button>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value={volume}
+          style:--progress="{volume * 100}%"
+          aria-label="Lautstärke"
+          oninput={(e) => command({ action: "volume", value: +e.currentTarget.value })}
+        />
+      </div>
     </div>
   </div>
 
@@ -190,6 +206,19 @@
   }
   button.on {
     color: var(--accent);
+  }
+  .volume {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+  .volume button {
+    width: 28px;
+    height: 28px;
+  }
+  .volume input {
+    width: 64px;
   }
   button:disabled {
     opacity: 0.4;

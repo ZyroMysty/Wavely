@@ -2,6 +2,7 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { coverFor } from "./covers.js";
 import { library } from "./library.svelte.js";
 import { settings } from "./settings.svelte.js";
+import { recordPlay } from "./history.svelte.js";
 import { offlinePath, allTracks as offlineTracks } from "./offline.svelte.js";
 
 // Ein einziges Audio-Element für alle Quellen (lokal und YouTube Music).
@@ -49,6 +50,11 @@ const gain = (slider) => Math.pow(slider, 3);
 audio.volume = gain(player.volume);
 
 let nextQid = 1;
+/** Song, der beim ersten „playing“ in den Verlauf kommt */
+let pendingHistory = null;
+/** Fehler hintereinander – verhindert, dass bei einem Problem die ganze Liste übersprungen wird */
+let errorStreak = 0;
+const MAX_ERROR_STREAK = 3;
 const entry = (track, auto = false) => ({ ...track, qid: nextQid++, auto });
 
 // Ursprüngliche Reihenfolge, um Zufallswiedergabe wieder aufheben zu können
@@ -92,6 +98,8 @@ function load(index) {
   player.loading = true;
   player.error = null;
   updateMediaSession(track);
+  // Erst in den Verlauf, wenn der Song wirklich läuft (siehe „playing“)
+  pendingHistory = track;
 
   audio.src = sourceUrl(track);
   audio.play().catch((e) => console.error("Wiedergabe fehlgeschlagen:", e));
@@ -277,7 +285,14 @@ audio.addEventListener("play", () => {
   player.playing = true;
   sendPresence();
 });
-audio.addEventListener("playing", () => (player.loading = false));
+audio.addEventListener("playing", () => {
+  player.loading = false;
+  errorStreak = 0;
+  if (pendingHistory) {
+    recordPlay(pendingHistory);
+    pendingHistory = null;
+  }
+});
 audio.addEventListener("waiting", () => (player.loading = true));
 audio.addEventListener("pause", () => {
   player.playing = false;
@@ -296,6 +311,14 @@ audio.addEventListener("error", () => {
   const track = currentTrack();
   if (!track || !audio.src) return;
   player.loading = false;
+  pendingHistory = null;
+  errorStreak++;
+  if (errorStreak >= MAX_ERROR_STREAK) {
+    player.error = "Mehrere Songs hintereinander konnten nicht abgespielt werden – Wiedergabe angehalten.";
+    player.playing = false;
+    errorStreak = 0;
+    return;
+  }
   player.error = `„${track.title}“ konnte nicht abgespielt werden.`;
   if (player.index + 1 < player.queue.length) next();
 });

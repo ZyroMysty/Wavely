@@ -118,6 +118,9 @@
     <button class="small" class:on={ui.panel === "lyrics"} title="Liedtext" onclick={() => togglePanel("lyrics")}>
       <Icon name="lyrics" size={20} />
     </button>
+    <button class="small" class:on={ui.panel === "history"} title="Verlauf" onclick={() => togglePanel("history")}>
+      <Icon name="history" size={20} />
+    </button>
     <button class="small" class:on={ui.panel === "queue"} title="Warteschlange" onclick={() => togglePanel("queue")}>
       <Icon name="queue" size={20} />
     </button>

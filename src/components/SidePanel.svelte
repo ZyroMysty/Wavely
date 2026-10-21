@@ -3,6 +3,7 @@
   import Icon from "./Icon.svelte";
   import QueuePanel from "./QueuePanel.svelte";
   import LyricsPanel from "./LyricsPanel.svelte";
+  import HistoryPanel from "./HistoryPanel.svelte";
 </script>
 
 <aside>
@@ -10,6 +11,7 @@
     <div class="tabs">
       <button class:active={ui.panel === "queue"} onclick={() => (ui.panel = "queue")}>Warteschlange</button>
       <button class:active={ui.panel === "lyrics"} onclick={() => (ui.panel = "lyrics")}>Liedtext</button>
+      <button class:active={ui.panel === "history"} onclick={() => (ui.panel = "history")}>Verlauf</button>
     </div>
     <button class="close" title="Schließen" onclick={() => (ui.panel = null)}>
       <Icon name="close" size={18} />
@@ -18,8 +20,10 @@
   <div class="content">
     {#if ui.panel === "queue"}
       <QueuePanel />
-    {:else}
+    {:else if ui.panel === "lyrics"}
       <LyricsPanel />
+    {:else}
+      <HistoryPanel />
     {/if}
   </div>
 </aside>
@@ -48,7 +52,7 @@
     padding: 3px;
   }
   .tabs button {
-    padding: 6px 14px;
+    padding: 6px 11px;
     border-radius: 999px;
     color: var(--text-dim);
     font-weight: 600;

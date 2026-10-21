@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { emitTo, listen } from "@tauri-apps/api/event";
-import { player, currentTrack, togglePlay, next, previous, seek } from "./player.svelte.js";
+import { player, currentTrack, togglePlay, next, previous, seek, setVolume, toggleMute } from "./player.svelte.js";
 import { ytm, isLiked, toggleLike } from "./ytm.svelte.js";
 import { coverFor } from "./covers.js";
 import { showToast } from "./ui.svelte.js";
@@ -29,6 +29,8 @@ function runCommand(command) {
   else if (action === "previous") previous();
   else if (action === "like") likeCurrent();
   else if (action === "seek") seek(command.position);
+  else if (action === "volume") setVolume(command.value);
+  else if (action === "mute") toggleMute();
 }
 
 function miniState() {
@@ -43,6 +45,8 @@ function miniState() {
     duration: player.duration,
     canLike: canLike(track),
     liked: track ? isLiked(track.id) : false,
+    volume: player.volume,
+    muted: player.muted,
   };
 }
 
