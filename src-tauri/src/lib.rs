@@ -71,15 +71,18 @@ async fn get_cover(path: String) -> Result<Option<String>, String> {
 
 /// Öffnet den Mini-Player (eigenes kleines Fenster ohne Rahmen) oder holt ihn nach vorn.
 #[tauri::command]
-async fn mini_player_open(app: AppHandle, pinned: bool) -> Result<(), String> {
+async fn mini_player_open(app: AppHandle, pinned: bool, width: Option<f64>, height: Option<f64>) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("mini") {
         let _ = window.unminimize();
         return window.set_focus().map_err(|e| e.to_string());
     }
     tauri::WebviewWindowBuilder::new(&app, "mini", tauri::WebviewUrl::App("mini.html".into()))
         .title("Wavely Mini")
-        .inner_size(360.0, 104.0)
-        .resizable(false)
+        .inner_size(width.unwrap_or(360.0), height.unwrap_or(104.0))
+        // Klein als Leiste, groß als Player mit großem Cover (siehe MiniPlayer.svelte)
+        .resizable(true)
+        .min_inner_size(220.0, 72.0)
+        .max_inner_size(640.0, 800.0)
         .maximizable(false)
         .decorations(false)
         .always_on_top(pinned)
@@ -121,6 +124,7 @@ pub fn run() {
             ytm::ytm_set_like,
             ytm::ytm_create_playlist,
             ytm::ytm_add_to_playlist,
+            ytm::ytm_history,
             mini_player_open,
             show_main_window,
             #[cfg(windows)]

@@ -12,7 +12,8 @@ Gebaut mit [Tauri 2](https://tauri.app) (Rust) und [Svelte 5](https://svelte.dev
 - YouTube Music: Anmeldung mit Google, deine Playlists, Alben und Lieblingssongs, Suche – abgespielt im eigenen Player
 - YouTube Music bearbeiten: Songs liken, neue Playlists erstellen, Songs zu eigenen Playlists hinzufügen
 - Profilbild mit Kontomenü, einklappbare Seitenleiste, Einstellungsseite (hell/dunkel, Akzentfarbe, Discord, Offline-Speicher)
-- Mini-Player (kleines Fenster, optional immer im Vordergrund)
+- Mini-Player: frei skalierbar (kompakte Leiste bis großer Player mit Cover), optional immer im Vordergrund
+- Verlauf: in Wavely gespielte Songs und YouTube-Music-Verlauf
 - Buttons in der Taskleisten-Vorschau (Zurück, Play/Pause, Weiter, Gefällt mir)
 - Warteschlange, Autoplay mit passenden Songs, synchronisierte Liedtexte (LRCLIB)
 - Offline-Modus: YouTube-Songs und Playlists herunterladen und ohne Internet abspielen

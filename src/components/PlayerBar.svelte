@@ -112,7 +112,7 @@
   </div>
 
   <div class="right">
-    <button class="small" title="Mini-Player" onclick={() => invoke("mini_player_open", { pinned: settings.miniPinned })}>
+    <button class="small" title="Mini-Player" onclick={() => invoke("mini_player_open", { pinned: settings.miniPinned, width: settings.miniWidth, height: settings.miniHeight })}>
       <Icon name="miniPlayer" size={20} />
     </button>
     <button class="small" class:on={ui.panel === "lyrics"} title="Liedtext" onclick={() => togglePanel("lyrics")}>

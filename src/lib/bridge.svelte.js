@@ -3,6 +3,7 @@ import { emitTo, listen } from "@tauri-apps/api/event";
 import { player, currentTrack, togglePlay, next, previous, seek, setVolume, toggleMute } from "./player.svelte.js";
 import { ytm, isLiked, toggleLike } from "./ytm.svelte.js";
 import { coverFor } from "./covers.js";
+import { hiResArtwork } from "./artwork.js";
 import { showToast } from "./ui.svelte.js";
 
 /**
@@ -53,7 +54,8 @@ function miniState() {
 async function sendCover() {
   const track = currentTrack();
   const key = track ? `${track.source}:${track.id}:${track.qid}` : null;
-  const src = track ? await coverFor(track) : null;
+  // Für den großen Mini-Player die hochaufgelöste Version
+  const src = track ? await coverFor({ ...track, artworkUrl: hiResArtwork(track.artworkUrl) }) : null;
   emitTo("mini", "player-cover", { key, src }).catch(() => {});
 }
 

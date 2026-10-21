@@ -25,6 +25,7 @@
     "allow-ytm-set-like",
     "allow-ytm-create-playlist",
     "allow-ytm-add-to-playlist",
+    "allow-ytm-history",
     "allow-mini-player-open",
     "allow-taskbar-update",
     "allow-get-lyrics",

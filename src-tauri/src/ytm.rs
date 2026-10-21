@@ -618,3 +618,27 @@ pub async fn ytm_add_to_playlist(
         status => Err(format!("YouTube hat das Hinzufügen abgelehnt ({})", status.unwrap_or("unbekannt"))),
     }
 }
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct YtHistoryEntry {
+    track: YtTrack,
+    /// Gruppierung von YouTube, z. B. „Heute“, „Gestern“, „Diese Woche“
+    group: Option<String>,
+}
+
+/// Verlauf von YouTube Music (zuletzt gehörte Songs im Konto)
+#[tauri::command]
+pub async fn ytm_history(ytm: State<'_, Ytm>) -> Result<Vec<YtHistoryEntry>, String> {
+    let query = ytm.rp.query();
+    let mut history = query.music_history().await.map_err(err)?;
+    history.extend_limit(&query, 200).await.map_err(err)?;
+    Ok(history
+        .items
+        .into_iter()
+        .map(|h| YtHistoryEntry {
+            group: h.playback_date_txt,
+            track: h.item.into(),
+        })
+        .collect())
+}

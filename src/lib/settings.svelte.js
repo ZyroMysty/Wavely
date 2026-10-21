@@ -13,6 +13,9 @@ const defaults = {
   discordDisplay: "details",
   /** Mini-Player immer im Vordergrund */
   miniPinned: true,
+  /** Zuletzt benutzte Größe des Mini-Players */
+  miniWidth: 360,
+  miniHeight: 104,
 };
 
 function load() {
