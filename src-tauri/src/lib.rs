@@ -3,6 +3,8 @@ mod library;
 mod lyrics;
 mod offline;
 mod presence;
+#[cfg(windows)]
+mod taskbar;
 mod ytdlp;
 mod ytm;
 
@@ -67,6 +69,34 @@ async fn get_cover(path: String) -> Result<Option<String>, String> {
         .map_err(|e| e.to_string())
 }
 
+/// Öffnet den Mini-Player (eigenes kleines Fenster ohne Rahmen) oder holt ihn nach vorn.
+#[tauri::command]
+async fn mini_player_open(app: AppHandle, pinned: bool) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("mini") {
+        let _ = window.unminimize();
+        return window.set_focus().map_err(|e| e.to_string());
+    }
+    tauri::WebviewWindowBuilder::new(&app, "mini", tauri::WebviewUrl::App("mini.html".into()))
+        .title("Wavely Mini")
+        .inner_size(360.0, 104.0)
+        .resizable(false)
+        .maximizable(false)
+        .decorations(false)
+        .always_on_top(pinned)
+        .build()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// Hauptfenster wieder anzeigen (z. B. aus dem Mini-Player).
+#[tauri::command]
+async fn show_main_window(app: AppHandle) -> Result<(), String> {
+    let window = app.get_webview_window("main").ok_or("Hauptfenster fehlt")?;
+    let _ = window.unminimize();
+    let _ = window.show();
+    window.set_focus().map_err(|e| e.to_string())
+}
+
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -91,6 +121,10 @@ pub fn run() {
             ytm::ytm_set_like,
             ytm::ytm_create_playlist,
             ytm::ytm_add_to_playlist,
+            mini_player_open,
+            show_main_window,
+            #[cfg(windows)]
+            taskbar::taskbar_update,
             lyrics::get_lyrics,
             offline::offline_list,
             offline::offline_save,
@@ -121,7 +155,19 @@ pub fn run() {
                 responder.respond(app.state::<artwork::Artwork>().serve(&encoded).await);
             });
         })
+        // Ohne Hauptfenster läuft keine Musik: Schließen beendet Wavely ganz (auch den Mini-Player)
+        .on_window_event(|window, event| {
+            if window.label() == "main" {
+                if let tauri::WindowEvent::CloseRequested { .. } = event {
+                    window.app_handle().exit(0);
+                }
+            }
+        })
         .setup(|app| {
+            #[cfg(windows)]
+            if let Some(main) = app.get_webview_window("main") {
+                taskbar::init(app.handle(), &main);
+            }
             app.manage(artwork::Artwork::new(app.handle())?);
             let ytdlp = ytdlp::YtDlp::init(app.handle())?;
             app.manage(offline::Offline::new(app.handle(), ytdlp.clone())?);

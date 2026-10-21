@@ -13,6 +13,8 @@
   } from "../lib/player.svelte.js";
   import { formatTime } from "../lib/format.js";
   import { ui, togglePanel, showToast } from "../lib/ui.svelte.js";
+  import { invoke } from "@tauri-apps/api/core";
+  import { settings } from "../lib/settings.svelte.js";
   import { ytm, isLiked, toggleLike } from "../lib/ytm.svelte.js";
   import Cover from "./Cover.svelte";
   import Icon from "./Icon.svelte";
@@ -110,6 +112,9 @@
   </div>
 
   <div class="right">
+    <button class="small" title="Mini-Player" onclick={() => invoke("mini_player_open", { pinned: settings.miniPinned })}>
+      <Icon name="miniPlayer" size={20} />
+    </button>
     <button class="small" class:on={ui.panel === "lyrics"} title="Liedtext" onclick={() => togglePanel("lyrics")}>
       <Icon name="lyrics" size={20} />
     </button>

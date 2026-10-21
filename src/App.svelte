@@ -4,6 +4,7 @@
   import { togglePlay } from "./lib/player.svelte.js";
   import { initYtm } from "./lib/ytm.svelte.js";
   import { initOffline } from "./lib/offline.svelte.js";
+  import { initBridge } from "./lib/bridge.svelte.js";
   import OfflineView from "./components/OfflineView.svelte";
   import Sidebar from "./components/Sidebar.svelte";
   import LocalView from "./components/LocalView.svelte";
@@ -28,6 +29,7 @@
     refreshLibrary();
     initYtm();
     initOffline();
+    initBridge();
   });
 
   // Leertaste = Play/Pause (außer beim Tippen)

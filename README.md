@@ -11,7 +11,9 @@ Gebaut mit [Tauri 2](https://tauri.app) (Rust) und [Svelte 5](https://svelte.dev
 - Discord Rich Presence: „Hört …“ mit Titel, Künstler und Fortschritt
 - YouTube Music: Anmeldung mit Google, deine Playlists, Alben und Lieblingssongs, Suche – abgespielt im eigenen Player
 - YouTube Music bearbeiten: Songs liken, neue Playlists erstellen, Songs zu eigenen Playlists hinzufügen
-- Profilbild mit Kontomenü, einklappbare Seitenleiste
+- Profilbild mit Kontomenü, einklappbare Seitenleiste, Einstellungsseite (hell/dunkel, Akzentfarbe, Discord, Offline-Speicher)
+- Mini-Player (kleines Fenster, optional immer im Vordergrund)
+- Buttons in der Taskleisten-Vorschau (Zurück, Play/Pause, Weiter, Gefällt mir)
 - Warteschlange, Autoplay mit passenden Songs, synchronisierte Liedtexte (LRCLIB)
 - Offline-Modus: YouTube-Songs und Playlists herunterladen und ohne Internet abspielen
 - Geplant: Spotify
@@ -29,6 +31,8 @@ Gebaut mit [Tauri 2](https://tauri.app) (Rust) und [Svelte 5](https://svelte.dev
 | `src-tauri/src/ytm.rs` | YouTube Music: Anmeldung, Bibliothek, Suche (RustyPipe), Stream-Dienst für den Player |
 | `src/lib/ytm.svelte.js` | YouTube-Music-Zustand in der Oberfläche |
 | `src-tauri/src/ytdlp.rs` | yt-dlp: Audio-Stream-Adressen für YouTube, tägliches Selbst-Update |
+| `src-tauri/src/taskbar.rs` | Windows-Taskleisten-Vorschau-Buttons (ITaskbarList3) |
+| `src/components/MiniPlayer.svelte`, `src/lib/bridge.svelte.js` | Mini-Player und Verbindung zu Taskleiste/Mini-Player |
 | `src-tauri/src/artwork.rs` | Cover von YouTube laden und zwischenspeichern |
 | `src-tauri/vendor/rustypipe` | Gepatchte Kopie von RustyPipe (siehe `vendor/README.md`) |
 

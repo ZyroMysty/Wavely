@@ -1,6 +1,6 @@
 [package]
 name = "wavely"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 
 [lib]
@@ -37,3 +37,14 @@ tokio = { version = "1.54.0", features = ["macros", "rt-multi-thread"] }
 # Lokale Kopie von RustyPipe mit Korrekturen fÃ¼r aktuelle YouTube-Music-Antworten (siehe vendor/README.md)
 [patch.crates-io]
 rustypipe = { path = "vendor/rustypipe" }
+
+# Windows-Taskleiste (Vorschau-Buttons), gleiche Version wie Tauri
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Com",
+    "Win32_System_Registry",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
