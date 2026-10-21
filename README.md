@@ -10,6 +10,10 @@ Gebaut mit [Tauri 2](https://tauri.app) (Rust) und [Svelte 5](https://svelte.dev
 - Eigener Player: Play/Pause, Vor/Zurück, Zufall, Wiederholen, Suchleiste, Lautstärke, Leertaste, Windows-Medientasten
 - Discord Rich Presence: „Hört …“ mit Titel, Künstler und Fortschritt
 - YouTube Music: Anmeldung mit Google, deine Playlists, Alben und Lieblingssongs, Suche – abgespielt im eigenen Player
+- YouTube Music bearbeiten: Songs liken, neue Playlists erstellen, Songs zu eigenen Playlists hinzufügen
+- Profilbild mit Kontomenü, einklappbare Seitenleiste
+- Warteschlange, Autoplay mit passenden Songs, synchronisierte Liedtexte (LRCLIB)
+- Offline-Modus: YouTube-Songs und Playlists herunterladen und ohne Internet abspielen
 - Geplant: Spotify
 
 ## Aufbau

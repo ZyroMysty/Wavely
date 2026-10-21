@@ -1,48 +1,72 @@
 <script>
   import { library, addFolder, removeFolder } from "../lib/library.svelte.js";
+  import { ui, toggleSidebar } from "../lib/ui.svelte.js";
   import Icon from "./Icon.svelte";
 
   let { view = $bindable() } = $props();
 
   const folderName = (path) => path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+  const collapsed = $derived(ui.sidebarCollapsed);
+
+  const items = [
+    { id: "local", icon: "folder", label: "Lokale Musik" },
+    { id: "youtube", icon: "youtube", label: "YouTube Music" },
+    { id: "offline", icon: "download", label: "Offline" },
+  ];
+
+  function open(id) {
+    // Erneuter Klick auf YouTube Music führt zurück zur Bibliothek
+    if (id === "youtube" && view === "youtube") ui.ytmHome++;
+    view = id;
+  }
 </script>
 
-<aside>
+<aside class:collapsed>
   <div class="brand">
     <span class="logo"><Icon name="music" size={18} /></span>
-    Wavely
+    {#if !collapsed}<span class="name">Wavely</span>{/if}
+    <button
+      class="icon-btn toggle"
+      title={collapsed ? "Seitenleiste ausklappen" : "Seitenleiste einklappen"}
+      onclick={toggleSidebar}
+    >
+      <Icon name={collapsed ? "expand" : "collapse"} size={18} />
+    </button>
   </div>
 
   <nav>
-    <button class:active={view === "local"} onclick={() => (view = "local")}>
-      <Icon name="folder" size={18} /> Lokale Musik
-    </button>
-    <button class:active={view === "youtube"} onclick={() => (view = "youtube")}>
-      <Icon name="youtube" size={18} /> YouTube Music
-    </button>
-    <button class:active={view === "offline"} onclick={() => (view = "offline")}>
-      <Icon name="download" size={18} /> Offline
-    </button>
+    {#each items as item (item.id)}
+      <button class:active={view === item.id} title={collapsed ? item.label : null} onclick={() => open(item.id)}>
+        <Icon name={item.icon} size={18} />
+        {#if !collapsed}{item.label}{/if}
+      </button>
+    {/each}
   </nav>
 
-  <div class="section">
-    <div class="section-title">
-      Ordner
-      <button class="icon-btn" title="Ordner hinzufügen" onclick={addFolder}>
-        <Icon name="plus" size={16} />
-      </button>
-    </div>
-    {#each library.folders as folder (folder)}
-      <div class="folder" title={folder}>
-        <span>{folderName(folder)}</span>
-        <button class="icon-btn remove" title="Ordner entfernen" onclick={() => removeFolder(folder)}>
-          <Icon name="close" size={14} />
+  {#if collapsed}
+    <button class="icon-btn add" title="Ordner hinzufügen" onclick={addFolder}>
+      <Icon name="plus" size={18} />
+    </button>
+  {:else}
+    <div class="section">
+      <div class="section-title">
+        Ordner
+        <button class="icon-btn" title="Ordner hinzufügen" onclick={addFolder}>
+          <Icon name="plus" size={16} />
         </button>
       </div>
-    {:else}
-      <p class="hint">Noch keine Ordner</p>
-    {/each}
-  </div>
+      {#each library.folders as folder (folder)}
+        <div class="folder" title={folder}>
+          <span>{folderName(folder)}</span>
+          <button class="icon-btn remove" title="Ordner entfernen" onclick={() => removeFolder(folder)}>
+            <Icon name="close" size={14} />
+          </button>
+        </div>
+      {:else}
+        <p class="hint">Noch keine Ordner</p>
+      {/each}
+    </div>
+  {/if}
 </aside>
 
 <style>
@@ -55,6 +79,11 @@
     flex-direction: column;
     gap: 24px;
     overflow-y: auto;
+    overflow-x: hidden;
+  }
+  aside.collapsed {
+    padding: 20px 10px;
+    align-items: center;
   }
   .brand {
     display: flex;
@@ -62,11 +91,19 @@
     gap: 10px;
     font-size: 18px;
     font-weight: 700;
-    padding: 0 8px;
+    padding: 0 0 0 8px;
+  }
+  .collapsed .brand {
+    flex-direction: column;
+    padding: 0;
+  }
+  .name {
+    flex: 1;
   }
   .logo {
     width: 30px;
     height: 30px;
+    flex-shrink: 0;
     border-radius: 8px;
     background: var(--accent);
     color: #fff;
@@ -86,6 +123,13 @@
     border-radius: 8px;
     color: var(--text-dim);
     text-align: left;
+    white-space: nowrap;
+  }
+  .collapsed nav button {
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    justify-content: center;
   }
   nav button:hover {
     background: var(--hover);
@@ -109,6 +153,7 @@
   .icon-btn {
     width: 26px;
     height: 26px;
+    flex-shrink: 0;
     border-radius: 6px;
     display: grid;
     place-items: center;
@@ -117,6 +162,11 @@
   .icon-btn:hover {
     background: var(--hover);
     color: var(--text);
+  }
+  .toggle,
+  .add {
+    width: 32px;
+    height: 32px;
   }
   .folder {
     display: flex;

@@ -12,11 +12,21 @@
     cycleRepeat,
   } from "../lib/player.svelte.js";
   import { formatTime } from "../lib/format.js";
-  import { ui, togglePanel } from "../lib/ui.svelte.js";
+  import { ui, togglePanel, showToast } from "../lib/ui.svelte.js";
+  import { ytm, isLiked, toggleLike } from "../lib/ytm.svelte.js";
   import Cover from "./Cover.svelte";
   import Icon from "./Icon.svelte";
 
   const track = $derived(currentTrack());
+  const canLike = $derived(track?.source === "youtube" && ytm.status === "loggedIn");
+
+  async function like() {
+    try {
+      await toggleLike(track);
+    } catch (e) {
+      showToast(`Like fehlgeschlagen: ${e}`, true);
+    }
+  }
 
   // Während des Ziehens nicht vom laufenden Song überschreiben lassen
   let dragging = $state(false);
@@ -40,6 +50,16 @@
           <small>{track.artist ?? "Unbekannter Künstler"}</small>
         {/if}
       </div>
+      {#if canLike}
+        <button
+          class="small like"
+          class:on={isLiked(track.id)}
+          title={isLiked(track.id) ? "Gefällt mir nicht mehr" : "Gefällt mir"}
+          onclick={like}
+        >
+          <Icon name={isLiked(track.id) ? "heart" : "heartOutline"} size={20} />
+        </button>
+      {/if}
     {/if}
   </div>
 
@@ -175,6 +195,9 @@
   }
   .small.on {
     color: var(--accent);
+  }
+  .like {
+    flex-shrink: 0;
   }
   .play {
     width: 40px;

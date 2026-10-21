@@ -231,11 +231,17 @@ pub struct YtCollection {
     title: String,
     subtitle: Option<String>,
     artwork_url: Option<String>,
+    /// Eigene Playlist, zu der man Songs hinzufügen kann
+    editable: bool,
 }
 
 impl From<MusicPlaylistItem> for YtCollection {
     fn from(p: MusicPlaylistItem) -> Self {
+        // Eigene Playlists: normale Playlist-ID („PL…“, nicht z. B. Recaps „LR…“ oder Likes „LM“),
+        // kein fremder Kanal und nicht von YouTube Music selbst erstellt
+        let editable = p.id.starts_with("PL") && !p.from_ytm && p.channel.is_none();
         Self {
+            editable,
             subtitle: p.channel.map(|c| c.name),
             artwork_url: best_thumbnail(&p.thumbnail),
             id: p.id,
@@ -259,6 +265,7 @@ impl From<AlbumItem> for YtCollection {
             kind: "album",
             title: a.name,
             subtitle,
+            editable: false,
         }
     }
 }
@@ -421,6 +428,7 @@ pub async fn ytm_collection(
                 title: album.name,
                 subtitle: (!artist.is_empty()).then_some(artist),
                 artwork_url: best_thumbnail(&album.cover),
+                editable: false,
             },
             // Album-Tracks haben oft kein Cover/Album gesetzt – vom Album übernehmen
             tracks: album
@@ -462,6 +470,8 @@ pub async fn ytm_collection(
             title: playlist.name,
             subtitle: playlist.channel.map(|c| c.name),
             artwork_url: best_thumbnail(&playlist.thumbnail),
+            // Wird in der Oberfläche aus der Bibliothek übernommen
+            editable: false,
         },
         tracks: playlist.tracks.items.into_iter().map(Into::into).collect(),
     })
@@ -498,4 +508,113 @@ pub async fn ytm_radio(ytm: State<'_, Ytm>, id: String) -> Result<Vec<YtTrack>, 
         .filter(|t| t.id != id)
         .map(Into::into)
         .collect())
+}
+
+// --- Konto & Bearbeiten (inoffizielle YouTube-Music-Schnittstellen) ------
+
+/// Angemeldete Anfrage an YouTube Music; liefert die Antwort als JSON.
+async fn yt_request(ytm: &Ytm, endpoint: &str, body: serde_json::Value) -> Result<serde_json::Value, String> {
+    let raw = ytm
+        .rp
+        .query()
+        .authenticated()
+        .raw(rustypipe::client::ClientType::DesktopMusic, endpoint, &body)
+        .await
+        .map_err(err)?;
+    serde_json::from_str(&raw).map_err(err)
+}
+
+fn text_of(value: &serde_json::Value) -> Option<String> {
+    value["runs"]
+        .as_array()
+        .map(|runs| runs.iter().filter_map(|r| r["text"].as_str()).collect::<String>())
+        .or_else(|| value["simpleText"].as_str().map(str::to_string))
+        .filter(|t| !t.is_empty())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct YtAccount {
+    name: Option<String>,
+    handle: Option<String>,
+    photo_url: Option<String>,
+}
+
+#[tauri::command]
+pub async fn ytm_account(ytm: State<'_, Ytm>) -> Result<YtAccount, String> {
+    let response = yt_request(&ytm, "account/account_menu", serde_json::json!({})).await?;
+    let header = &response["actions"][0]["openPopupAction"]["popup"]["multiPageMenuRenderer"]["header"]
+        ["activeAccountHeaderRenderer"];
+    let photo_url = header["accountPhoto"]["thumbnails"]
+        .as_array()
+        .and_then(|thumbs| thumbs.iter().max_by_key(|t| t["width"].as_u64().unwrap_or(0)))
+        .and_then(|t| t["url"].as_str())
+        .map(str::to_string);
+    Ok(YtAccount {
+        name: text_of(&header["accountName"]),
+        handle: text_of(&header["channelHandle"]),
+        photo_url,
+    })
+}
+
+/// IDs aller gelikten Songs (für das Herz-Symbol)
+#[tauri::command]
+pub async fn ytm_liked_ids(ytm: State<'_, Ytm>) -> Result<Vec<String>, String> {
+    let query = ytm.rp.query();
+    let mut liked = query.music_liked_tracks().await.map_err(err)?;
+    liked.tracks.extend_limit(&query, 10_000).await.map_err(err)?;
+    Ok(liked.tracks.items.into_iter().map(|t| t.id).collect())
+}
+
+#[tauri::command]
+pub async fn ytm_set_like(ytm: State<'_, Ytm>, id: String, liked: bool) -> Result<(), String> {
+    let endpoint = if liked { "like/like" } else { "like/removelike" };
+    yt_request(&ytm, endpoint, serde_json::json!({ "target": { "videoId": id } })).await?;
+    Ok(())
+}
+
+/// Legt eine neue Playlist an (optional gleich mit Songs) und gibt ihre ID zurück.
+#[tauri::command]
+pub async fn ytm_create_playlist(
+    ytm: State<'_, Ytm>,
+    title: String,
+    privacy: String,
+    video_ids: Vec<String>,
+) -> Result<String, String> {
+    let privacy = match privacy.as_str() {
+        "PUBLIC" | "UNLISTED" => privacy,
+        _ => "PRIVATE".to_string(),
+    };
+    let mut body = serde_json::json!({ "title": title, "description": "", "privacyStatus": privacy });
+    if !video_ids.is_empty() {
+        body["videoIds"] = serde_json::json!(video_ids);
+    }
+    let response = yt_request(&ytm, "playlist/create", body).await?;
+    response["playlistId"]
+        .as_str()
+        .map(str::to_string)
+        .ok_or_else(|| "YouTube hat keine Playlist angelegt".into())
+}
+
+#[tauri::command]
+pub async fn ytm_add_to_playlist(
+    ytm: State<'_, Ytm>,
+    playlist_id: String,
+    video_ids: Vec<String>,
+) -> Result<(), String> {
+    let actions: Vec<_> = video_ids
+        .iter()
+        .map(|id| serde_json::json!({ "action": "ACTION_ADD_VIDEO", "addedVideoId": id, "dedupeOption": "DEDUPE_OPTION_SKIP" }))
+        .collect();
+    let playlist_id = playlist_id.strip_prefix("VL").unwrap_or(&playlist_id).to_string();
+    let response = yt_request(
+        &ytm,
+        "browse/edit_playlist",
+        serde_json::json!({ "playlistId": playlist_id, "actions": actions }),
+    )
+    .await?;
+    match response["status"].as_str() {
+        Some("STATUS_SUCCEEDED") => Ok(()),
+        status => Err(format!("YouTube hat das Hinzufügen abgelehnt ({})", status.unwrap_or("unbekannt"))),
+    }
 }

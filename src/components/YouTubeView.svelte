@@ -1,5 +1,7 @@
 <script>
-  import { ytm, login, logout, loadLibrary, fetchCollection, search } from "../lib/ytm.svelte.js";
+  import { ytm, login, loadLibrary, fetchCollection, search } from "../lib/ytm.svelte.js";
+  import { ui } from "../lib/ui.svelte.js";
+  import AccountMenu from "./AccountMenu.svelte";
   import { player, playList, toggleShuffle } from "../lib/player.svelte.js";
   import { artworkSrc, isLetterboxed } from "../lib/artwork.js";
   import { isSavedCollection, progressOf, saveCollection, removeCollection } from "../lib/offline.svelte.js";
@@ -20,6 +22,16 @@
     history.push(page);
     page = next;
   }
+
+  // Klick auf „YouTube Music“ in der Seitenleiste: zurück zur Bibliothek
+  let lastHome = ui.ytmHome;
+  $effect(() => {
+    if (ui.ytmHome === lastHome) return;
+    lastHome = ui.ytmHome;
+    page = { type: "home" };
+    history = [];
+    error = null;
+  });
 
   function back() {
     page = history.pop() ?? { type: "home" };
@@ -91,7 +103,7 @@
       </form>
     </div>
     {#if ytm.status === "loggedIn"}
-      <button class="secondary" onclick={logout}>Abmelden</button>
+      <AccountMenu />
     {/if}
   </header>
 

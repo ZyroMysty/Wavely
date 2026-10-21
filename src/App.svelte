@@ -11,6 +11,8 @@
   import PlayerBar from "./components/PlayerBar.svelte";
   import SidePanel from "./components/SidePanel.svelte";
   import TrackMenu from "./components/TrackMenu.svelte";
+  import NewPlaylistDialog from "./components/NewPlaylistDialog.svelte";
+  import Toast from "./components/Toast.svelte";
   import { ui } from "./lib/ui.svelte.js";
 
   let view = $state("local");
@@ -32,7 +34,7 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-<div class="app" class:with-panel={ui.panel}>
+<div class="app" class:with-panel={ui.panel} class:collapsed={ui.sidebarCollapsed}>
   <Sidebar bind:view />
   <main>
     {#if view === "local"}
@@ -47,6 +49,8 @@
   <PlayerBar />
 </div>
 <TrackMenu />
+<NewPlaylistDialog />
+<Toast />
 
 <style>
   .app {
@@ -63,6 +67,9 @@
     grid-template-areas:
       "sidebar main panel"
       "player player player";
+  }
+  .app.collapsed {
+    --sidebar-width: 64px;
   }
   main {
     grid-area: main;
