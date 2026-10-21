@@ -23,6 +23,9 @@ pub struct Track {
     /// Gesamtlänge in Sekunden (0 bei Livestreams)
     pub duration: f64,
     pub paused: bool,
+    /// Was Discord in der Mitgliederliste zeigt: "details" (Songtitel), "state" (Künstler), "name" (Wavely)
+    #[serde(default)]
+    pub display: Option<String>,
 }
 
 /// Hält die Verbindung zum lokalen Discord-Client und baut sie bei Bedarf neu auf.
@@ -65,8 +68,12 @@ impl Presence {
 
         let mut activity = Activity::new()
             .activity_type(ActivityType::Listening)
-            // In der Mitgliederliste „Hört <Songtitel>“ statt „Hört Wavely“ anzeigen
-            .status_display_type(StatusDisplayType::Details)
+            // In der Mitgliederliste „Hört <Songtitel>“ (Standard), „Hört <Künstler>“ oder „Hört Wavely“
+            .status_display_type(match track.display.as_deref() {
+                Some("state") => StatusDisplayType::State,
+                Some("name") => StatusDisplayType::Name,
+                _ => StatusDisplayType::Details,
+            })
             .details(&details)
             .state(&state)
             .assets(assets);

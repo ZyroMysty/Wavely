@@ -1,6 +1,6 @@
 [package]
 name = "wavely"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 
 [lib]
@@ -34,6 +34,6 @@ strip = true
 [dev-dependencies]
 tokio = { version = "1.54.0", features = ["macros", "rt-multi-thread"] }
 
-# Lokale Kopie von RustyPipe mit Korrekturen für aktuelle YouTube-Music-Antworten (siehe vendor/README.md)
+# Lokale Kopie von RustyPipe mit Korrekturen fÃ¼r aktuelle YouTube-Music-Antworten (siehe vendor/README.md)
 [patch.crates-io]
 rustypipe = { path = "vendor/rustypipe" }

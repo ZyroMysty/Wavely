@@ -285,3 +285,52 @@ pub async fn offline_remove(
     }
     Ok(offline.snapshot())
 }
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OfflineStats {
+    songs: usize,
+    bytes: u64,
+    folder: String,
+}
+
+#[tauri::command]
+pub async fn offline_stats(offline: State<'_, Offline>) -> Result<OfflineStats, String> {
+    let index = offline.index.lock().unwrap();
+    let saved: Vec<&OfflineTrack> = index.tracks.values().filter(|t| !t.path.is_empty()).collect();
+    let bytes = saved
+        .iter()
+        .filter_map(|t| std::fs::metadata(&t.path).ok())
+        .map(|m| m.len())
+        .sum();
+    Ok(OfflineStats {
+        songs: saved.len(),
+        bytes,
+        folder: offline.dir.to_string_lossy().into_owned(),
+    })
+}
+
+#[tauri::command]
+pub async fn offline_open_folder(offline: State<'_, Offline>) -> Result<(), String> {
+    std::process::Command::new("explorer")
+        .arg(&offline.dir)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// Löscht alle Offline-Songs und gespeicherten Playlists.
+#[tauri::command]
+pub async fn offline_clear(offline: State<'_, Offline>) -> Result<OfflineView, String> {
+    {
+        let mut index = offline.index.lock().unwrap();
+        for track in index.tracks.values() {
+            if !track.path.is_empty() {
+                let _ = std::fs::remove_file(&track.path);
+            }
+        }
+        *index = Index::default();
+        offline.save(&index);
+    }
+    Ok(offline.snapshot())
+}

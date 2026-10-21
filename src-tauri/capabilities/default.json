@@ -28,6 +28,9 @@
     "allow-get-lyrics",
     "allow-offline-list",
     "allow-offline-save",
-    "allow-offline-remove"
+    "allow-offline-remove",
+    "allow-offline-stats",
+    "allow-offline-open-folder",
+    "allow-offline-clear"
   ]
 }

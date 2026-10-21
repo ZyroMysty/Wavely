@@ -1,6 +1,7 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { coverFor } from "./covers.js";
 import { library } from "./library.svelte.js";
+import { settings } from "./settings.svelte.js";
 import { offlinePath, allTracks as offlineTracks } from "./offline.svelte.js";
 
 // Ein einziges Audio-Element für alle Quellen (lokal und YouTube Music).
@@ -301,9 +302,9 @@ audio.addEventListener("error", () => {
 
 // --- Discord Rich Presence ------------------------------------------------
 
-function sendPresence() {
+export function sendPresence() {
   const t = currentTrack();
-  if (!t) {
+  if (!t || !settings.discordEnabled) {
     invoke("clear_presence").catch(() => {});
     return;
   }
@@ -317,6 +318,7 @@ function sendPresence() {
       position: audio.currentTime,
       duration: player.duration,
       paused: audio.paused,
+      display: settings.discordDisplay,
     },
   }).catch(() => {});
 }

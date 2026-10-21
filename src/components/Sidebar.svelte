@@ -2,8 +2,7 @@
   import { library, addFolder, removeFolder } from "../lib/library.svelte.js";
   import { ui, toggleSidebar } from "../lib/ui.svelte.js";
   import Icon from "./Icon.svelte";
-
-  let { view = $bindable() } = $props();
+  import Logo from "./Logo.svelte";
 
   const folderName = (path) => path.split(/[\\/]/).filter(Boolean).pop() ?? path;
   const collapsed = $derived(ui.sidebarCollapsed);
@@ -16,14 +15,14 @@
 
   function open(id) {
     // Erneuter Klick auf YouTube Music führt zurück zur Bibliothek
-    if (id === "youtube" && view === "youtube") ui.ytmHome++;
-    view = id;
+    if (id === "youtube" && ui.view === "youtube") ui.ytmHome++;
+    ui.view = id;
   }
 </script>
 
 <aside class:collapsed>
   <div class="brand">
-    <span class="logo"><Icon name="music" size={18} /></span>
+    <Logo size={30} />
     {#if !collapsed}<span class="name">Wavely</span>{/if}
     <button
       class="icon-btn toggle"
@@ -36,7 +35,7 @@
 
   <nav>
     {#each items as item (item.id)}
-      <button class:active={view === item.id} title={collapsed ? item.label : null} onclick={() => open(item.id)}>
+      <button class:active={ui.view === item.id} title={collapsed ? item.label : null} onclick={() => open(item.id)}>
         <Icon name={item.icon} size={18} />
         {#if !collapsed}{item.label}{/if}
       </button>
@@ -67,6 +66,13 @@
       {/each}
     </div>
   {/if}
+
+  <nav class="bottom">
+    <button class:active={ui.view === "settings"} title={collapsed ? "Einstellungen" : null} onclick={() => open("settings")}>
+      <Icon name="settings" size={18} />
+      {#if !collapsed}Einstellungen{/if}
+    </button>
+  </nav>
 </aside>
 
 <style>
@@ -100,15 +106,8 @@
   .name {
     flex: 1;
   }
-  .logo {
-    width: 30px;
-    height: 30px;
-    flex-shrink: 0;
-    border-radius: 8px;
-    background: var(--accent);
-    color: #fff;
-    display: grid;
-    place-items: center;
+  .bottom {
+    margin-top: auto;
   }
   nav {
     display: flex;

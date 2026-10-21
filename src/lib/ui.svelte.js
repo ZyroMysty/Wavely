@@ -1,4 +1,5 @@
 /** Zustand der Oberfläche, der nicht zu einer bestimmten Ansicht gehört. */
+import { settings } from "./settings.svelte.js";
 
 function stored(key, fallback) {
   try {
@@ -10,6 +11,8 @@ function stored(key, fallback) {
 }
 
 export const ui = $state({
+  /** Hauptansicht: "local" | "youtube" | "offline" | "settings" */
+  view: settings.startView,
   /** Rechte Seitenleiste: null | "queue" | "lyrics" */
   panel: null,
   /** Kontextmenü für einen Song: { x, y, track } oder null */

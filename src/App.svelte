@@ -13,9 +13,16 @@
   import TrackMenu from "./components/TrackMenu.svelte";
   import NewPlaylistDialog from "./components/NewPlaylistDialog.svelte";
   import Toast from "./components/Toast.svelte";
+  import SettingsView from "./components/SettingsView.svelte";
   import { ui } from "./lib/ui.svelte.js";
+  import { applyAppearance, settings } from "./lib/settings.svelte.js";
 
-  let view = $state("local");
+  // Design und Akzentfarbe live übernehmen
+  $effect(() => {
+    settings.theme;
+    settings.accent;
+    applyAppearance();
+  });
 
   onMount(() => {
     refreshLibrary();
@@ -35,12 +42,14 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div class="app" class:with-panel={ui.panel} class:collapsed={ui.sidebarCollapsed}>
-  <Sidebar bind:view />
+  <Sidebar />
   <main>
-    {#if view === "local"}
+    {#if ui.view === "local"}
       <LocalView />
-    {:else if view === "offline"}
+    {:else if ui.view === "offline"}
       <OfflineView />
+    {:else if ui.view === "settings"}
+      <SettingsView />
     {:else}
       <YouTubeView />
     {/if}

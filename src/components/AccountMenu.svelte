@@ -1,6 +1,7 @@
 <script>
   import { ytm, logout } from "../lib/ytm.svelte.js";
   import { artworkSrc } from "../lib/artwork.js";
+  import { ui } from "../lib/ui.svelte.js";
   import Icon from "./Icon.svelte";
 
   let open = $state(false);
@@ -44,6 +45,15 @@
           {#if ytm.account?.handle}<small>{ytm.account.handle}</small>{/if}
         </div>
       </div>
+      <button
+        role="menuitem"
+        onclick={() => {
+          open = false;
+          ui.view = "settings";
+        }}
+      >
+        <Icon name="settings" size={18} /> Einstellungen
+      </button>
       <button role="menuitem" onclick={signOut}>
         <Icon name="logout" size={18} /> Abmelden
       </button>

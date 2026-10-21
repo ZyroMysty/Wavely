@@ -102,3 +102,10 @@ export function allTracks() {
     .filter((t) => t.path)
     .sort((a, b) => (a.artist ?? "").localeCompare(b.artist ?? "") || a.title.localeCompare(b.title));
 }
+
+export const offlineStats = () => invoke("offline_stats");
+export const openOfflineFolder = () => invoke("offline_open_folder");
+
+export async function clearOffline() {
+  apply(await invoke("offline_clear"));
+}

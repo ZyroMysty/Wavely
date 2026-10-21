@@ -24,6 +24,9 @@ fn main() {
             "offline_list",
             "offline_save",
             "offline_remove",
+            "offline_stats",
+            "offline_open_folder",
+            "offline_clear",
         ]),
     ))
     .expect("failed to run tauri-build");

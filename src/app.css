@@ -17,6 +17,18 @@
   color-scheme: dark;
 }
 
+/* Heller Modus (Einstellungen → Darstellung) */
+:root[data-theme="light"] {
+  --bg: #f4f4f7;
+  --surface: #ffffff;
+  --surface-2: #ececf1;
+  --hover: #e0e0e8;
+  --border: #e1e1e8;
+  --text: #16161c;
+  --text-dim: #66667a;
+  color-scheme: light;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -37,10 +49,12 @@ button {
   color: inherit;
   background: none;
   border: none;
+  padding: 0;
   cursor: pointer;
 }
 
-input {
+input,
+select {
   font: inherit;
   color: inherit;
 }

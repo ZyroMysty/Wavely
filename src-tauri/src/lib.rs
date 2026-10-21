@@ -95,6 +95,9 @@ pub fn run() {
             offline::offline_list,
             offline::offline_save,
             offline::offline_remove,
+            offline::offline_stats,
+            offline::offline_open_folder,
+            offline::offline_clear,
         ])
         // YouTube-Audio über eigenen Stream-Dienst: holt die Datei in Stücken mit den Headern, die YouTube erwartet
         .register_asynchronous_uri_scheme_protocol("ytstream", |ctx, request, responder| {
