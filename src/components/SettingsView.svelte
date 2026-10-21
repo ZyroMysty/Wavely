@@ -283,7 +283,7 @@
               </div>
               <div class="label">
                 <strong>{spotify.account?.name ?? "Angemeldet"}</strong>
-                <small>Spotify {spotify.account?.product === "premium" ? "Premium" : "Free"} · abgespielt über YouTube Music</small>
+                <small>Abgespielt über YouTube Music</small>
               </div>
             </div>
             <button class="secondary" onclick={spotifyLogout}><Icon name="logout" size={18} /> Abmelden</button>

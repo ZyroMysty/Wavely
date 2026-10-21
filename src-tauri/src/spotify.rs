@@ -196,6 +196,53 @@ impl Spotify {
     }
 }
 
+impl Spotify {
+    /// Songliste einer öffentlichen Playlist aus dem Spotify-Embed-Player (ohne Anmeldung, max. 100 Songs).
+    /// Album und Cover pro Song liefert der Embed nicht – dafür wird das Playlist-Cover genommen.
+    async fn embed_playlist(&self, id: &str, cover: Option<String>) -> Result<Vec<SpTrack>, String> {
+        let html = self
+            .http
+            .get(format!("https://open.spotify.com/embed/playlist/{id}"))
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36")
+            .send()
+            .await
+            .map_err(err)?
+            .text()
+            .await
+            .map_err(err)?;
+        const MARKER: &str = "<script id=\"__NEXT_DATA__\" type=\"application/json\">";
+        let start = html.find(MARKER).ok_or("Playlist ist nicht öffentlich")? + MARKER.len();
+        let end = html[start..].find("</script>").ok_or("Embed unvollständig")? + start;
+        let data: Value = serde_json::from_str(&html[start..end]).map_err(err)?;
+        let list = data["props"]["pageProps"]["state"]["data"]["entity"]["trackList"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        Ok(list
+            .iter()
+            .filter_map(|t| {
+                let id = t["uri"].as_str()?.strip_prefix("spotify:track:")?.to_string();
+                let artist = t["subtitle"].as_str().unwrap_or_default().to_string();
+                Some(SpTrack {
+                    url: Some(format!("https://open.spotify.com/track/{id}")),
+                    id,
+                    title: t["title"].as_str().unwrap_or_default().to_string(),
+                    artists: artist
+                        .split(", ")
+                        .filter(|a| !a.is_empty())
+                        .map(|a| SpArtistRef { id: None, name: a.to_string() })
+                        .collect(),
+                    artist: (!artist.is_empty()).then_some(artist),
+                    album: None,
+                    album_id: None,
+                    duration: t["duration"].as_f64().unwrap_or(0.0) / 1000.0,
+                    artwork_url: cover.clone(),
+                })
+            })
+            .collect())
+    }
+}
+
 // --- Umwandlung in die Formate der Oberfläche ----------------------------
 
 fn best_image(images: &Value) -> Option<String> {
@@ -467,14 +514,15 @@ pub async fn spotify_collection(
                 artwork_url: None,
                 editable: false,
             },
-            tracks: items.iter().filter_map(|i| to_track(&i["track"], None)).collect(),
+            tracks: items.iter().filter_map(|i| to_track(item_of(i), None)).collect(),
         });
     }
 
     if kind == "album" {
         let album = spotify.get(&format!("/albums/{id}")).await?;
-        let mut tracks: Vec<Value> = album["tracks"]["items"].as_array().cloned().unwrap_or_default();
-        if let Some(next) = album["tracks"]["next"].as_str() {
+        let list = if album["tracks"].is_object() { &album["tracks"] } else { &album["items"] };
+        let mut tracks: Vec<Value> = list["items"].as_array().cloned().unwrap_or_default();
+        if let Some(next) = list["next"].as_str() {
             tracks.extend(spotify.paginate(next, MAX_ITEMS).await?);
         }
         return Ok(SpCollectionDetail {
@@ -483,16 +531,26 @@ pub async fn spotify_collection(
         });
     }
 
-    let playlist = spotify
-        .get(&format!("/playlists/{id}?fields=id,name,images,owner(display_name)"))
-        .await?;
-    let items = spotify
-        .paginate(&format!("/playlists/{id}/tracks?limit=100"), MAX_ITEMS)
-        .await?;
-    Ok(SpCollectionDetail {
-        info: to_playlist(&playlist).ok_or("Playlist nicht gefunden")?,
-        tracks: items.iter().filter_map(|i| to_track(&i["track"], None)).collect(),
-    })
+    let playlist = spotify.get(&format!("/playlists/{id}")).await?;
+    let info = to_playlist(&playlist).ok_or("Playlist nicht gefunden")?;
+
+    // Seit Februar 2026 gibt Spotify neuen Apps die Songs nur bei eigenen oder gemeinsamen Playlists.
+    let own = spotify
+        .paginate(&format!("/playlists/{id}/items?limit=50"), MAX_ITEMS)
+        .await
+        .map(|items| items.iter().filter_map(|i| to_track(item_of(i), None)).collect::<Vec<_>>())
+        .unwrap_or_default();
+    if !own.is_empty() {
+        return Ok(SpCollectionDetail { info, tracks: own });
+    }
+    // Fremde Playlists: Songliste aus dem öffentlichen Spotify-Embed-Player (max. 100 Songs)
+    let tracks = spotify.embed_playlist(&id, info.artwork_url.clone()).await?;
+    Ok(SpCollectionDetail { info, tracks })
+}
+
+/// Eintrag einer Playlist/Liste: neues Feld „item“, früher „track“
+fn item_of(entry: &Value) -> &Value {
+    if entry["item"].is_object() { &entry["item"] } else { &entry["track"] }
 }
 
 #[derive(Serialize)]
@@ -525,7 +583,7 @@ pub async fn spotify_search(spotify: State<'_, Spotify>, query: String) -> Resul
     url.query_pairs_mut()
         .append_pair("q", &query)
         .append_pair("type", "track,album,playlist,artist")
-        .append_pair("limit", "20");
+        .append_pair("limit", "10"); // Spotify erlaubt neuen Apps max. 10
     let r = spotify.get(url.as_str()).await?;
     let list = |key: &str| r[key]["items"].as_array().cloned().unwrap_or_default();
     Ok(SpSearch {
@@ -555,14 +613,22 @@ pub struct SpArtist {
 #[tauri::command]
 pub async fn spotify_artist(spotify: State<'_, Spotify>, id: String) -> Result<SpArtist, String> {
     let artist_path = format!("/artists/{id}");
-    let top_path = format!("/artists/{id}/top-tracks?market=from_token");
-    let albums_path = format!("/artists/{id}/albums?include_groups=album,single&limit=50");
-    let (artist, top, albums) = tokio::join!(
-        spotify.get(&artist_path),
-        spotify.get(&top_path),
-        spotify.paginate(&albums_path, 200),
-    );
+    // Spotify erlaubt neuen Apps hier nur noch kleine Seiten
+    let albums_path = format!("/artists/{id}/albums?include_groups=album,single&limit=10");
+    let (artist, albums) = tokio::join!(spotify.get(&artist_path), spotify.paginate(&albums_path, 200));
     let artist = artist?;
+    // „Top-Songs“ hat Spotify für neue Apps entfernt → beliebte Songs über die Suche nach dem Künstler
+    let name = artist["name"].as_str().unwrap_or_default().to_string();
+    let mut search = Url::parse(&format!("{API}/search")).map_err(err)?;
+    search
+        .query_pairs_mut()
+        .append_pair("q", &format!("artist:\"{name}\""))
+        .append_pair("type", "track")
+        .append_pair("limit", "10");
+    let top = spotify.get(search.as_str()).await;
+    // Zweite Seite für mehr Songs (Suche liefert max. 10 pro Anfrage)
+    search.query_pairs_mut().append_pair("offset", "10");
+    let top2 = spotify.get(search.as_str()).await;
     let albums = albums.unwrap_or_default();
     let group = |g: &str| -> Vec<SpCollection> {
         albums
@@ -576,16 +642,18 @@ pub async fn spotify_artist(spotify: State<'_, Spotify>, id: String) -> Result<S
         .map(|g| g.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join(", "))
         .filter(|g| !g.is_empty());
     Ok(SpArtist {
-        id,
-        name: artist["name"].as_str().unwrap_or_default().to_string(),
+        id: id.clone(),
+        name,
         image_url: best_image(&artist["images"]),
         description: genres.map(|g| format!("Genres: {g}")),
         subscribers: artist["followers"]["total"].as_u64(),
-        tracks: top
-            .ok()
-            .and_then(|t| t["tracks"].as_array().cloned())
-            .unwrap_or_default()
+        tracks: [top, top2]
+            .into_iter()
+            .filter_map(|r| r.ok())
+            .flat_map(|t| t["tracks"]["items"].as_array().cloned().unwrap_or_default())
+            .collect::<Vec<_>>()
             .iter()
+            .filter(|t| t["artists"].as_array().is_some_and(|a| a.iter().any(|x| x["id"].as_str() == Some(id.as_str()))))
             .filter_map(|t| to_track(t, None))
             .collect(),
         albums: group("album"),
