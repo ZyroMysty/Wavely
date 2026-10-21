@@ -673,7 +673,7 @@ pub async fn spotify_recent(spotify: State<'_, Spotify>) -> Result<Vec<SpTrack>,
         .cloned()
         .unwrap_or_default()
         .iter()
-        .filter_map(|i| to_track(&i["track"], None))
+        .filter_map(|i| to_track(item_of(i), None))
         .collect())
 }
 

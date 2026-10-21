@@ -5,17 +5,11 @@
 //! dort aus (wie yt-dlp). Songs, von denen SoundCloud ohne Go+ nur 30 Sekunden liefert („SNIP“),
 //! spielt Wavely über den passenden YouTube-Music-Song in voller Länge.
 
-use std::{
-    path::PathBuf,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-};
+use std::path::PathBuf;
 
 use serde::Serialize;
 use serde_json::Value;
-use tauri::{webview::PageLoadEvent, AppHandle, Emitter, Manager, State, Url, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, State, Url, WebviewUrl, WebviewWindowBuilder};
 use tokio::sync::Mutex;
 
 const API: &str = "https://api-v2.soundcloud.com";
@@ -296,48 +290,46 @@ pub async fn soundcloud_login(app: AppHandle) -> Result<(), String> {
     let data_dir = app.path().app_data_dir().map_err(err)?.join("soundcloud-login-webview");
     let _ = std::fs::remove_dir_all(&data_dir);
 
-    let done = Arc::new(AtomicBool::new(false));
-    let handle = app.clone();
-    WebviewWindowBuilder::new(&app, LOGIN_WINDOW, WebviewUrl::External("https://soundcloud.com/signin".parse().map_err(err)?))
-        .title("Bei SoundCloud anmelden")
-        .inner_size(680.0, 820.0)
-        .data_directory(data_dir)
-        .on_page_load(move |window, payload| {
-            if payload.event() != PageLoadEvent::Finished || done.load(Ordering::SeqCst) {
-                return;
+    let window = WebviewWindowBuilder::new(
+        &app,
+        LOGIN_WINDOW,
+        WebviewUrl::External("https://soundcloud.com/signin".parse().map_err(err)?),
+    )
+    .title("Bei SoundCloud anmelden")
+    .inner_size(680.0, 820.0)
+    .data_directory(data_dir)
+    .build()
+    .map_err(err)?;
+
+    // SoundCloud meldet im Overlay an, ohne die Seite neu zu laden → Cookie jede Sekunde prüfen,
+    // solange das Fenster offen ist (höchstens 15 Minuten).
+    // Cookies dürfen unter Windows nicht im Event-Handler gelesen werden, daher eigener Thread.
+    std::thread::spawn(move || {
+        for _ in 0..900 {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            if app.get_webview_window(LOGIN_WINDOW).is_none() {
+                return; // Fenster wurde geschlossen
             }
-            let app = handle.clone();
-            let done = done.clone();
-            // Cookies dürfen unter Windows nicht im Event-Handler gelesen werden (Deadlock)
-            std::thread::spawn(move || {
-                // Nach dem Anmelden setzt SoundCloud das Cookie etwas verzögert
-                for _ in 0..10 {
-                    let token = window
-                        .cookies()
-                        .ok()
-                        .and_then(|c| c.into_iter().find(|c| c.name() == "oauth_token").map(|c| c.value().to_string()));
-                    if let Some(token) = token.filter(|t| !t.is_empty()) {
-                        if done.swap(true, Ordering::SeqCst) {
-                            return;
-                        }
-                        let _ = window.close();
-                        tauri::async_runtime::spawn(async move {
-                            let sc = app.state::<SoundCloud>();
-                            sc.save_token(Some(token)).await;
-                            let result = sc.me().await.map(|_| ());
-                            if result.is_err() {
-                                sc.save_token(None).await;
-                            }
-                            let _ = app.emit("soundcloud-auth", AuthEvent { logged_in: result.is_ok(), error: result.err() });
-                        });
-                        return;
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(500));
+            let token = window
+                .cookies()
+                .ok()
+                .and_then(|c| c.into_iter().find(|c| c.name() == "oauth_token").map(|c| c.value().to_string()))
+                .filter(|t| !t.is_empty());
+            let Some(token) = token else { continue };
+            let _ = window.close();
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let sc = app.state::<SoundCloud>();
+                sc.save_token(Some(token)).await;
+                let result = sc.me().await.map(|_| ());
+                if result.is_err() {
+                    sc.save_token(None).await;
                 }
+                let _ = app.emit("soundcloud-auth", AuthEvent { logged_in: result.is_ok(), error: result.err() });
             });
-        })
-        .build()
-        .map_err(err)?;
+            return;
+        }
+    });
     Ok(())
 }
 

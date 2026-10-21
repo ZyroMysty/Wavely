@@ -53,6 +53,8 @@ pub struct Ytm {
     ytdlp: YtDlp,
     http: reqwest::Client,
     streams: Mutex<HashMap<String, StreamInfo>>,
+    /// Signatur-Zeitstempel des aktuellen YouTube-Players (für die Verlaufs-Meldung)
+    sts: Mutex<Option<(u64, Instant)>>,
 }
 
 impl Ytm {
@@ -72,6 +74,7 @@ impl Ytm {
             ytdlp,
             http: reqwest::Client::new(),
             streams: Mutex::new(HashMap::new()),
+            sts: Mutex::new(None),
         })
     }
 
@@ -94,6 +97,42 @@ impl Ytm {
         };
         self.streams.lock().await.insert(id.to_string(), info.clone());
         Ok(info)
+    }
+
+    /// „signatureTimestamp“ aus dem aktuellen Player-Skript von YouTube Music. Ohne diesen Wert lehnt
+    /// YouTube angemeldete Player-Anfragen inzwischen ab („The page needs to be reloaded“).
+    async fn signature_timestamp(&self) -> Result<u64, String> {
+        if let Some((sts, fetched)) = *self.sts.lock().await {
+            if fetched.elapsed() < Duration::from_secs(6 * 60 * 60) {
+                return Ok(sts);
+            }
+        }
+        const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
+        let html = self.http.get("https://music.youtube.com/").header("User-Agent", UA).send().await.map_err(err)?.text().await.map_err(err)?;
+        let js_path = html
+            .split("\"jsUrl\":\"")
+            .nth(1)
+            .and_then(|rest| rest.split('"').next())
+            .ok_or("YouTube-Player nicht gefunden")?;
+        let code = self
+            .http
+            .get(format!("https://music.youtube.com{js_path}"))
+            .header("User-Agent", UA)
+            .send()
+            .await
+            .map_err(err)?
+            .text()
+            .await
+            .map_err(err)?;
+        let sts = ["signatureTimestamp:", "signatureTimestamp="]
+            .iter()
+            .find_map(|marker| {
+                let pos = code.find(marker)? + marker.len();
+                code[pos..].chars().take_while(|c| c.is_ascii_digit()).collect::<String>().parse::<u64>().ok()
+            })
+            .ok_or("Signatur-Zeitstempel nicht gefunden")?;
+        *self.sts.lock().await = Some((sts, Instant::now()));
+        Ok(sts)
     }
 
     pub fn rp(&self) -> &RustyPipe {
@@ -681,7 +720,16 @@ pub async fn ytm_report_play(ytm: State<'_, Ytm>, id: String) -> Result<(), Stri
         (0..16).map(|_| ALPHABET[rng.random_range(0..ALPHABET.len())] as char).collect()
     };
 
-    let player = yt_request(&ytm, "player", serde_json::json!({ "videoId": id })).await?;
+    let sts = ytm.signature_timestamp().await?;
+    let player = yt_request(
+        &ytm,
+        "player",
+        serde_json::json!({
+            "videoId": id,
+            "playbackContext": { "contentPlaybackContext": { "signatureTimestamp": sts } }
+        }),
+    )
+    .await?;
     let base = player["playbackTracking"]["videostatsPlaybackUrl"]["baseUrl"]
         .as_str()
         .ok_or("YouTube hat keinen Verlaufs-Link geliefert")?;
