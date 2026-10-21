@@ -7,6 +7,7 @@
   import { library, addFolder, removeFolder } from "../lib/library.svelte.js";
   import { ytm, login, logout } from "../lib/ytm.svelte.js";
   import { spotify, login as spotifyLogin, logout as spotifyLogout } from "../lib/spotify.svelte.js";
+  import { soundcloud, login as soundcloudLogin, logout as soundcloudLogout } from "../lib/soundcloud.svelte.js";
   import { offlineStats, openOfflineFolder, clearOffline } from "../lib/offline.svelte.js";
   import { artworkSrc } from "../lib/artwork.js";
   import Icon from "./Icon.svelte";
@@ -23,6 +24,7 @@
     { id: "library", label: "Bibliothek" },
     { id: "youtube", label: "YouTube Music" },
     { id: "spotify", label: "Spotify" },
+    { id: "soundcloud", label: "SoundCloud" },
     { id: "offline", label: "Offline" },
     { id: "about", label: "Über Wavely" },
   ];
@@ -161,6 +163,7 @@
           <select value={settings.startView} onchange={(e) => updateSetting("startView", e.currentTarget.value)}>
             <option value="youtube">YouTube Music</option>
             <option value="spotify">Spotify</option>
+            <option value="soundcloud">SoundCloud</option>
             <option value="local">Lokale Musik</option>
             <option value="offline">Offline</option>
           </select>
@@ -290,6 +293,37 @@
               <small>Spotify-Playlists, Lieblingssongs und Alben in Wavely nutzen</small>
             </div>
             <button class="primary" onclick={spotifyLogin} disabled={spotify.loggingIn}>Mit Spotify anmelden</button>
+          {/if}
+        </div>
+      </div>
+    </section>
+
+    <!-- SoundCloud -->
+    <section id="settings-soundcloud">
+      <h2>SoundCloud</h2>
+      <div class="card">
+        <div class="row">
+          {#if soundcloud.status === "loggedIn"}
+            <div class="account">
+              <div class="avatar">
+                {#if soundcloud.account?.photoUrl}
+                  <img src={artworkSrc(soundcloud.account.photoUrl)} alt="" />
+                {:else}
+                  {(soundcloud.account?.name ?? "S").charAt(0)}
+                {/if}
+              </div>
+              <div class="label">
+                <strong>{soundcloud.account?.name ?? "Angemeldet"}</strong>
+                <small>Ausschnitt-Songs (Go+) laufen über YouTube Music</small>
+              </div>
+            </div>
+            <button class="secondary" onclick={soundcloudLogout}><Icon name="logout" size={18} /> Abmelden</button>
+          {:else}
+            <div class="label">
+              <strong>Nicht angemeldet</strong>
+              <small>Likes, Playlists und gefolgte Künstler in Wavely nutzen</small>
+            </div>
+            <button class="primary" onclick={soundcloudLogin} disabled={soundcloud.loggingIn}>Mit SoundCloud anmelden</button>
           {/if}
         </div>
       </div>

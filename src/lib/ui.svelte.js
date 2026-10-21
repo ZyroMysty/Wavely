@@ -27,6 +27,9 @@ export const ui = $state({
   spNav: null,
   /** Wird erhöht, wenn Spotify zur Startseite zurück soll */
   spHome: 0,
+  /** Dasselbe für SoundCloud */
+  scNav: null,
+  scHome: 0,
   /** Dialog „Neue Playlist“: { tracks } oder null */
   newPlaylist: null,
   /** Kurzer Hinweis unten: { text, error } oder null */
@@ -61,6 +64,9 @@ export function openIn(source, target) {
   if (source === "spotify") {
     ui.view = "spotify";
     ui.spNav = target;
+  } else if (source === "soundcloud") {
+    ui.view = "soundcloud";
+    ui.scNav = target;
   } else {
     ui.view = "youtube";
     ui.ytmNav = target;

@@ -3,6 +3,7 @@ mod library;
 mod lyrics;
 mod offline;
 mod presence;
+mod soundcloud;
 mod spotify;
 #[cfg(windows)]
 mod taskbar;
@@ -140,6 +141,17 @@ pub fn run() {
             spotify::spotify_artist,
             spotify::spotify_recent,
             spotify::spotify_resolve,
+            soundcloud::soundcloud_status,
+            soundcloud::soundcloud_login,
+            soundcloud::soundcloud_logout,
+            soundcloud::soundcloud_account,
+            soundcloud::soundcloud_library,
+            soundcloud::soundcloud_collection,
+            soundcloud::soundcloud_search,
+            soundcloud::soundcloud_artist,
+            soundcloud::soundcloud_related,
+            soundcloud::soundcloud_recent,
+            soundcloud::soundcloud_stream,
             ytm::ytm_report_play,
             mini_player_open,
             show_main_window,
@@ -194,6 +206,7 @@ pub fn run() {
             app.manage(offline::Offline::new(app.handle(), ytdlp.clone())?);
             app.manage(ytm::Ytm::new(app.handle(), ytdlp)?);
             app.manage(spotify::Spotify::new(app.handle())?);
+            app.manage(soundcloud::SoundCloud::new(app.handle())?);
 
             // yt-dlp im Hintergrund aktuell halten (höchstens einmal am Tag)
             let handle = app.handle().clone();

@@ -15,7 +15,7 @@ use tauri::{
 };
 use tokio::sync::Semaphore;
 
-/// Nur Bilder von YouTube/Google und Spotify laden (kein offener Proxy)
+/// Nur Bilder von YouTube/Google, Spotify und SoundCloud laden (kein offener Proxy)
 const ALLOWED_HOSTS: &[&str] = &[
     "googleusercontent.com",
     "ytimg.com",
@@ -24,6 +24,8 @@ const ALLOWED_HOSTS: &[&str] = &[
     // Spotify
     "scdn.co",
     "spotifycdn.com",
+    // SoundCloud
+    "sndcdn.com",
 ];
 const MAX_PARALLEL: usize = 6;
 const MAX_ATTEMPTS: u32 = 4;

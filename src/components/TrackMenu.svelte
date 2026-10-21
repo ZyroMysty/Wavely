@@ -12,7 +12,7 @@
   const track = $derived(ui.menu?.track);
   const youtube = $derived(track?.source === "youtube");
   /** Offline speichern geht für YouTube- und Spotify-Songs */
-  const downloadable = $derived(track?.source === "youtube" || track?.source === "spotify");
+  const downloadable = $derived(["youtube", "spotify", "soundcloud"].includes(track?.source));
   const loggedIn = $derived(ytm.status === "loggedIn");
 
   // Menü im Fenster halten

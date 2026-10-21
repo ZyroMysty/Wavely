@@ -5,6 +5,7 @@ import { settings } from "./settings.svelte.js";
 import { recordPlay } from "./history.svelte.js";
 import { ytm } from "./ytm.svelte.js";
 import { resolveVideo } from "./spotify.svelte.js";
+import { streamUrl as soundcloudStream, relatedTracks as soundcloudRelated } from "./soundcloud.svelte.js";
 import { offlinePath, allTracks as offlineTracks } from "./offline.svelte.js";
 
 // Ein einziges Audio-Element für alle Quellen (lokal und YouTube Music).
@@ -66,9 +67,9 @@ export function currentTrack() {
   return player.queue[player.index] ?? null;
 }
 
-/** YouTube-Video zum Song: YouTube-Songs direkt, Spotify-Songs über die Zuordnung */
+/** YouTube-Video zum Song: YouTube-Songs direkt, Spotify-/SoundCloud-Songs über die Zuordnung */
 async function videoId(track) {
-  return track.source === "spotify" ? await resolveVideo(track) : track.id;
+  return track.source === "spotify" || track.source === "soundcloud" ? await resolveVideo(track) : track.id;
 }
 
 async function sourceUrl(track) {
@@ -76,6 +77,11 @@ async function sourceUrl(track) {
   // Offline gespeichert: Datei direkt abspielen (auch ohne Internet)
   const saved = offlinePath(track.id);
   if (saved) return convertFileSrc(saved);
+  // SoundCloud: direkt als MP3; nur 30-Sekunden-Ausschnitte laufen über YouTube Music
+  if (track.source === "soundcloud") {
+    const direct = await soundcloudStream(track);
+    if (direct) return direct;
+  }
   // Sonst über den eigenen Stream-Dienst im Rust-Teil (ytstream://<videoId>)
   return convertFileSrc(await videoId(track), "ytstream");
 }
@@ -95,6 +101,7 @@ function shuffled(list) {
 function prefetchUpcoming() {
   const upcoming = player.queue[player.index + 1];
   if (!upcoming || upcoming.source === "local" || offlinePath(upcoming.id)) return;
+  if (upcoming.source === "soundcloud" && !upcoming.snipped) return; // direkte MP3, nichts vorzubereiten
   videoId(upcoming)
     .then((id) => invoke("ytm_prefetch", { id }))
     .catch(() => {});
@@ -212,7 +219,12 @@ async function extendWithAutoplay() {
 
   autoplayPending = true;
   try {
-    const suggestions = seed.source === "local" ? localRadio(seed) : await youtubeRadio(seed);
+    const suggestions =
+      seed.source === "local"
+        ? localRadio(seed)
+        : seed.source === "soundcloud"
+          ? await soundcloudRelated(seed.id).catch(() => youtubeRadio(seed))
+          : await youtubeRadio(seed);
     const known = new Set(player.queue.map((t) => t.id));
     const fresh = suggestions.filter((t) => !known.has(t.id)).slice(0, 20);
     if (fresh.length) {
@@ -310,7 +322,7 @@ audio.addEventListener("playing", () => {
   errorStreak = 0;
   if (pendingHistory) {
     recordPlay(pendingHistory);
-    const video = pendingHistory.source === "spotify" ? pendingHistory.ytId : pendingHistory.source === "youtube" ? pendingHistory.id : null;
+    const video = pendingHistory.source === "youtube" ? pendingHistory.id : (pendingHistory.ytId ?? null);
     if (video && settings.syncYouTubeHistory && ytm.status === "loggedIn") {
       invoke("ytm_report_play", { id: video }).catch((e) => console.warn("YouTube-Verlauf:", e));
     }

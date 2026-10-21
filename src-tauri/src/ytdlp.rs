@@ -93,14 +93,20 @@ impl YtDlp {
         }
     }
 
-    /// Lädt die Audiodatei nach `dir/<video_id>.<ext>` herunter und gibt den Pfad zurück.
+    /// Lädt ein YouTube-Video als Audiodatei nach `dir/<video_id>.<ext>` und gibt den Pfad zurück.
     pub async fn download(&self, video_id: &str, dir: &std::path::Path) -> Result<PathBuf, String> {
-        let template = dir.join(format!("{video_id}.%(ext)s"));
+        let url = format!("https://music.youtube.com/watch?v={video_id}");
+        self.download_url(&url, video_id, dir).await
+    }
+
+    /// Lädt eine beliebige von yt-dlp unterstützte Adresse (z. B. SoundCloud) nach `dir/<name>.<ext>`.
+    pub async fn download_url(&self, url: &str, name: &str, dir: &std::path::Path) -> Result<PathBuf, String> {
+        let template = dir.join(format!("{name}.%(ext)s"));
         let output = self
             .command()
             .args([
                 "-f",
-                "bestaudio[ext=webm]/bestaudio",
+                "bestaudio[ext=webm]/bestaudio/best",
                 "--no-playlist",
                 "--no-warnings",
                 "--no-progress",
@@ -110,7 +116,7 @@ impl YtDlp {
                 "-o",
             ])
             .arg(&template)
-            .arg(format!("https://music.youtube.com/watch?v={video_id}"))
+            .arg(url)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()

@@ -37,6 +37,9 @@ pub struct OfflineTrack {
     /// YouTube-Video, das heruntergeladen wird (bei Spotify-Songs die gefundene Zuordnung)
     #[serde(default)]
     download_id: Option<String>,
+    /// Direkte Adresse für yt-dlp (z. B. SoundCloud-Song)
+    #[serde(default)]
+    download_url: Option<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -70,6 +73,8 @@ pub struct TrackInput {
     source: Option<String>,
     #[serde(default)]
     download_id: Option<String>,
+    #[serde(default)]
+    download_url: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -179,18 +184,28 @@ fn drop_failed(offline: &Offline, id: &str) {
     offline.save(&index);
 }
 
-/// YouTube-Video-ID für den Download (bei Spotify-Songs über die Zuordnung).
-async fn offline_video_id(app: &AppHandle, id: &str) -> Result<String, String> {
+enum Target {
+    /// YouTube-Video (ID)
+    YouTube(String),
+    /// Direkte Adresse für yt-dlp
+    Url(String),
+}
+
+/// Was heruntergeladen wird: YouTube-Video (auch als Ersatz für Spotify/SoundCloud) oder eine Adresse.
+async fn download_target(app: &AppHandle, id: &str) -> Result<Target, String> {
     let track = {
         let offline = app.state::<Offline>();
         let index = offline.index.lock().unwrap();
         index.tracks.get(id).cloned().ok_or("Song wurde entfernt")?
     };
     if let Some(video) = track.download_id {
-        return Ok(video);
+        return Ok(Target::YouTube(video));
     }
-    if track.source.as_deref() != Some("spotify") {
-        return Ok(track.id);
+    if let Some(url) = track.download_url {
+        return Ok(Target::Url(url));
+    }
+    if !matches!(track.source.as_deref(), Some("spotify") | Some("soundcloud")) {
+        return Ok(Target::YouTube(track.id));
     }
     let video = crate::spotify::resolve(
         &app.state::<crate::spotify::Spotify>(),
@@ -206,7 +221,7 @@ async fn offline_video_id(app: &AppHandle, id: &str) -> Result<String, String> {
     if let Some(t) = index.tracks.get_mut(id) {
         t.download_id = Some(video.clone());
     }
-    Ok(video)
+    Ok(Target::YouTube(video))
 }
 
 #[tauri::command]
@@ -240,6 +255,7 @@ pub async fn offline_save(
                     pinned: false,
                     source: t.source.clone(),
                     download_id: t.download_id.clone(),
+                    download_url: t.download_url.clone(),
                 }
             });
             if collection.is_none() {
@@ -285,16 +301,20 @@ pub async fn offline_save(
                 return;
             }
             emit(&app, &id, "downloading", None);
-            // Spotify-Songs: passenden YouTube-Song suchen (falls noch nicht bekannt)
-            let video = match offline_video_id(&app, &id).await {
-                Ok(video) => video,
+            // Spotify-/SoundCloud-Ausschnitt-Songs: passenden YouTube-Song suchen (falls noch nicht bekannt)
+            let target = match download_target(&app, &id).await {
+                Ok(target) => target,
                 Err(e) => {
                     drop_failed(&offline, &id);
                     emit(&app, &id, "error", Some(e));
                     return;
                 }
             };
-            match offline.ytdlp.download(&video, &offline.dir).await {
+            let result = match &target {
+                Target::YouTube(video) => offline.ytdlp.download(video, &offline.dir).await,
+                Target::Url(url) => offline.ytdlp.download_url(url, &format!("sc-{id}"), &offline.dir).await,
+            };
+            match result {
                 Ok(path) => {
                     let mut index = offline.index.lock().unwrap();
                     match index.tracks.get_mut(&id) {

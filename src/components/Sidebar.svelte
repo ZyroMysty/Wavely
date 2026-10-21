@@ -11,6 +11,7 @@
     { id: "local", icon: "folder", label: "Lokale Musik" },
     { id: "youtube", icon: "youtube", label: "YouTube Music" },
     { id: "spotify", icon: "spotify", label: "Spotify" },
+    { id: "soundcloud", icon: "soundcloud", label: "SoundCloud" },
     { id: "offline", icon: "download", label: "Offline" },
   ];
 
@@ -18,6 +19,7 @@
     // Erneuter Klick auf YouTube Music führt zurück zur Bibliothek
     if (id === "youtube" && ui.view === "youtube") ui.ytmHome++;
     if (id === "spotify" && ui.view === "spotify") ui.spHome++;
+    if (id === "soundcloud" && ui.view === "soundcloud") ui.scHome++;
     ui.view = id;
   }
 </script>

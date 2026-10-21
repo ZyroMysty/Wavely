@@ -5,6 +5,8 @@
   import { initYtm } from "./lib/ytm.svelte.js";
   import { initOffline } from "./lib/offline.svelte.js";
   import { initSpotify } from "./lib/spotify.svelte.js";
+  import { initSoundCloud } from "./lib/soundcloud.svelte.js";
+  import SoundCloudView from "./components/SoundCloudView.svelte";
   import SpotifyView from "./components/SpotifyView.svelte";
   import { initBridge } from "./lib/bridge.svelte.js";
   import OfflineView from "./components/OfflineView.svelte";
@@ -32,6 +34,7 @@
     initYtm();
     initOffline();
     initSpotify();
+    initSoundCloud();
     initBridge();
   });
 
@@ -57,6 +60,8 @@
       <SettingsView />
     {:else if ui.view === "spotify"}
       <SpotifyView />
+    {:else if ui.view === "soundcloud"}
+      <SoundCloudView />
     {:else}
       <YouTubeView />
     {/if}

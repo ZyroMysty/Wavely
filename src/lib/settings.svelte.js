@@ -6,7 +6,7 @@ const defaults = {
   /** "system" | "dark" | "light" */
   theme: "dark",
   accent: "#ff4f7b",
-  /** Ansicht beim Start: "local" | "youtube" | "spotify" | "offline" */
+  /** Ansicht beim Start: "local" | "youtube" | "spotify" | "soundcloud" | "offline" */
   startView: "youtube",
   discordEnabled: true,
   /** Was Discord in der Mitgliederliste zeigt: "details" (Songtitel) | "state" (Künstler) | "name" (Wavely) */
