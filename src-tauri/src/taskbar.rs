@@ -7,6 +7,7 @@
 
 use std::{
     cell::RefCell,
+    os::windows::ffi::OsStrExt,
     sync::{
         atomic::{AtomicU32, Ordering},
         OnceLock,
@@ -335,4 +336,28 @@ fn shape_heart_outline(x: f32, y: f32) -> bool {
 #[tauri::command]
 pub fn taskbar_update(app: AppHandle, state: TaskbarState) {
     update(&app, state);
+}
+
+/// Setzt das große Fenster-Icon (ICON_BIG) aus der exe. Tauri setzt nur das kleine Icon; ohne das
+/// große nimmt die Taskleiste ein zwischengespeichertes Ersatzbild.
+pub fn set_big_icon(window: &WebviewWindow) {
+    use windows::{
+        core::PCWSTR,
+        Win32::{
+            Foundation::{LPARAM, WPARAM},
+            UI::{
+                Shell::ExtractIconExW,
+                WindowsAndMessaging::{SendMessageW, ICON_BIG, WM_SETICON},
+            },
+        },
+    };
+    let Ok(hwnd) = window.hwnd() else { return };
+    let Ok(exe) = std::env::current_exe() else { return };
+    let path: Vec<u16> = exe.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+    let mut large = HICON::default();
+    unsafe {
+        if ExtractIconExW(PCWSTR(path.as_ptr()), 0, Some(&mut large), None, 1) > 0 && !large.is_invalid() {
+            SendMessageW(hwnd, WM_SETICON, Some(WPARAM(ICON_BIG as usize)), Some(LPARAM(large.0 as isize)));
+        }
+    }
 }

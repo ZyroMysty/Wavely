@@ -21,6 +21,7 @@ fn main() {
             "ytm_create_playlist",
             "ytm_add_to_playlist",
             "ytm_history",
+            "ytm_report_play",
             "mini_player_open",
             "show_main_window",
             "taskbar_update",

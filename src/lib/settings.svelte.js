@@ -13,6 +13,8 @@ const defaults = {
   discordDisplay: "details",
   /** Mini-Player immer im Vordergrund */
   miniPinned: true,
+  /** In Wavely gehörte YouTube-Songs auch im YouTube-Music-Verlauf speichern */
+  syncYouTubeHistory: true,
   /** Zuletzt benutzte Größe des Mini-Players */
   miniWidth: 360,
   miniHeight: 104,

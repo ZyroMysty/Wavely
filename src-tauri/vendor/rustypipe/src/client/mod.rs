@@ -1583,6 +1583,13 @@ impl RustyPipe {
         }
     }
 
+    /// Wavely-Patch: gespeichertes Login-Cookie und Konto-Index (X-Goog-AuthUser) für eigene,
+    /// angemeldete Anfragen außerhalb der InnerTube-API (z. B. Wiedergabe-Meldung an den Verlauf).
+    pub fn user_auth_cookie_header(&self) -> Option<(String, Option<String>)> {
+        let cookie = self.user_auth_cookie().ok()?;
+        Some((cookie.cookie, cookie.session_index))
+    }
+
     /// Get a copy of the authentication cookie from the cache
     fn user_auth_cookie(&self) -> Result<AuthCookie, Error> {
         self.inner

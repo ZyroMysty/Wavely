@@ -642,3 +642,60 @@ pub async fn ytm_history(ytm: State<'_, Ytm>) -> Result<Vec<YtHistoryEntry>, Str
         })
         .collect())
 }
+
+/// Meldet einen gehörten Song an YouTube, damit er im YouTube-Music-Verlauf erscheint.
+/// So macht es auch die YouTube-Music-Webseite: beim Abspielen wird die „videostatsPlaybackUrl“
+/// aus der Player-Antwort mit dem Login aufgerufen.
+#[tauri::command]
+pub async fn ytm_report_play(ytm: State<'_, Ytm>, id: String) -> Result<(), String> {
+    use rand::Rng;
+    use sha1::{Digest, Sha1};
+
+    // Zufällige Wiedergabe-ID (cpn), 16 Zeichen – vor dem ersten await erzeugen (Zufallsgenerator ist nicht Send)
+    let cpn: String = {
+        const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+        let mut rng = rand::rng();
+        (0..16).map(|_| ALPHABET[rng.random_range(0..ALPHABET.len())] as char).collect()
+    };
+
+    let player = yt_request(&ytm, "player", serde_json::json!({ "videoId": id })).await?;
+    let base = player["playbackTracking"]["videostatsPlaybackUrl"]["baseUrl"]
+        .as_str()
+        .ok_or("YouTube hat keinen Verlaufs-Link geliefert")?;
+    let (cookie, session_index) = ytm.rp.user_auth_cookie_header().ok_or("Nicht angemeldet")?;
+
+    // Anmelde-Header wie im Browser: SAPISIDHASH <Zeit>_<SHA1(Zeit SAPISID Origin)>
+    const ORIGIN: &str = "https://music.youtube.com";
+    let sapisid = cookie
+        .split(';')
+        .map(str::trim)
+        .find_map(|c| c.strip_prefix("SAPISID=").or_else(|| c.strip_prefix("__Secure-3PAPISID=")))
+        .ok_or("Login-Cookie unvollständig")?;
+    let time = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(err)?
+        .as_secs();
+    let hash = Sha1::digest(format!("{time} {sapisid} {ORIGIN}").as_bytes());
+    let hash: String = hash.iter().map(|b| format!("{b:02x}")).collect();
+
+    let response = ytm
+        .http
+        .get(format!("{base}&ver=2&c=WEB_REMIX&cpn={cpn}"))
+        .header("Cookie", cookie.as_str())
+        .header("Authorization", format!("SAPISIDHASH {time}_{hash}"))
+        .header("Origin", ORIGIN)
+        .header("X-Origin", ORIGIN)
+        .header("X-Goog-AuthUser", session_index.as_deref().unwrap_or("0"))
+        .header(
+            "User-Agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+        )
+        .send()
+        .await
+        .map_err(err)?;
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        Err(format!("YouTube antwortete mit {}", response.status()))
+    }
+}

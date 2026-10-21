@@ -104,6 +104,10 @@
     </div>
     {#if ytm.status === "loggedIn"}
       <AccountMenu />
+    {:else if ytm.status === "loggedOut"}
+      <button class="primary" onclick={login} disabled={ytm.loggingIn}>
+        {ytm.loggingIn ? "Anmeldefenster offen…" : "Anmelden"}
+      </button>
     {/if}
   </header>
 

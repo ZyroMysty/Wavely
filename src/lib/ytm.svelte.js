@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { ui } from "./ui.svelte.js";
 
 export const ytm = $state({
   status: "checking", // "checking" | "loggedOut" | "loggedIn"
@@ -59,6 +60,7 @@ export async function logout() {
   ytm.library = null;
   ytm.account = null;
   ytm.liked = {};
+  ui.ytmHome++;
 }
 
 export async function loadLibrary() {

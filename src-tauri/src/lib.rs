@@ -87,7 +87,10 @@ async fn mini_player_open(app: AppHandle, pinned: bool, width: Option<f64>, heig
         .decorations(false)
         .always_on_top(pinned)
         .build()
-        .map(|_| ())
+        .map(|_window| {
+            #[cfg(windows)]
+            taskbar::set_big_icon(&_window);
+        })
         .map_err(|e| e.to_string())
 }
 
@@ -125,6 +128,7 @@ pub fn run() {
             ytm::ytm_create_playlist,
             ytm::ytm_add_to_playlist,
             ytm::ytm_history,
+            ytm::ytm_report_play,
             mini_player_open,
             show_main_window,
             #[cfg(windows)]
@@ -170,6 +174,7 @@ pub fn run() {
         .setup(|app| {
             #[cfg(windows)]
             if let Some(main) = app.get_webview_window("main") {
+                taskbar::set_big_icon(&main);
                 taskbar::init(app.handle(), &main);
             }
             app.manage(artwork::Artwork::new(app.handle())?);

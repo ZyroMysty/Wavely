@@ -225,8 +225,8 @@
     <section id="settings-youtube">
       <h2>YouTube Music</h2>
       <div class="card">
-        <div class="row">
-          {#if ytm.status === "loggedIn"}
+        {#if ytm.status === "loggedIn"}
+          <div class="row">
             <div class="account">
               <div class="avatar">
                 {#if ytm.account?.photoUrl}
@@ -241,14 +241,23 @@
               </div>
             </div>
             <button class="secondary" onclick={logout}><Icon name="logout" size={18} /> Abmelden</button>
-          {:else}
+          </div>
+          <div class="row">
+            <div class="label">
+              <strong>Verlauf mit YouTube Music abgleichen</strong>
+              <small>In Wavely gehörte Songs erscheinen auch in deinem YouTube-Music-Verlauf</small>
+            </div>
+            {@render toggle(settings.syncYouTubeHistory, () => updateSetting("syncYouTubeHistory", !settings.syncYouTubeHistory), "Verlauf abgleichen")}
+          </div>
+        {:else}
+          <div class="row">
             <div class="label">
               <strong>Nicht angemeldet</strong>
               <small>Anmelden, um Playlists, Likes und deine Bibliothek zu sehen</small>
             </div>
             <button class="primary" onclick={login} disabled={ytm.loggingIn}>Mit Google anmelden</button>
-          {/if}
-        </div>
+          </div>
+        {/if}
       </div>
     </section>
 

@@ -3,6 +3,7 @@ import { coverFor } from "./covers.js";
 import { library } from "./library.svelte.js";
 import { settings } from "./settings.svelte.js";
 import { recordPlay } from "./history.svelte.js";
+import { ytm } from "./ytm.svelte.js";
 import { offlinePath, allTracks as offlineTracks } from "./offline.svelte.js";
 
 // Ein einziges Audio-Element für alle Quellen (lokal und YouTube Music).
@@ -290,6 +291,9 @@ audio.addEventListener("playing", () => {
   errorStreak = 0;
   if (pendingHistory) {
     recordPlay(pendingHistory);
+    if (pendingHistory.source === "youtube" && settings.syncYouTubeHistory && ytm.status === "loggedIn") {
+      invoke("ytm_report_play", { id: pendingHistory.id }).catch((e) => console.warn("YouTube-Verlauf:", e));
+    }
     pendingHistory = null;
   }
 });
