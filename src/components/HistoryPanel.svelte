@@ -4,6 +4,7 @@
   import { openTrackMenu } from "../lib/ui.svelte.js";
   import { invoke } from "@tauri-apps/api/core";
   import { ytm } from "../lib/ytm.svelte.js";
+  import { spotify, recentlyPlayed } from "../lib/spotify.svelte.js";
   import Cover from "./Cover.svelte";
   import Icon from "./Icon.svelte";
 
@@ -34,9 +35,25 @@
     }
   }
 
+  /** Spotify: „Zuletzt gehört“ */
+  let sp = $state({ loading: false, error: null, tracks: null });
+
+  async function loadSpotify() {
+    sp.loading = true;
+    sp.error = null;
+    try {
+      sp.tracks = await recentlyPlayed();
+    } catch (e) {
+      sp.error = String(e);
+    } finally {
+      sp.loading = false;
+    }
+  }
+
   function selectSource(value) {
     source = value;
     if (value === "youtube" && !yt.groups && !yt.loading) loadYouTube();
+    if (value === "spotify" && !sp.tracks && !sp.loading) loadSpotify();
   }
 
   const time = (ts) => new Date(ts).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
@@ -61,21 +78,44 @@
 {/snippet}
 
 <div class="history">
-  {#if ytm.status === "loggedIn"}
+  {#if ytm.status === "loggedIn" || spotify.status === "loggedIn"}
     <div class="switch-row">
       <div class="segmented">
         <button class:active={source === "wavely"} onclick={() => selectSource("wavely")}>Wavely</button>
-        <button class:active={source === "youtube"} onclick={() => selectSource("youtube")}>YouTube</button>
+        {#if ytm.status === "loggedIn"}
+          <button class:active={source === "youtube"} onclick={() => selectSource("youtube")}>YouTube</button>
+        {/if}
+        {#if spotify.status === "loggedIn"}
+          <button class:active={source === "spotify"} onclick={() => selectSource("spotify")}>Spotify</button>
+        {/if}
       </div>
-      {#if source === "youtube"}
-        <button class="refresh" title="Neu laden" onclick={loadYouTube} disabled={yt.loading}>
+      {#if source !== "wavely"}
+        <button
+          class="refresh"
+          title="Neu laden"
+          onclick={source === "youtube" ? loadYouTube : loadSpotify}
+          disabled={yt.loading || sp.loading}
+        >
           <Icon name="refresh" size={16} />
         </button>
       {/if}
     </div>
   {/if}
 
-  {#if source === "youtube"}
+  {#if source === "spotify"}
+    {#if sp.loading && !sp.tracks}
+      <p class="empty">Spotify-Verlauf wird geladen…</p>
+    {:else if sp.error}
+      <p class="empty error">{sp.error}</p>
+    {:else if sp.tracks && !sp.tracks.length}
+      <p class="empty">Bei Spotify wurde zuletzt nichts gehört.</p>
+    {:else if sp.tracks}
+      <h3>Zuletzt bei Spotify gehört</h3>
+      {#each sp.tracks as track, i (track.id + ":" + i)}
+        {@render trackRow(track, null, null)}
+      {/each}
+    {/if}
+  {:else if source === "youtube"}
     {#if yt.loading && !yt.groups}
       <p class="empty">YouTube-Verlauf wird geladen…</p>
     {:else if yt.error}
@@ -139,7 +179,7 @@
     background: var(--surface-2);
   }
   .segmented button {
-    padding: 5px 14px;
+    padding: 5px 11px;
     border-radius: 999px;
     color: var(--text-dim);
     font-weight: 600;

@@ -13,7 +13,7 @@
       class="link"
       onclick={(e) => {
         e.stopPropagation();
-        openArtist(artist);
+        openArtist(artist, track.source);
       }}
       ondblclick={(e) => e.stopPropagation()}>{artist.name}</button
     >{:else}{artist.name}{/if}{/each}

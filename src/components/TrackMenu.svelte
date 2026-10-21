@@ -11,6 +11,8 @@
 
   const track = $derived(ui.menu?.track);
   const youtube = $derived(track?.source === "youtube");
+  /** Offline speichern geht für YouTube- und Spotify-Songs */
+  const downloadable = $derived(track?.source === "youtube" || track?.source === "spotify");
   const loggedIn = $derived(ytm.status === "loggedIn");
 
   // Menü im Fenster halten
@@ -95,7 +97,7 @@
         </button>
       {/if}
 
-      {#if youtube}
+      {#if downloadable}
         <hr />
         {#if isOffline(track.id)}
           <button role="menuitem" onclick={() => run((t) => removeTrack(t.id))}>

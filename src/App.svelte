@@ -4,6 +4,8 @@
   import { togglePlay } from "./lib/player.svelte.js";
   import { initYtm } from "./lib/ytm.svelte.js";
   import { initOffline } from "./lib/offline.svelte.js";
+  import { initSpotify } from "./lib/spotify.svelte.js";
+  import SpotifyView from "./components/SpotifyView.svelte";
   import { initBridge } from "./lib/bridge.svelte.js";
   import OfflineView from "./components/OfflineView.svelte";
   import Sidebar from "./components/Sidebar.svelte";
@@ -29,6 +31,7 @@
     refreshLibrary();
     initYtm();
     initOffline();
+    initSpotify();
     initBridge();
   });
 
@@ -52,6 +55,8 @@
       <OfflineView />
     {:else if ui.view === "settings"}
       <SettingsView />
+    {:else if ui.view === "spotify"}
+      <SpotifyView />
     {:else}
       <YouTubeView />
     {/if}

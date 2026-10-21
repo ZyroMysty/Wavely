@@ -3,6 +3,7 @@ mod library;
 mod lyrics;
 mod offline;
 mod presence;
+mod spotify;
 #[cfg(windows)]
 mod taskbar;
 mod ytdlp;
@@ -129,6 +130,16 @@ pub fn run() {
             ytm::ytm_add_to_playlist,
             ytm::ytm_history,
             ytm::ytm_artist,
+            spotify::spotify_status,
+            spotify::spotify_login,
+            spotify::spotify_logout,
+            spotify::spotify_account,
+            spotify::spotify_library,
+            spotify::spotify_collection,
+            spotify::spotify_search,
+            spotify::spotify_artist,
+            spotify::spotify_recent,
+            spotify::spotify_resolve,
             ytm::ytm_report_play,
             mini_player_open,
             show_main_window,
@@ -182,6 +193,7 @@ pub fn run() {
             let ytdlp = ytdlp::YtDlp::init(app.handle())?;
             app.manage(offline::Offline::new(app.handle(), ytdlp.clone())?);
             app.manage(ytm::Ytm::new(app.handle(), ytdlp)?);
+            app.manage(spotify::Spotify::new(app.handle())?);
 
             // yt-dlp im Hintergrund aktuell halten (höchstens einmal am Tag)
             let handle = app.handle().clone();

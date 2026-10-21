@@ -31,6 +31,12 @@ pub struct OfflineTrack {
     /// Einzeln gespeichert (nicht nur als Teil einer Playlist)
     #[serde(default)]
     pinned: bool,
+    /// "youtube" (Standard) oder "spotify"
+    #[serde(default)]
+    source: Option<String>,
+    /// YouTube-Video, das heruntergeladen wird (bei Spotify-Songs die gefundene Zuordnung)
+    #[serde(default)]
+    download_id: Option<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -60,6 +66,10 @@ pub struct TrackInput {
     duration: f64,
     artwork_url: Option<String>,
     url: Option<String>,
+    #[serde(default)]
+    source: Option<String>,
+    #[serde(default)]
+    download_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -139,7 +149,9 @@ impl Offline {
             .collect();
         for id in orphaned {
             if let Some(track) = index.tracks.remove(&id) {
-                if !track.path.is_empty() {
+                // Datei nur löschen, wenn kein anderer Song sie nutzt (Spotify-Songs können denselben YouTube-Song haben)
+                let shared = index.tracks.values().any(|t| t.path == track.path);
+                if !track.path.is_empty() && !shared {
                     let _ = std::fs::remove_file(&track.path);
                 }
             }
@@ -155,6 +167,46 @@ pub struct OfflineView {
 
 fn emit(app: &AppHandle, id: &str, state: &'static str, error: Option<String>) {
     let _ = app.emit("offline-progress", Progress { id: id.to_string(), state, error });
+}
+
+/// Entfernt einen Song, dessen Download fehlgeschlagen ist.
+fn drop_failed(offline: &Offline, id: &str) {
+    let mut index = offline.index.lock().unwrap();
+    index.tracks.remove(id);
+    for c in &mut index.collections {
+        c.track_ids.retain(|t| t != id);
+    }
+    offline.save(&index);
+}
+
+/// YouTube-Video-ID für den Download (bei Spotify-Songs über die Zuordnung).
+async fn offline_video_id(app: &AppHandle, id: &str) -> Result<String, String> {
+    let track = {
+        let offline = app.state::<Offline>();
+        let index = offline.index.lock().unwrap();
+        index.tracks.get(id).cloned().ok_or("Song wurde entfernt")?
+    };
+    if let Some(video) = track.download_id {
+        return Ok(video);
+    }
+    if track.source.as_deref() != Some("spotify") {
+        return Ok(track.id);
+    }
+    let video = crate::spotify::resolve(
+        &app.state::<crate::spotify::Spotify>(),
+        &app.state::<crate::ytm::Ytm>(),
+        track.id.clone(),
+        track.title.clone(),
+        track.artist.clone(),
+        track.duration,
+    )
+    .await?;
+    let offline = app.state::<Offline>();
+    let mut index = offline.index.lock().unwrap();
+    if let Some(t) = index.tracks.get_mut(id) {
+        t.download_id = Some(video.clone());
+    }
+    Ok(video)
 }
 
 #[tauri::command]
@@ -186,6 +238,8 @@ pub async fn offline_save(
                     url: t.url.clone(),
                     path: String::new(),
                     pinned: false,
+                    source: t.source.clone(),
+                    download_id: t.download_id.clone(),
                 }
             });
             if collection.is_none() {
@@ -231,7 +285,16 @@ pub async fn offline_save(
                 return;
             }
             emit(&app, &id, "downloading", None);
-            match offline.ytdlp.download(&id, &offline.dir).await {
+            // Spotify-Songs: passenden YouTube-Song suchen (falls noch nicht bekannt)
+            let video = match offline_video_id(&app, &id).await {
+                Ok(video) => video,
+                Err(e) => {
+                    drop_failed(&offline, &id);
+                    emit(&app, &id, "error", Some(e));
+                    return;
+                }
+            };
+            match offline.ytdlp.download(&video, &offline.dir).await {
                 Ok(path) => {
                     let mut index = offline.index.lock().unwrap();
                     match index.tracks.get_mut(&id) {
@@ -245,13 +308,7 @@ pub async fn offline_save(
                     emit(&app, &id, "done", None);
                 }
                 Err(e) => {
-                    let mut index = offline.index.lock().unwrap();
-                    index.tracks.remove(&id);
-                    for c in &mut index.collections {
-                        c.track_ids.retain(|t| t != &id);
-                    }
-                    offline.save(&index);
-                    drop(index);
+                    drop_failed(&offline, &id);
                     emit(&app, &id, "error", Some(e));
                 }
             }

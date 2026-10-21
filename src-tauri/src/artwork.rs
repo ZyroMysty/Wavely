@@ -1,4 +1,4 @@
-//! Cover-Bilder von YouTube über Rust laden und auf der Festplatte zwischenspeichern.
+//! Cover-Bilder (YouTube, Spotify) über Rust laden und auf der Festplatte zwischenspeichern.
 //! Googles Bildserver sperren das Fenster mit 429, wenn viele Bilder gleichzeitig laden.
 
 use std::{
@@ -15,8 +15,16 @@ use tauri::{
 };
 use tokio::sync::Semaphore;
 
-/// Nur Bilder von YouTube/Google laden (kein offener Proxy)
-const ALLOWED_HOSTS: &[&str] = &["googleusercontent.com", "ytimg.com", "ggpht.com", "gstatic.com"];
+/// Nur Bilder von YouTube/Google und Spotify laden (kein offener Proxy)
+const ALLOWED_HOSTS: &[&str] = &[
+    "googleusercontent.com",
+    "ytimg.com",
+    "ggpht.com",
+    "gstatic.com",
+    // Spotify
+    "scdn.co",
+    "spotifycdn.com",
+];
 const MAX_PARALLEL: usize = 6;
 const MAX_ATTEMPTS: u32 = 4;
 

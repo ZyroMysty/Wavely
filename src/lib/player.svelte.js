@@ -4,6 +4,7 @@ import { library } from "./library.svelte.js";
 import { settings } from "./settings.svelte.js";
 import { recordPlay } from "./history.svelte.js";
 import { ytm } from "./ytm.svelte.js";
+import { resolveVideo } from "./spotify.svelte.js";
 import { offlinePath, allTracks as offlineTracks } from "./offline.svelte.js";
 
 // Ein einziges Audio-Element für alle Quellen (lokal und YouTube Music).
@@ -65,14 +66,22 @@ export function currentTrack() {
   return player.queue[player.index] ?? null;
 }
 
-function sourceUrl(track) {
+/** YouTube-Video zum Song: YouTube-Songs direkt, Spotify-Songs über die Zuordnung */
+async function videoId(track) {
+  return track.source === "spotify" ? await resolveVideo(track) : track.id;
+}
+
+async function sourceUrl(track) {
   if (track.source === "local") return convertFileSrc(track.path);
   // Offline gespeichert: Datei direkt abspielen (auch ohne Internet)
   const saved = offlinePath(track.id);
   if (saved) return convertFileSrc(saved);
   // Sonst über den eigenen Stream-Dienst im Rust-Teil (ytstream://<videoId>)
-  return convertFileSrc(track.id, "ytstream");
+  return convertFileSrc(await videoId(track), "ytstream");
 }
+
+/** Verhindert, dass ein langsam aufgelöster Song einen später gewählten überschreibt */
+let loadToken = 0;
 
 function shuffled(list) {
   const a = [...list];
@@ -85,9 +94,10 @@ function shuffled(list) {
 
 function prefetchUpcoming() {
   const upcoming = player.queue[player.index + 1];
-  if (upcoming?.source === "youtube" && !offlinePath(upcoming.id)) {
-    invoke("ytm_prefetch", { id: upcoming.id }).catch(() => {});
-  }
+  if (!upcoming || upcoming.source === "local" || offlinePath(upcoming.id)) return;
+  videoId(upcoming)
+    .then((id) => invoke("ytm_prefetch", { id }))
+    .catch(() => {});
 }
 
 function load(index) {
@@ -102,11 +112,20 @@ function load(index) {
   // Erst in den Verlauf, wenn der Song wirklich läuft (siehe „playing“)
   pendingHistory = track;
 
-  audio.src = sourceUrl(track);
-  audio.play().catch((e) => console.error("Wiedergabe fehlgeschlagen:", e));
-
-  prefetchUpcoming();
-  extendWithAutoplay();
+  const token = ++loadToken;
+  sourceUrl(track)
+    .then((src) => {
+      if (token !== loadToken) return;
+      audio.src = src;
+      audio.play().catch((e) => console.error("Wiedergabe fehlgeschlagen:", e));
+      prefetchUpcoming();
+      extendWithAutoplay();
+    })
+    .catch((e) => {
+      if (token !== loadToken) return;
+      player.loading = false;
+      player.error = `„${track.title}“ konnte nicht gefunden werden: ${e}`;
+    });
 }
 
 // --- Warteschlange -------------------------------------------------------
@@ -160,7 +179,7 @@ let autoplayPending = false;
 
 async function youtubeRadio(seed) {
   try {
-    const tracks = await invoke("ytm_radio", { id: seed.id });
+    const tracks = await invoke("ytm_radio", { id: await videoId(seed) });
     return tracks.map((t) => ({ ...t, source: "youtube" }));
   } catch {
     // Kein Internet: zufällige Offline-Songs
@@ -193,7 +212,7 @@ async function extendWithAutoplay() {
 
   autoplayPending = true;
   try {
-    const suggestions = seed.source === "youtube" ? await youtubeRadio(seed) : localRadio(seed);
+    const suggestions = seed.source === "local" ? localRadio(seed) : await youtubeRadio(seed);
     const known = new Set(player.queue.map((t) => t.id));
     const fresh = suggestions.filter((t) => !known.has(t.id)).slice(0, 20);
     if (fresh.length) {
@@ -291,8 +310,9 @@ audio.addEventListener("playing", () => {
   errorStreak = 0;
   if (pendingHistory) {
     recordPlay(pendingHistory);
-    if (pendingHistory.source === "youtube" && settings.syncYouTubeHistory && ytm.status === "loggedIn") {
-      invoke("ytm_report_play", { id: pendingHistory.id }).catch((e) => console.warn("YouTube-Verlauf:", e));
+    const video = pendingHistory.source === "spotify" ? pendingHistory.ytId : pendingHistory.source === "youtube" ? pendingHistory.id : null;
+    if (video && settings.syncYouTubeHistory && ytm.status === "loggedIn") {
+      invoke("ytm_report_play", { id: video }).catch((e) => console.warn("YouTube-Verlauf:", e));
     }
     pendingHistory = null;
   }

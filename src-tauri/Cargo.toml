@@ -1,6 +1,6 @@
 [package]
 name = "wavely"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2021"
 
 [lib]
@@ -24,6 +24,7 @@ reqwest = "0.12"
 percent-encoding = "2"
 sha1 = "0.10"
 rand = "0.9"
+sha2 = "0.10"
 
 # Kleine Release-Binary
 [profile.release]

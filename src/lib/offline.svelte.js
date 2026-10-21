@@ -11,7 +11,7 @@ export const offline = $state({
   error: null,
 });
 
-const asTrack = (t) => ({ ...t, source: "youtube" });
+const asTrack = (t) => ({ ...t, source: t.source ?? "youtube", ytId: t.downloadId ?? undefined });
 
 async function refresh() {
   const view = await invoke("offline_list");
@@ -54,6 +54,8 @@ const trackInput = (t) => ({
   duration: t.duration || 0,
   artworkUrl: t.artworkUrl ?? null,
   url: t.url ?? null,
+  source: t.source ?? "youtube",
+  downloadId: t.source === "spotify" ? (t.ytId ?? null) : null,
 });
 
 export async function saveCollection(info, tracks) {

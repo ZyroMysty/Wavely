@@ -18,7 +18,8 @@ Gebaut mit [Tauri 2](https://tauri.app) (Rust) und [Svelte 5](https://svelte.dev
 - Buttons in der Taskleisten-Vorschau (ZurÃ¼ck, Play/Pause, Weiter, GefÃ¤llt mir)
 - Warteschlange, Autoplay mit passenden Songs, synchronisierte Liedtexte (LRCLIB)
 - Offline-Modus: YouTube-Songs und Playlists herunterladen und ohne Internet abspielen
-- Geplant: Spotify
+- Spotify: Anmeldung, Lieblingssongs, Playlists, Alben, Suche, Künstler, Verlauf – abgespielt über passende YouTube-Music-Songs (kein Premium nötig), auch offline speicherbar
+- Geplant: SoundCloud
 
 ## Aufbau
 

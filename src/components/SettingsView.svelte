@@ -6,6 +6,7 @@
   import { player, toggleAutoplay, sendPresence } from "../lib/player.svelte.js";
   import { library, addFolder, removeFolder } from "../lib/library.svelte.js";
   import { ytm, login, logout } from "../lib/ytm.svelte.js";
+  import { spotify, login as spotifyLogin, logout as spotifyLogout } from "../lib/spotify.svelte.js";
   import { offlineStats, openOfflineFolder, clearOffline } from "../lib/offline.svelte.js";
   import { artworkSrc } from "../lib/artwork.js";
   import Icon from "./Icon.svelte";
@@ -21,6 +22,7 @@
     { id: "discord", label: "Discord" },
     { id: "library", label: "Bibliothek" },
     { id: "youtube", label: "YouTube Music" },
+    { id: "spotify", label: "Spotify" },
     { id: "offline", label: "Offline" },
     { id: "about", label: "Über Wavely" },
   ];
@@ -158,6 +160,7 @@
           </div>
           <select value={settings.startView} onchange={(e) => updateSetting("startView", e.currentTarget.value)}>
             <option value="youtube">YouTube Music</option>
+            <option value="spotify">Spotify</option>
             <option value="local">Lokale Musik</option>
             <option value="offline">Offline</option>
           </select>
@@ -258,6 +261,37 @@
             <button class="primary" onclick={login} disabled={ytm.loggingIn}>Mit Google anmelden</button>
           </div>
         {/if}
+      </div>
+    </section>
+
+    <!-- Spotify -->
+    <section id="settings-spotify">
+      <h2>Spotify</h2>
+      <div class="card">
+        <div class="row">
+          {#if spotify.status === "loggedIn"}
+            <div class="account">
+              <div class="avatar">
+                {#if spotify.account?.photoUrl}
+                  <img src={artworkSrc(spotify.account.photoUrl)} alt="" />
+                {:else}
+                  {(spotify.account?.name ?? "S").charAt(0)}
+                {/if}
+              </div>
+              <div class="label">
+                <strong>{spotify.account?.name ?? "Angemeldet"}</strong>
+                <small>Spotify {spotify.account?.product === "premium" ? "Premium" : "Free"} · abgespielt über YouTube Music</small>
+              </div>
+            </div>
+            <button class="secondary" onclick={spotifyLogout}><Icon name="logout" size={18} /> Abmelden</button>
+          {:else}
+            <div class="label">
+              <strong>Nicht angemeldet</strong>
+              <small>Spotify-Playlists, Lieblingssongs und Alben in Wavely nutzen</small>
+            </div>
+            <button class="primary" onclick={spotifyLogin} disabled={spotify.loggingIn}>Mit Spotify anmelden</button>
+          {/if}
+        </div>
       </div>
     </section>
 

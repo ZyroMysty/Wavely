@@ -40,9 +40,9 @@
         <span class="text">
           <strong>{track.title}</strong>
           <small>
-            {#if track.source === "youtube" && isOffline(track.id)}
+            {#if track.source !== "local" && isOffline(track.id)}
               <span class="saved" title="Offline gespeichert"><Icon name="downloaded" size={13} /></span>
-            {:else if track.source === "youtube" && offline.pending[track.id]}
+            {:else if track.source !== "local" && offline.pending[track.id]}
               <span class="saving" title="Wird gespeichert"><Icon name="download" size={13} /></span>
             {/if}
             <ArtistLinks {track} />

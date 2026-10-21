@@ -23,6 +23,10 @@ export const ui = $state({
   ytmHome: 0,
   /** Seite, die YouTube Music öffnen soll: { type: "artist", id } oder { type: "collection", kind, id, title } */
   ytmNav: null,
+  /** Dasselbe für Spotify */
+  spNav: null,
+  /** Wird erhöht, wenn Spotify zur Startseite zurück soll */
+  spHome: 0,
   /** Dialog „Neue Playlist“: { tracks } oder null */
   newPlaylist: null,
   /** Kurzer Hinweis unten: { text, error } oder null */
@@ -52,12 +56,18 @@ export function showToast(text, error = false) {
   toastTimer = setTimeout(() => (ui.toast = null), error ? 5000 : 2500);
 }
 
-/** Album oder Künstler in YouTube Music öffnen (von jeder Ansicht aus) */
-export function openYtm(target) {
-  ui.view = "youtube";
-  ui.ytmNav = target;
+/** Album oder Künstler öffnen (von jeder Ansicht aus) – bei Spotify-Songs in Spotify, sonst YouTube Music */
+export function openIn(source, target) {
+  if (source === "spotify") {
+    ui.view = "spotify";
+    ui.spNav = target;
+  } else {
+    ui.view = "youtube";
+    ui.ytmNav = target;
+  }
 }
 
-export const openArtist = (artist) => artist?.id && openYtm({ type: "artist", id: artist.id, title: artist.name });
+export const openArtist = (artist, source = "youtube") =>
+  artist?.id && openIn(source, { type: "artist", id: artist.id, title: artist.name });
 export const openAlbum = (track) =>
-  track?.albumId && openYtm({ type: "collection", kind: "album", id: track.albumId, title: track.album });
+  track?.albumId && openIn(track.source, { type: "collection", kind: "album", id: track.albumId, title: track.album });

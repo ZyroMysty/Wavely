@@ -89,7 +89,8 @@ impl Presence {
         }
 
         if let Some(url) = &track.url {
-            activity = activity.buttons(vec![Button::new("Auf YouTube Music anhören", url)]);
+            let label = if url.contains("spotify.com") { "Auf Spotify anhören" } else { "Auf YouTube Music anhören" };
+            activity = activity.buttons(vec![Button::new(label, url)]);
         }
 
         let Some(client) = self.client() else { return };

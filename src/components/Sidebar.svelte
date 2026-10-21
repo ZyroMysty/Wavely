@@ -10,12 +10,14 @@
   const items = [
     { id: "local", icon: "folder", label: "Lokale Musik" },
     { id: "youtube", icon: "youtube", label: "YouTube Music" },
+    { id: "spotify", icon: "spotify", label: "Spotify" },
     { id: "offline", icon: "download", label: "Offline" },
   ];
 
   function open(id) {
     // Erneuter Klick auf YouTube Music führt zurück zur Bibliothek
     if (id === "youtube" && ui.view === "youtube") ui.ytmHome++;
+    if (id === "spotify" && ui.view === "spotify") ui.spHome++;
     ui.view = id;
   }
 </script>
