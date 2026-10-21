@@ -1,7 +1,8 @@
 <script>
   import { player, playList, currentTrack } from "../lib/player.svelte.js";
   import { formatTime } from "../lib/format.js";
-  import { openTrackMenu } from "../lib/ui.svelte.js";
+  import { openTrackMenu, openAlbum } from "../lib/ui.svelte.js";
+  import ArtistLinks from "./ArtistLinks.svelte";
   import { offline, isOffline } from "../lib/offline.svelte.js";
   import Cover from "./Cover.svelte";
   import Icon from "./Icon.svelte";
@@ -44,11 +45,24 @@
             {:else if track.source === "youtube" && offline.pending[track.id]}
               <span class="saving" title="Wird gespeichert"><Icon name="download" size={13} /></span>
             {/if}
-            {track.artist ?? "Unbekannter Künstler"}
+            <ArtistLinks {track} />
           </small>
         </span>
       </span>
-      <span class="dim ellipsis">{track.album ?? ""}</span>
+      <span class="dim ellipsis">
+        {#if track.albumId}
+          <button
+            class="link"
+            onclick={(e) => {
+              e.stopPropagation();
+              openAlbum(track);
+            }}
+            ondblclick={(e) => e.stopPropagation()}>{track.album}</button
+          >
+        {:else}
+          {track.album ?? ""}
+        {/if}
+      </span>
       <span class="dim right">{track.duration ? formatTime(track.duration) : ""}</span>
     </div>
   {/each}
@@ -137,6 +151,18 @@
   }
   .dim {
     color: var(--text-dim);
+  }
+  .link {
+    color: inherit;
+    font: inherit;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .link:hover {
+    color: var(--text);
+    text-decoration: underline;
   }
   .right {
     text-align: right;

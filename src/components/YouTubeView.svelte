@@ -1,5 +1,6 @@
 <script>
-  import { ytm, login, loadLibrary, fetchCollection, search } from "../lib/ytm.svelte.js";
+  import { untrack } from "svelte";
+  import { ytm, login, loadLibrary, fetchCollection, fetchArtist, search } from "../lib/ytm.svelte.js";
   import { ui } from "../lib/ui.svelte.js";
   import AccountMenu from "./AccountMenu.svelte";
   import { player, playList, toggleShuffle } from "../lib/player.svelte.js";
@@ -9,18 +10,42 @@
   import TrackList from "./TrackList.svelte";
   import Icon from "./Icon.svelte";
 
-  // Navigation innerhalb von YouTube Music
-  let page = $state({ type: "home" }); // home | collection | search
+  import ArtistView from "./ArtistView.svelte";
+
+  // Navigation innerhalb von YouTube Music; jede Seite trägt ihren Inhalt mit,
+  // damit „Zurück“ die vorige Seite genau so wiederherstellt.
+  // home | collection { collection } | search { results } | artist { artist }
+  let page = $state({ type: "home" });
   let history = [];
   let query = $state("");
   let loading = $state(false);
   let error = $state(null);
-  let collection = $state(null);
-  let results = $state(null);
+  const collection = $derived(page.collection ?? null);
+  const results = $derived(page.results ?? null);
 
   function go(next) {
     history.push(page);
     page = next;
+  }
+
+  // Album/Künstler von außerhalb öffnen (Songliste, Player-Leiste, Verlauf …)
+  $effect(() => {
+    const target = ui.ytmNav;
+    if (!target) return;
+    untrack(() => {
+      ui.ytmNav = null;
+      if (target.type === "artist") openArtistPage(target);
+      else openCollection(target);
+    });
+  });
+
+  function openArtistPage(target) {
+    go({ type: "artist", artist: { id: target.id, name: target.title ?? "", loading: true } });
+    const current = page;
+    run(async () => {
+      const artist = await fetchArtist(target.id);
+      if (page === current) page.artist = artist;
+    });
   }
 
   // Klick auf „YouTube Music“ in der Seitenleiste: zurück zur Bibliothek
@@ -50,11 +75,12 @@
   }
 
   function openCollection(item) {
-    go({ type: "collection" });
-    collection = { ...item, tracks: [] };
+    go({ type: "collection", collection: { ...item, tracks: [] } });
+    const current = page;
     run(async () => {
       const detail = await fetchCollection(item.kind, item.id);
-      collection = {
+      if (page !== current) return;
+      page.collection = {
         ...detail,
         title: item.title || detail.title,
         artworkUrl: item.artworkUrl || detail.artworkUrl,
@@ -66,10 +92,12 @@
     e.preventDefault();
     const q = query.trim();
     if (!q) return;
-    if (page.type !== "search") go({ type: "search" });
-    results = null;
+    if (page.type !== "search") go({ type: "search", results: null });
+    else page.results = null;
+    const current = page;
     run(async () => {
-      results = await search(q);
+      const found = await search(q);
+      if (page === current) page.results = found;
     });
   }
 
@@ -195,6 +223,8 @@
       </div>
     </div>
     <TrackList tracks={collection.tracks} covers />
+  {:else if page.type === "artist"}
+    <ArtistView artist={page.artist} {loading} onopen={openCollection} onartist={openArtistPage} />
   {:else if page.type === "search"}
     {#if loading && !results}
       <p class="dim">Suche läuft…</p>

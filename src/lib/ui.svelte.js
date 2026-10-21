@@ -21,6 +21,8 @@ export const ui = $state({
   sidebarCollapsed: stored("sidebarCollapsed", false),
   /** Wird erhöht, wenn YouTube Music zur Startseite zurück soll */
   ytmHome: 0,
+  /** Seite, die YouTube Music öffnen soll: { type: "artist", id } oder { type: "collection", kind, id, title } */
+  ytmNav: null,
   /** Dialog „Neue Playlist“: { tracks } oder null */
   newPlaylist: null,
   /** Kurzer Hinweis unten: { text, error } oder null */
@@ -49,3 +51,13 @@ export function showToast(text, error = false) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => (ui.toast = null), error ? 5000 : 2500);
 }
+
+/** Album oder Künstler in YouTube Music öffnen (von jeder Ansicht aus) */
+export function openYtm(target) {
+  ui.view = "youtube";
+  ui.ytmNav = target;
+}
+
+export const openArtist = (artist) => artist?.id && openYtm({ type: "artist", id: artist.id, title: artist.name });
+export const openAlbum = (track) =>
+  track?.albumId && openYtm({ type: "collection", kind: "album", id: track.albumId, title: track.album });

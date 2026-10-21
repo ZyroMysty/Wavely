@@ -26,6 +26,7 @@
     "allow-ytm-create-playlist",
     "allow-ytm-add-to-playlist",
     "allow-ytm-history",
+    "allow-ytm-artist",
     "allow-ytm-report-play",
     "allow-mini-player-open",
     "allow-taskbar-update",

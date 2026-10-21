@@ -17,6 +17,7 @@
   import { settings } from "../lib/settings.svelte.js";
   import { ytm, isLiked, toggleLike } from "../lib/ytm.svelte.js";
   import Cover from "./Cover.svelte";
+  import ArtistLinks from "./ArtistLinks.svelte";
   import Icon from "./Icon.svelte";
 
   const track = $derived(currentTrack());
@@ -49,7 +50,7 @@
         {:else if player.loading}
           <small>Lädt…</small>
         {:else}
-          <small>{track.artist ?? "Unbekannter Künstler"}</small>
+          <small><ArtistLinks {track} /></small>
         {/if}
       </div>
       {#if canLike}

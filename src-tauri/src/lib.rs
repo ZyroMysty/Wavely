@@ -128,6 +128,7 @@ pub fn run() {
             ytm::ytm_create_playlist,
             ytm::ytm_add_to_playlist,
             ytm::ytm_history,
+            ytm::ytm_artist,
             ytm::ytm_report_play,
             mini_player_open,
             show_main_window,

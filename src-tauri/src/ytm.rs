@@ -201,21 +201,42 @@ pub struct YtTrack {
     id: String,
     title: String,
     artist: Option<String>,
+    /// Einzelne Künstler mit Kanal-ID, damit man sie anklicken kann
+    artists: Vec<YtArtistRef>,
     album: Option<String>,
+    album_id: Option<String>,
     duration: f64,
     artwork_url: Option<String>,
     url: String,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct YtArtistRef {
+    id: Option<String>,
+    name: String,
+}
+
 impl From<TrackItem> for YtTrack {
     fn from(t: TrackItem) -> Self {
         let artist = t.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+        let mut artists: Vec<YtArtistRef> = t
+            .artists
+            .into_iter()
+            .map(|a| YtArtistRef { id: a.id, name: a.name })
+            .collect();
+        // Hauptkünstler-ID nachtragen, falls YouTube sie nur separat liefert
+        if let (Some(first), Some(id)) = (artists.first_mut(), t.artist_id) {
+            first.id.get_or_insert(id);
+        }
         Self {
             url: format!("https://music.youtube.com/watch?v={}", t.id),
             artwork_url: best_thumbnail(&t.cover),
             id: t.id,
             title: t.name,
             artist: (!artist.is_empty()).then_some(artist),
+            artists,
+            album_id: t.album.as_ref().map(|a| a.id.clone()),
             album: t.album.map(|a| a.name),
             duration: t.duration.unwrap_or(0) as f64,
         }
@@ -421,6 +442,7 @@ pub async fn ytm_collection(
         let album = query.music_album(&id).await.map_err(err)?;
         let artist = album.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
         let album_name = album.name.clone();
+        let album_id = album.id.clone();
         return Ok(YtCollectionDetail {
             info: YtCollection {
                 id: album.id,
@@ -437,6 +459,7 @@ pub async fn ytm_collection(
                 .map(|t| {
                     let mut track = YtTrack::from(t);
                     track.album.get_or_insert_with(|| album_name.clone());
+                    track.album_id.get_or_insert_with(|| album_id.clone());
                     if track.artwork_url.is_none() {
                         track.artwork_url = best_thumbnail(&album.cover);
                     }
@@ -698,4 +721,61 @@ pub async fn ytm_report_play(ytm: State<'_, Ytm>, id: String) -> Result<(), Stri
     } else {
         Err(format!("YouTube antwortete mit {}", response.status()))
     }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct YtArtistCard {
+    id: String,
+    name: String,
+    image_url: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct YtArtist {
+    id: String,
+    name: String,
+    image_url: Option<String>,
+    description: Option<String>,
+    subscribers: Option<u64>,
+    /// Beliebte Songs
+    tracks: Vec<YtTrack>,
+    albums: Vec<YtCollection>,
+    singles: Vec<YtCollection>,
+    playlists: Vec<YtCollection>,
+    similar: Vec<YtArtistCard>,
+    /// Playlist mit allen Songs des Künstlers
+    all_songs_playlist_id: Option<String>,
+}
+
+/// Künstlerseite: beliebte Songs, Alben, Singles, Playlists und ähnliche Künstler
+#[tauri::command]
+pub async fn ytm_artist(ytm: State<'_, Ytm>, id: String) -> Result<YtArtist, String> {
+    let artist = ytm.rp.query().music_artist(&id, false).await.map_err(err)?;
+    let (albums, singles): (Vec<_>, Vec<_>) = artist
+        .albums
+        .into_iter()
+        .partition(|a| matches!(a.album_type, rustypipe::model::AlbumType::Album));
+    Ok(YtArtist {
+        image_url: best_thumbnail(&artist.header_image),
+        id: artist.id,
+        name: artist.name,
+        description: artist.description,
+        subscribers: artist.subscriber_count,
+        tracks: artist.tracks.into_iter().map(Into::into).collect(),
+        albums: albums.into_iter().map(Into::into).collect(),
+        singles: singles.into_iter().map(Into::into).collect(),
+        playlists: artist.playlists.into_iter().map(Into::into).collect(),
+        similar: artist
+            .similar_artists
+            .into_iter()
+            .map(|a| YtArtistCard {
+                image_url: best_thumbnail(&a.avatar),
+                id: a.id,
+                name: a.name,
+            })
+            .collect(),
+        all_songs_playlist_id: artist.tracks_playlist_id,
+    })
 }

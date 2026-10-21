@@ -80,6 +80,11 @@ export async function fetchCollection(kind, id) {
   return { ...detail, tracks: asTracks(detail.tracks) };
 }
 
+export async function fetchArtist(id) {
+  const artist = await invoke("ytm_artist", { id });
+  return { ...artist, tracks: asTracks(artist.tracks) };
+}
+
 export async function search(query) {
   const result = await invoke("ytm_search", { query });
   return { ...result, tracks: asTracks(result.tracks) };
