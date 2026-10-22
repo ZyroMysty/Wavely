@@ -390,7 +390,9 @@ function startedPlaying() {
   errorStreak = 0;
   if (pendingHistory) {
     recordPlay(pendingHistory);
-    const video = pendingHistory.source === "youtube" ? pendingHistory.id : (pendingHistory.ytId ?? null);
+    // Nur echte YouTube-Music-Songs an den YouTube-Verlauf melden – Spotify-/SoundCloud-Songs,
+    // die nur über YouTube abgespielt werden, gehören nicht in den YouTube-Verlauf
+    const video = pendingHistory.source === "youtube" ? pendingHistory.id : null;
     if (video && settings.syncYouTubeHistory && ytm.status === "loggedIn") {
       invoke("ytm_report_play", { id: video }).catch((e) => console.warn("YouTube-Verlauf:", e));
     }
