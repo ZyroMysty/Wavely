@@ -7,6 +7,16 @@ import { ytm } from "./ytm.svelte.js";
 import { resolveVideo } from "./spotify.svelte.js";
 import { streamUrl as soundcloudStream, relatedTracks as soundcloudRelated } from "./soundcloud.svelte.js";
 import { offlinePath, allTracks as offlineTracks } from "./offline.svelte.js";
+import {
+  canPlayOnSpotify,
+  playOnSpotify,
+  spotifyPause,
+  spotifyResume,
+  spotifySeek,
+  spotifyVolume,
+  stopPolling as stopSpotifyPolling,
+  onSpotifyState,
+} from "./spotifyPlayer.svelte.js";
 
 // Ein einziges Audio-Element für alle Quellen (lokal und YouTube Music).
 const audio = new Audio();
@@ -89,6 +99,16 @@ async function sourceUrl(track) {
 /** Verhindert, dass ein langsam aufgelöster Song einen später gewählten überschreibt */
 let loadToken = 0;
 
+/**
+ * Wer gerade spielt: "audio" (Wavelys Player: lokal, YouTube, SoundCloud, Spotify über YouTube)
+ * oder "spotify" (echte Spotify-Wiedergabe mit Premium, in Wavely oder auf einem anderen Gerät).
+ */
+let engine = "audio";
+/** Spotify: erwarteter Song läuft bereits / Ende erreicht / Ende schon behandelt */
+let spStarted = false;
+let spNearEnd = false;
+let spFinished = false;
+
 function shuffled(list) {
   const a = [...list];
   for (let i = a.length - 1; i > 0; i--) {
@@ -120,6 +140,35 @@ function load(index) {
   pendingHistory = track;
 
   const token = ++loadToken;
+
+  // Premium: echt über Spotify (wirft „FALLBACK“, dann über YouTube Music)
+  if (canPlayOnSpotify(track)) {
+    audio.pause();
+    engine = "spotify";
+    spStarted = spNearEnd = spFinished = false;
+    playOnSpotify(track)
+      .then(() => {
+        if (token !== loadToken) return;
+        extendWithAutoplay();
+      })
+      .catch(() => {
+        if (token !== loadToken) return;
+        engine = "audio";
+        stopSpotifyPolling();
+        loadAudio(track, token);
+      });
+    return;
+  }
+
+  if (engine === "spotify") {
+    spotifyPause();
+    stopSpotifyPolling();
+  }
+  engine = "audio";
+  loadAudio(track, token);
+}
+
+function loadAudio(track, token) {
   sourceUrl(track)
     .then((src) => {
       if (token !== loadToken) return;
@@ -249,6 +298,13 @@ export function toggleAutoplay() {
 
 export function togglePlay() {
   if (!currentTrack()) return;
+  if (engine === "spotify") {
+    if (player.playing) spotifyPause();
+    else spotifyResume();
+    player.playing = !player.playing;
+    sendPresence();
+    return;
+  }
   if (audio.paused) audio.play();
   else audio.pause();
 }
@@ -259,18 +315,28 @@ export async function next() {
   }
   if (player.index + 1 < player.queue.length) load(player.index + 1);
   else if (player.repeat === "all" && player.queue.length) load(0);
-  else {
+  else if (engine === "spotify") {
+    spotifyPause();
+    player.playing = false;
+  } else {
     audio.pause();
     audio.currentTime = 0;
   }
 }
 
 export function previous() {
-  if (audio.currentTime > 3 || player.index === 0) audio.currentTime = 0;
+  if (player.position > 3 || player.index === 0) seek(0);
   else load(player.index - 1);
 }
 
 export function seek(seconds) {
+  if (engine === "spotify") {
+    spotifySeek(seconds);
+    player.position = seconds;
+    spNearEnd = false;
+    sendPresence();
+    return;
+  }
   audio.currentTime = seconds;
 }
 
@@ -279,12 +345,14 @@ export function setVolume(value) {
   player.muted = false;
   audio.volume = gain(value);
   audio.muted = false;
+  if (engine === "spotify") spotifyVolume(value);
   store("volumeSlider", value);
 }
 
 export function toggleMute() {
   player.muted = !player.muted;
   audio.muted = player.muted;
+  if (engine === "spotify") spotifyVolume(player.muted ? 0 : player.volume);
 }
 
 export function toggleShuffle() {
@@ -317,7 +385,7 @@ audio.addEventListener("play", () => {
   player.playing = true;
   sendPresence();
 });
-audio.addEventListener("playing", () => {
+function startedPlaying() {
   player.loading = false;
   errorStreak = 0;
   if (pendingHistory) {
@@ -328,7 +396,8 @@ audio.addEventListener("playing", () => {
     }
     pendingHistory = null;
   }
-});
+}
+audio.addEventListener("playing", startedPlaying);
 audio.addEventListener("waiting", () => (player.loading = true));
 audio.addEventListener("pause", () => {
   player.playing = false;
@@ -359,6 +428,43 @@ audio.addEventListener("error", () => {
   if (player.index + 1 < player.queue.length) next();
 });
 
+// --- Echte Spotify-Wiedergabe: Zustand übernehmen ------------------------
+
+onSpotifyState((state) => {
+  if (engine !== "spotify") return;
+  const track = currentTrack();
+  if (!track) return;
+  const ours = state.trackIds.includes(track.id);
+
+  if (ours) {
+    const changed = state.playing !== player.playing;
+    player.playing = state.playing;
+    player.position = state.position;
+    if (state.duration) player.duration = state.duration;
+    if (state.playing && !spStarted) {
+      spStarted = true;
+      startedPlaying();
+    }
+    if (state.duration && state.position >= state.duration - 2.5) spNearEnd = true;
+    // Ende: nach Erreichen des Endes pausiert bzw. wieder am Anfang
+    if (spStarted && spNearEnd && (!state.playing || state.position < 2)) finishSpotifyTrack();
+    else if (changed) sendPresence();
+  } else if (spStarted) {
+    // Spotify spielt etwas anderes (z. B. eigenes Autoplay) → unser Song ist vorbei
+    finishSpotifyTrack();
+  }
+});
+
+function finishSpotifyTrack() {
+  if (spFinished) return;
+  spFinished = true;
+  if (player.repeat === "one") {
+    load(player.index);
+  } else {
+    next();
+  }
+}
+
 // --- Discord Rich Presence ------------------------------------------------
 
 export function sendPresence() {
@@ -374,9 +480,9 @@ export function sendPresence() {
       album: t.album ?? null,
       artwork: t.artworkUrl ?? null,
       url: t.url ?? null,
-      position: audio.currentTime,
+      position: player.position,
       duration: player.duration,
-      paused: audio.paused,
+      paused: !player.playing,
       display: settings.discordDisplay,
     },
   }).catch(() => {});
@@ -400,8 +506,8 @@ function updateMediaSession(track) {
 }
 
 if ("mediaSession" in navigator) {
-  navigator.mediaSession.setActionHandler("play", () => audio.play());
-  navigator.mediaSession.setActionHandler("pause", () => audio.pause());
+  navigator.mediaSession.setActionHandler("play", () => !player.playing && togglePlay());
+  navigator.mediaSession.setActionHandler("pause", () => player.playing && togglePlay());
   navigator.mediaSession.setActionHandler("nexttrack", next);
   navigator.mediaSession.setActionHandler("previoustrack", previous);
   navigator.mediaSession.setActionHandler("seekto", (e) => seek(e.seekTime));

@@ -18,6 +18,9 @@
   import { ytm, isLiked, toggleLike } from "../lib/ytm.svelte.js";
   import Cover from "./Cover.svelte";
   import ArtistLinks from "./ArtistLinks.svelte";
+  import DevicePicker from "./DevicePicker.svelte";
+  import { spotify } from "../lib/spotify.svelte.js";
+  import { spotifyOut, targetDevice } from "../lib/spotifyPlayer.svelte.js";
   import Icon from "./Icon.svelte";
 
   const track = $derived(currentTrack());
@@ -51,6 +54,9 @@
           <small>Lädt…</small>
         {:else}
           <small><ArtistLinks {track} /></small>
+        {/if}
+        {#if track.source === "spotify" && spotifyOut.premium && targetDevice() !== "wavely"}
+          <small class="remote">Läuft auf {spotifyOut.devices.find((d) => d.id === targetDevice())?.name ?? "anderem Gerät"}</small>
         {/if}
       </div>
       {#if canLike}
@@ -113,6 +119,9 @@
   </div>
 
   <div class="right">
+    {#if spotify.status === "loggedIn"}
+      <DevicePicker />
+    {/if}
     <button class="small" title="Mini-Player" onclick={() => invoke("mini_player_open", { pinned: settings.miniPinned, width: settings.miniWidth, height: settings.miniHeight })}>
       <Icon name="miniPlayer" size={20} />
     </button>
@@ -179,6 +188,10 @@
   }
   .meta small.error {
     color: var(--accent);
+  }
+  .meta small.remote {
+    color: var(--accent);
+    font-size: 12px;
   }
   .center {
     display: flex;

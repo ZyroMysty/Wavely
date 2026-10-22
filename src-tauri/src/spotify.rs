@@ -18,12 +18,15 @@ use tauri::{AppHandle, Emitter, Manager, State, Url, WebviewUrl, WebviewWindowBu
 
 use crate::ytm::Ytm;
 
-/// Client ID der Spotify-App aus dem Developer Dashboard (öffentlich, kein Geheimnis)
-const CLIENT_ID: &str = "5d9c0db17c284f5a959e0baa2294f80e";
+/// Standard-Client-ID der Wavely-Spotify-App (öffentlich, kein Geheimnis). In den Einstellungen kann
+/// eine eigene ID eingetragen werden – nötig für Spotify Connect, weil seit Februar 2026 der Inhaber
+/// einer Entwickler-App selbst Premium haben muss und nur 5 Nutzer erlaubt sind.
+const DEFAULT_CLIENT_ID: &str = "5d9c0db17c284f5a959e0baa2294f80e";
 /// Muss genau so im Spotify-Dashboard als Redirect URI eingetragen sein
 const REDIRECT_URI: &str = "http://127.0.0.1:43827/callback";
 const SCOPES: &str = "user-read-private playlist-read-private playlist-read-collaborative user-library-read \
-                      user-read-recently-played user-follow-read";
+                      user-read-recently-played user-follow-read \
+                      user-read-playback-state user-modify-playback-state user-read-currently-playing                       streaming user-read-email";
 const LOGIN_WINDOW: &str = "spotify-login";
 const API: &str = "https://api.spotify.com/v1";
 /// Obergrenze beim Nachladen langer Listen
@@ -60,6 +63,8 @@ pub struct Spotify {
     pending: Mutex<Option<(String, String)>>,
     /// Zuordnung Spotify-Song → YouTube-Video, damit jeder Song nur einmal gesucht wird
     matches: Mutex<HashMap<String, String>>,
+    /// Aktive Client ID (Standard oder eigene aus den Einstellungen)
+    client_id: Mutex<String>,
 }
 
 impl Spotify {
@@ -73,12 +78,18 @@ impl Spotify {
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default();
+        let client_id = std::fs::read_to_string(dir.join("client_id.txt"))
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| DEFAULT_CLIENT_ID.to_string());
         Ok(Self {
             http: reqwest::Client::new(),
             dir,
             token: tokio::sync::Mutex::new(token),
             pending: Mutex::new(None),
             matches: Mutex::new(matches),
+            client_id: Mutex::new(client_id),
         })
     }
 
@@ -127,7 +138,7 @@ impl Spotify {
             .request_token(&[
                 ("grant_type", "refresh_token"),
                 ("refresh_token", &token.refresh_token),
-                ("client_id", CLIENT_ID),
+                ("client_id", &self.client_id()),
             ])
             .await?;
         // Spotify schickt nicht immer ein neues Refresh-Token
@@ -138,6 +149,50 @@ impl Spotify {
         let access = fresh.access_token.clone();
         *guard = Some(fresh);
         Ok(access)
+    }
+
+    fn client_id(&self) -> String {
+        self.client_id.lock().unwrap().clone()
+    }
+
+    /// Anfrage an die Player-API (PUT/POST/GET). Fehler kommen als Spotify-Code zurück,
+    /// z. B. „PREMIUM_REQUIRED“, „NO_ACTIVE_DEVICE“ oder „SCOPE“ (fehlende Rechte → neu anmelden).
+    async fn player_request(&self, method: reqwest::Method, path: &str, body: Option<Value>) -> Result<Option<Value>, String> {
+        let mut refreshed = false;
+        loop {
+            let token = self.access_token(false).await?;
+            let mut request = self.http.request(method.clone(), format!("{API}{path}")).bearer_auth(&token);
+            request = match &body {
+                Some(body) => request.json(body),
+                None => request.header("Content-Length", "0"),
+            };
+            let response = request.send().await.map_err(err)?;
+            let status = response.status();
+            if status == reqwest::StatusCode::NO_CONTENT || status == reqwest::StatusCode::ACCEPTED {
+                return Ok(None);
+            }
+            let text = response.text().await.unwrap_or_default();
+            if status.is_success() {
+                return Ok(serde_json::from_str(&text).ok());
+            }
+            if status == reqwest::StatusCode::UNAUTHORIZED && !refreshed && !text.contains("scope") {
+                refreshed = true;
+                self.access_token(true).await?;
+                continue;
+            }
+            let error: Value = serde_json::from_str(&text).unwrap_or_default();
+            let reason = error["error"]["reason"].as_str().unwrap_or_default();
+            let message = error["error"]["message"].as_str().unwrap_or(&text);
+            return Err(if !reason.is_empty() {
+                reason.to_string()
+            } else if message.to_lowercase().contains("scope") || message.to_lowercase().contains("permission") {
+                "SCOPE".to_string()
+            } else if status == reqwest::StatusCode::NOT_FOUND {
+                "NO_ACTIVE_DEVICE".to_string()
+            } else {
+                format!("Spotify antwortete mit {status}: {message}")
+            });
+        }
     }
 
     /// GET an die Web API (Pfad wie „/me“ oder volle URL aus „next“)
@@ -384,7 +439,7 @@ pub async fn spotify_login(app: AppHandle, spotify: State<'_, Spotify>) -> Resul
 
     let mut url = Url::parse("https://accounts.spotify.com/authorize").map_err(err)?;
     url.query_pairs_mut()
-        .append_pair("client_id", CLIENT_ID)
+        .append_pair("client_id", &spotify.client_id())
         .append_pair("response_type", "code")
         .append_pair("redirect_uri", REDIRECT_URI)
         .append_pair("scope", SCOPES)
@@ -434,7 +489,7 @@ async fn finish_login(app: &AppHandle, params: HashMap<String, String>) -> Resul
             ("grant_type", "authorization_code"),
             ("code", code),
             ("redirect_uri", REDIRECT_URI),
-            ("client_id", CLIENT_ID),
+            ("client_id", &spotify.client_id()),
             ("code_verifier", &verifier),
         ])
         .await?;
@@ -455,6 +510,7 @@ pub async fn spotify_logout(spotify: State<'_, Spotify>) -> Result<(), String> {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SpAccount {
+    id: Option<String>,
     name: Option<String>,
     photo_url: Option<String>,
     product: Option<String>,
@@ -464,6 +520,7 @@ pub struct SpAccount {
 pub async fn spotify_account(spotify: State<'_, Spotify>) -> Result<SpAccount, String> {
     let me = spotify.get("/me").await?;
     Ok(SpAccount {
+        id: me["id"].as_str().map(str::to_string),
         name: me["display_name"].as_str().or(me["id"].as_str()).map(str::to_string),
         photo_url: best_image(&me["images"]),
         product: me["product"].as_str().map(str::to_string),
@@ -754,4 +811,169 @@ pub async fn resolve(
         let _ = std::fs::write(spotify.dir.join("matches.json"), json);
     }
     Ok(best)
+}
+
+// --- Eigene Client ID ----------------------------------------------------
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpClientId {
+    client_id: String,
+    is_default: bool,
+}
+
+#[tauri::command]
+pub async fn spotify_get_client_id(spotify: State<'_, Spotify>) -> Result<SpClientId, String> {
+    let client_id = spotify.client_id();
+    Ok(SpClientId { is_default: client_id == DEFAULT_CLIENT_ID, client_id })
+}
+
+/// Eigene Client ID setzen (oder mit `None`/leer zurück zum Standard). Meldet ab, weil das Login an die App gebunden ist.
+#[tauri::command]
+pub async fn spotify_set_client_id(spotify: State<'_, Spotify>, client_id: Option<String>) -> Result<(), String> {
+    let id = client_id.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    if let Some(id) = &id {
+        if id.len() != 32 || !id.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err("Eine Spotify Client ID besteht aus 32 Zeichen (0–9, a–f)".into());
+        }
+    }
+    let path = spotify.dir.join("client_id.txt");
+    match &id {
+        Some(id) => std::fs::write(&path, id).map_err(err)?,
+        None => {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+    *spotify.client_id.lock().unwrap() = id.unwrap_or_else(|| DEFAULT_CLIENT_ID.to_string());
+    *spotify.token.lock().await = None;
+    spotify.save_token(None);
+    Ok(())
+}
+
+// --- Spotify Connect (Fernsteuerung, nur mit Premium) --------------------
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpDevice {
+    id: String,
+    name: String,
+    kind: String,
+    is_active: bool,
+    volume: Option<u64>,
+}
+
+#[tauri::command]
+pub async fn spotify_devices(spotify: State<'_, Spotify>) -> Result<Vec<SpDevice>, String> {
+    let r = spotify.player_request(reqwest::Method::GET, "/me/player/devices", None).await?.unwrap_or_default();
+    Ok(r["devices"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .filter(|d| !d["is_restricted"].as_bool().unwrap_or(false))
+        .filter_map(|d| {
+            Some(SpDevice {
+                id: d["id"].as_str()?.to_string(),
+                name: d["name"].as_str().unwrap_or("Gerät").to_string(),
+                kind: d["type"].as_str().unwrap_or("Computer").to_string(),
+                is_active: d["is_active"].as_bool().unwrap_or(false),
+                volume: d["volume_percent"].as_u64(),
+            })
+        })
+        .collect())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpPlayback {
+    is_playing: bool,
+    progress_ms: u64,
+    duration_ms: u64,
+    /// Spotify-ID des laufenden Songs
+    track_id: Option<String>,
+    device_id: Option<String>,
+    device_name: Option<String>,
+    volume: Option<u64>,
+}
+
+/// Aktueller Zustand des Spotify-Players (oder `None`, wenn nichts aktiv ist)
+#[tauri::command]
+pub async fn spotify_playback(spotify: State<'_, Spotify>) -> Result<Option<SpPlayback>, String> {
+    let Some(r) = spotify.player_request(reqwest::Method::GET, "/me/player", None).await? else {
+        return Ok(None);
+    };
+    let item = if r["item"].is_object() { &r["item"] } else { &r["track"] };
+    Ok(Some(SpPlayback {
+        is_playing: r["is_playing"].as_bool().unwrap_or(false),
+        progress_ms: r["progress_ms"].as_u64().unwrap_or(0),
+        duration_ms: item["duration_ms"].as_u64().unwrap_or(0),
+        track_id: item["id"].as_str().map(str::to_string),
+        device_id: r["device"]["id"].as_str().map(str::to_string),
+        device_name: r["device"]["name"].as_str().map(str::to_string),
+        volume: r["device"]["volume_percent"].as_u64(),
+    }))
+}
+
+fn with_device(path: &str, device_id: &Option<String>) -> String {
+    match device_id {
+        Some(id) => format!("{path}?device_id={id}"),
+        None => path.to_string(),
+    }
+}
+
+/// Song auf einem Spotify-Gerät abspielen
+#[tauri::command]
+pub async fn spotify_play(
+    spotify: State<'_, Spotify>,
+    device_id: Option<String>,
+    track_id: String,
+    position_ms: Option<u64>,
+) -> Result<(), String> {
+    let body = serde_json::json!({
+        "uris": [format!("spotify:track:{track_id}")],
+        "position_ms": position_ms.unwrap_or(0),
+    });
+    spotify
+        .player_request(reqwest::Method::PUT, &with_device("/me/player/play", &device_id), Some(body))
+        .await
+        .map(|_| ())
+}
+
+#[tauri::command]
+pub async fn spotify_resume(spotify: State<'_, Spotify>, device_id: Option<String>) -> Result<(), String> {
+    spotify.player_request(reqwest::Method::PUT, &with_device("/me/player/play", &device_id), None).await.map(|_| ())
+}
+
+#[tauri::command]
+pub async fn spotify_pause(spotify: State<'_, Spotify>, device_id: Option<String>) -> Result<(), String> {
+    spotify.player_request(reqwest::Method::PUT, &with_device("/me/player/pause", &device_id), None).await.map(|_| ())
+}
+
+#[tauri::command]
+pub async fn spotify_seek(spotify: State<'_, Spotify>, position_ms: u64) -> Result<(), String> {
+    spotify
+        .player_request(reqwest::Method::PUT, &format!("/me/player/seek?position_ms={position_ms}"), None)
+        .await
+        .map(|_| ())
+}
+
+#[tauri::command]
+pub async fn spotify_volume(spotify: State<'_, Spotify>, percent: u64) -> Result<(), String> {
+    spotify
+        .player_request(reqwest::Method::PUT, &format!("/me/player/volume?volume_percent={}", percent.min(100)), None)
+        .await
+        .map(|_| ())
+}
+
+/// Wiedergabe auf ein anderes Gerät übertragen
+#[tauri::command]
+pub async fn spotify_transfer(spotify: State<'_, Spotify>, device_id: String, play: bool) -> Result<(), String> {
+    let body = serde_json::json!({ "device_ids": [device_id], "play": play });
+    spotify.player_request(reqwest::Method::PUT, "/me/player", Some(body)).await.map(|_| ())
+}
+
+/// Zugangstoken für den Spotify Web Playback SDK (spielt in Wavely selbst, nur mit Premium)
+#[tauri::command]
+pub async fn spotify_access_token(spotify: State<'_, Spotify>) -> Result<String, String> {
+    spotify.access_token(false).await
 }

@@ -4,7 +4,8 @@
   import { togglePlay } from "./lib/player.svelte.js";
   import { initYtm } from "./lib/ytm.svelte.js";
   import { initOffline } from "./lib/offline.svelte.js";
-  import { initSpotify } from "./lib/spotify.svelte.js";
+  import { initSpotify, spotify } from "./lib/spotify.svelte.js";
+  import { initSpotifyPlayer } from "./lib/spotifyPlayer.svelte.js";
   import { initSoundCloud } from "./lib/soundcloud.svelte.js";
   import SoundCloudView from "./components/SoundCloudView.svelte";
   import SpotifyView from "./components/SpotifyView.svelte";
@@ -21,6 +22,11 @@
   import SettingsView from "./components/SettingsView.svelte";
   import { ui } from "./lib/ui.svelte.js";
   import { applyAppearance, settings } from "./lib/settings.svelte.js";
+
+  // Spotify-Player (Premium) im Hintergrund vorbereiten, sobald das Konto bekannt ist
+  $effect(() => {
+    if (spotify.status === "loggedIn" && spotify.account) initSpotifyPlayer();
+  });
 
   // Design und Akzentfarbe live übernehmen
   $effect(() => {

@@ -4,10 +4,14 @@
   import { ui } from "../lib/ui.svelte.js";
   import Icon from "./Icon.svelte";
 
+  /** Ohne Angaben: YouTube-Music-Konto; für Spotify/SoundCloud Konto und Abmelden übergeben */
+  let { account = undefined, onlogout = undefined } = $props();
+
   let open = $state(false);
   let root = $state();
 
-  const initial = $derived((ytm.account?.name ?? "?").trim().charAt(0).toUpperCase());
+  const acc = $derived(account === undefined ? ytm.account : account);
+  const initial = $derived((acc?.name ?? "?").trim().charAt(0).toUpperCase());
 
   function close(event) {
     if (open && !root?.contains(event.target)) open = false;
@@ -15,16 +19,16 @@
 
   async function signOut() {
     open = false;
-    await logout();
+    await (onlogout ?? logout)();
   }
 </script>
 
 <svelte:window onmousedown={close} onkeydown={(e) => e.key === "Escape" && (open = false)} />
 
 <div class="account" bind:this={root}>
-  <button class="avatar" title={ytm.account?.name ?? "Konto"} onclick={() => (open = !open)}>
-    {#if ytm.account?.photoUrl}
-      <img src={artworkSrc(ytm.account.photoUrl)} alt="" />
+  <button class="avatar" title={acc?.name ?? "Konto"} onclick={() => (open = !open)}>
+    {#if acc?.photoUrl}
+      <img src={artworkSrc(acc.photoUrl)} alt="" />
     {:else}
       <span>{initial}</span>
     {/if}
@@ -34,15 +38,15 @@
     <div class="menu" role="menu">
       <div class="who">
         <div class="avatar big">
-          {#if ytm.account?.photoUrl}
-            <img src={artworkSrc(ytm.account.photoUrl)} alt="" />
+          {#if acc?.photoUrl}
+            <img src={artworkSrc(acc.photoUrl)} alt="" />
           {:else}
             <span>{initial}</span>
           {/if}
         </div>
         <div class="names">
-          <strong>{ytm.account?.name ?? "Angemeldet"}</strong>
-          {#if ytm.account?.handle}<small>{ytm.account.handle}</small>{/if}
+          <strong>{acc?.name ?? "Angemeldet"}</strong>
+          {#if acc?.handle}<small>{acc.handle}</small>{/if}
         </div>
       </div>
       <button

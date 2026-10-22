@@ -7,6 +7,7 @@
   import { isSavedCollection, progressOf, saveCollection, removeCollection } from "../lib/offline.svelte.js";
   import CollectionCard from "./CollectionCard.svelte";
   import TrackList from "./TrackList.svelte";
+  import AccountMenu from "./AccountMenu.svelte";
   import Icon from "./Icon.svelte";
 
   import ArtistView from "./ArtistView.svelte";
@@ -132,11 +133,7 @@
       </form>
     </div>
     {#if spotify.status === "loggedIn"}
-      <div class="account">
-        {#if spotify.account?.photoUrl}<img src={artworkSrc(spotify.account.photoUrl)} alt="" />{/if}
-        <span>{spotify.account?.name ?? "Spotify"}</span>
-        <button class="secondary" onclick={logout}>Abmelden</button>
-      </div>
+      <AccountMenu account={spotify.account} onlogout={logout} />
     {:else if spotify.status === "loggedOut"}
       <button class="primary" onclick={login} disabled={spotify.loggingIn}>
         {spotify.loggingIn ? "Anmeldefenster offen…" : "Anmelden"}

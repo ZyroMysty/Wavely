@@ -15,6 +15,8 @@ const defaults = {
   miniPinned: true,
   /** In Wavely gehörte YouTube-Songs auch im YouTube-Music-Verlauf speichern */
   syncYouTubeHistory: true,
+  /** Spotify (Premium): "wavely" = direkt in Wavely, sonst ID eines anderen Spotify-Geräts */
+  spotifyDevice: "wavely",
   /** Zuletzt benutzte Größe des Mini-Players */
   miniWidth: 360,
   miniHeight: 104,

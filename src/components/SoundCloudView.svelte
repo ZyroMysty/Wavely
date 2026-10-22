@@ -7,6 +7,7 @@
   import { isSavedCollection, progressOf, saveCollection, removeCollection } from "../lib/offline.svelte.js";
   import CollectionCard from "./CollectionCard.svelte";
   import TrackList from "./TrackList.svelte";
+  import AccountMenu from "./AccountMenu.svelte";
   import Icon from "./Icon.svelte";
 
   import ArtistView from "./ArtistView.svelte";
@@ -132,11 +133,7 @@
       </form>
     </div>
     {#if soundcloud.status === "loggedIn"}
-      <div class="account">
-        {#if soundcloud.account?.photoUrl}<img src={artworkSrc(soundcloud.account.photoUrl)} alt="" />{/if}
-        <span>{soundcloud.account?.name ?? "SoundCloud"}</span>
-        <button class="secondary" onclick={logout}>Abmelden</button>
-      </div>
+      <AccountMenu account={soundcloud.account} onlogout={logout} />
     {:else if soundcloud.status === "loggedOut"}
       <button class="primary" onclick={login} disabled={soundcloud.loggingIn}>
         {soundcloud.loggingIn ? "Anmeldefenster offen…" : "Anmelden"}

@@ -18,7 +18,7 @@ Gebaut mit [Tauri 2](https://tauri.app) (Rust) und [Svelte 5](https://svelte.dev
 - Buttons in der Taskleisten-Vorschau (ZurÃ¼ck, Play/Pause, Weiter, GefÃ¤llt mir)
 - Warteschlange, Autoplay mit passenden Songs, synchronisierte Liedtexte (LRCLIB)
 - Offline-Modus: YouTube-Songs und Playlists herunterladen und ohne Internet abspielen
-- Spotify: Anmeldung, Lieblingssongs, Playlists, Alben, Suche, Künstler, Verlauf – abgespielt über passende YouTube-Music-Songs (kein Premium nötig), auch offline speicherbar
+- Spotify: Anmeldung, Lieblingssongs, Playlists, Alben, Suche, Künstler, Verlauf. Mit Premium echte Spotify-Wiedergabe direkt in Wavely (Web Playback SDK) und Geräteauswahl (Spotify Connect); mit Free über passende YouTube-Music-Songs. Eigene Client ID einstellbar
 - SoundCloud: Anmeldung, Likes, Playlists, Alben, gefolgte Künstler, Suche, Künstlerseiten, Verlauf – direkt von SoundCloud; 30-Sekunden-Ausschnitte (Go+) laufen über YouTube Music in voller Länge
 
 ## Aufbau

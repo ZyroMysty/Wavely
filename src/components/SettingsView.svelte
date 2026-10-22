@@ -7,6 +7,8 @@
   import { library, addFolder, removeFolder } from "../lib/library.svelte.js";
   import { ytm, login, logout } from "../lib/ytm.svelte.js";
   import { spotify, login as spotifyLogin, logout as spotifyLogout } from "../lib/spotify.svelte.js";
+  import { spotifyOut } from "../lib/spotifyPlayer.svelte.js";
+  import { invoke } from "@tauri-apps/api/core";
   import { soundcloud, login as soundcloudLogin, logout as soundcloudLogout } from "../lib/soundcloud.svelte.js";
   import { offlineStats, openOfflineFolder, clearOffline } from "../lib/offline.svelte.js";
   import { artworkSrc } from "../lib/artwork.js";
@@ -37,7 +39,32 @@
 
   const isPreset = $derived(ACCENTS.some((a) => a.value === settings.accent));
 
+  // Eigene Spotify Client ID (für Spotify Premium / Geräteauswahl nötig)
+  let clientId = $state("");
+  let clientIdDefault = $state(true);
+  let clientIdError = $state(null);
+
+  async function saveClientId(reset = false) {
+    clientIdError = null;
+    try {
+      await invoke("spotify_set_client_id", { clientId: reset ? null : clientId });
+      await spotifyLogout();
+      const info = await invoke("spotify_get_client_id");
+      clientId = info.isDefault ? "" : info.clientId;
+      clientIdDefault = info.isDefault;
+      showToast(reset ? "Standard-Client-ID wiederhergestellt – bitte neu anmelden" : "Client ID gespeichert – bitte bei Spotify neu anmelden");
+    } catch (e) {
+      clientIdError = String(e);
+    }
+  }
+
   onMount(async () => {
+    invoke("spotify_get_client_id")
+      .then((info) => {
+        clientId = info.isDefault ? "" : info.clientId;
+        clientIdDefault = info.isDefault;
+      })
+      .catch(() => {});
     version = await getVersion().catch(() => "");
     refreshStats();
   });
@@ -294,6 +321,45 @@
             </div>
             <button class="primary" onclick={spotifyLogin} disabled={spotify.loggingIn}>Mit Spotify anmelden</button>
           {/if}
+        </div>
+      </div>
+    </section>
+
+    <!-- Spotify: Wiedergabe & eigene App -->
+    <section id="settings-spotify-app">
+      <div class="card">
+        <div class="row column">
+          <div class="label">
+            <strong>Spotify-Wiedergabe</strong>
+            <small>
+              {#if spotifyOut.premium === true}
+                Premium erkannt: Spotify-Songs laufen direkt über Spotify. Das Gerät wählst du unten in der Player-Leiste.
+              {:else if spotifyOut.premium === false}
+                Spotify Free: Spotify-Songs laufen über YouTube Music. Mit Premium spielen sie direkt über Spotify.
+              {:else}
+                Mit Spotify Premium laufen Spotify-Songs direkt über Spotify (auch auf anderen Geräten), sonst über YouTube Music.
+              {/if}
+            </small>
+          </div>
+          {#if spotifyOut.notice}<p class="hint warn">{spotifyOut.notice}</p>{/if}
+        </div>
+        <div class="row column">
+          <div class="label">
+            <strong>Eigene Spotify Client ID</strong>
+            <small>
+              Spotify verlangt seit 2026, dass der Inhaber einer Entwickler-App selbst Premium hat (max. 5 Nutzer).
+              Lege dazu auf developer.spotify.com eine App an (Redirect URI: http://127.0.0.1:43827/callback, „Web API“ und
+              „Web Playback SDK“) und trage hier ihre Client ID ein.
+            </small>
+          </div>
+          <div class="client-id">
+            <input bind:value={clientId} placeholder={clientIdDefault ? "Standard (Wavely)" : ""} maxlength="32" spellcheck="false" />
+            <button class="secondary" onclick={() => saveClientId(false)} disabled={!clientId.trim()}>Speichern</button>
+            {#if !clientIdDefault}
+              <button class="secondary" onclick={() => saveClientId(true)}>Standard</button>
+            {/if}
+          </div>
+          {#if clientIdError}<p class="hint warn">{clientIdError}</p>{/if}
         </div>
       </div>
     </section>
@@ -605,6 +671,28 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
+  }
+  .client-id {
+    display: flex;
+    gap: 8px;
+  }
+  .client-id input {
+    flex: 1;
+    height: 38px;
+    padding: 0 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--text);
+    font-family: ui-monospace, Consolas, monospace;
+    outline: none;
+  }
+  .client-id input:focus {
+    border-color: var(--accent);
+  }
+  .hint.warn {
+    color: var(--accent);
+    margin: 0;
   }
   .confirm {
     display: flex;
