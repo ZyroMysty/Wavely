@@ -827,3 +827,66 @@ pub async fn ytm_artist(ytm: State<'_, Ytm>, id: String) -> Result<YtArtist, Str
         all_songs_playlist_id: artist.tracks_playlist_id,
     })
 }
+
+// --- Startseite ---------------------------------------------------------
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct YtHome {
+    /// Meistgehörte Songs in Deutschland
+    top_tracks: Vec<YtTrack>,
+    /// Gerade im Trend
+    trending: Vec<YtTrack>,
+    top_artists: Vec<YtArtistCard>,
+    new_albums: Vec<YtCollection>,
+}
+
+/// Charts und Neuerscheinungen für die Startseite (ohne Anmeldung)
+#[tauri::command]
+pub async fn ytm_home(ytm: State<'_, Ytm>) -> Result<YtHome, String> {
+    let q = ytm.rp.query();
+    let (charts, albums) = tokio::join!(q.music_charts(Some(Country::De)), q.music_new_albums());
+    let charts = charts.ok();
+    let take = |list: Vec<TrackItem>| list.into_iter().take(20).map(Into::into).collect::<Vec<YtTrack>>();
+    // YouTube liefert die Chart-Songs inzwischen oft nur als Playlist-Verweis
+    async fn tracks_of(ytm: &Ytm, direct: Vec<TrackItem>, playlist: Option<String>) -> Vec<TrackItem> {
+        if !direct.is_empty() {
+            return direct;
+        }
+        match playlist {
+            Some(id) => ytm.rp.query().music_playlist(&id).await.map(|p| p.tracks.items).unwrap_or_default(),
+            None => Vec::new(),
+        }
+    }
+    let (top, trending) = match &charts {
+        Some(c) => {
+            // Sonst über die Chart-Playlists (Namen sind übersetzt, z. B. „Top 100 der Musikvideos in Deutschland“;
+            // die Trend-Liste „Top 20 / Trending 20“ ist eine Album-Playlist mit „OLAK“-ID)
+            let top_id = c.playlists.iter().find(|p| p.name.contains("100")).map(|p| p.id.clone());
+            let trend_id = c
+                .playlists
+                .iter()
+                .find(|p| p.id.starts_with("OLAK") || p.name.to_lowercase().contains("trend"))
+                .map(|p| p.id.clone());
+            tokio::join!(
+                tracks_of(&ytm, c.top_tracks.clone(), c.top_playlist_id.clone().or(top_id)),
+                tracks_of(&ytm, c.trending_tracks.clone(), c.trending_playlist_id.clone().or(trend_id)),
+            )
+        }
+        None => (Vec::new(), Vec::new()),
+    };
+    Ok(YtHome {
+        top_tracks: take(top),
+        trending: take(trending),
+        top_artists: charts
+            .map(|c| {
+                c.artists
+                    .into_iter()
+                    .take(12)
+                    .map(|a| YtArtistCard { image_url: best_thumbnail(&a.avatar), id: a.id, name: a.name })
+                    .collect()
+            })
+            .unwrap_or_default(),
+        new_albums: albums.map(|a| a.into_iter().take(20).map(Into::into).collect()).unwrap_or_default(),
+    })
+}

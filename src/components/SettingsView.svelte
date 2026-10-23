@@ -29,6 +29,28 @@
     selectOutput,
   } from "../lib/sound.svelte.js";
   import { openChangelog } from "../lib/changelog.svelte.js";
+  import { shortcuts, setGlobalShortcuts } from "../lib/shortcuts.svelte.js";
+  import { lastfm, login as lastfmLogin, logout as lastfmLogout } from "../lib/lastfm.svelte.js";
+  import { enable as enableAutostart, disable as disableAutostart, isEnabled as autostartEnabled } from "@tauri-apps/plugin-autostart";
+
+  // Mit Windows starten (Eintrag in Windows' Autostart)
+  let autostart = $state(false);
+  async function setAutostart(on) {
+    try {
+      if (on) {
+        await enableAutostart();
+        await invoke("set_start_minimized", { minimized: settings.startMinimized }).catch(() => {});
+      }
+      else await disableAutostart();
+      autostart = await autostartEnabled();
+    } catch (e) {
+      showToast(`Autostart konnte nicht geändert werden: ${e}`, true);
+    }
+  }
+  async function setStartMinimized(on) {
+    updateSetting("startMinimized", on);
+    await invoke("set_start_minimized", { minimized: on }).catch(() => {});
+  }
 
   const bandLabel = (f) => (f >= 1000 ? `${f / 1000}k` : String(f));
   const formatDb = (db) => (db > 0 ? `+${db}` : String(db));
@@ -41,7 +63,10 @@
     { id: "appearance", label: "Darstellung" },
     { id: "playback", label: "Wiedergabe" },
     { id: "sound", label: "Klang" },
+    { id: "shortcuts", label: "Tastenkürzel" },
+    { id: "system", label: "Windows" },
     { id: "discord", label: "Discord" },
+    { id: "lastfm", label: "Last.fm" },
     { id: "library", label: "Bibliothek" },
     { id: "youtube", label: "YouTube Music" },
     { id: "spotify", label: "Spotify" },
@@ -78,6 +103,9 @@
   }
 
   onMount(async () => {
+    autostartEnabled()
+      .then((on) => (autostart = on))
+      .catch(() => {});
     invoke("spotify_get_client_id")
       .then((info) => {
         clientId = info.isDefault ? "" : info.clientId;
@@ -207,6 +235,7 @@
             <small>Womit Wavely beim Öffnen startet</small>
           </div>
           <select value={settings.startView} onchange={(e) => updateSetting("startView", e.currentTarget.value)}>
+            <option value="home">Startseite</option>
             <option value="youtube">YouTube Music</option>
             <option value="spotify">Spotify</option>
             <option value="soundcloud">SoundCloud</option>
@@ -313,6 +342,48 @@
           </select>
         </div>
         <p class="note">Bei Spotify Premium läuft die Wiedergabe über Spotify selbst – dort wirken diese Einstellungen nicht.</p>
+      </div>
+    </section>
+
+    <!-- Tastenkürzel -->
+    <section id="settings-shortcuts">
+      <h2>Tastenkürzel</h2>
+      <div class="card">
+        <div class="row">
+          <div class="label">
+            <strong>Tastenkürzel in Wavely</strong>
+            <small>Leertaste, Pfeiltasten, Strg+F und mehr – Übersicht jederzeit mit „?“</small>
+          </div>
+          <button class="secondary" onclick={() => (shortcuts.help = true)}><Icon name="keyboard" size={18} /> Alle anzeigen</button>
+        </div>
+        <div class="row">
+          <div class="label">
+            <strong>Systemweite Tastenkürzel</strong>
+            <small>Strg+Alt+Leertaste, Strg+Alt+Pfeiltasten – funktionieren auch, wenn Wavely im Hintergrund ist</small>
+          </div>
+          {@render toggle(settings.globalShortcuts, () => setGlobalShortcuts(!settings.globalShortcuts), "Systemweite Tastenkürzel")}
+        </div>
+      </div>
+    </section>
+
+    <!-- Windows -->
+    <section id="settings-system">
+      <h2>Windows</h2>
+      <div class="card">
+        <div class="row">
+          <div class="label">
+            <strong>Mit Windows starten</strong>
+            <small>Wavely öffnet sich automatisch, wenn du dich bei Windows anmeldest</small>
+          </div>
+          {@render toggle(autostart, () => setAutostart(!autostart), "Mit Windows starten")}
+        </div>
+        <div class="row" class:disabled={!autostart}>
+          <div class="label">
+            <strong>Minimiert starten</strong>
+            <small>Beim automatischen Start nur in der Taskleiste, ohne Fenster in den Vordergrund zu holen</small>
+          </div>
+          {@render toggle(settings.startMinimized, () => setStartMinimized(!settings.startMinimized), "Minimiert starten")}
+        </div>
       </div>
     </section>
 
@@ -510,6 +581,55 @@
             <button class="primary" onclick={soundcloudLogin} disabled={soundcloud.loggingIn}>Mit SoundCloud anmelden</button>
           {/if}
         </div>
+      </div>
+    </section>
+
+    <!-- Last.fm -->
+    <section id="settings-lastfm">
+      <h2>Last.fm</h2>
+      <div class="card">
+        {#if !lastfm.available}
+          <div class="row">
+            <div class="label">
+              <strong>Nicht verfügbar</strong>
+              <small>Diese Wavely-Version wurde ohne Last.fm-Zugang gebaut.</small>
+            </div>
+          </div>
+        {:else if lastfm.user}
+          <div class="row">
+            <div class="account">
+              <div class="avatar lastfm"><Icon name="lastfm" size={22} /></div>
+              <div class="label">
+                <strong>{lastfm.user}</strong>
+                <small>
+                  Verbunden mit Last.fm{lastfm.pending ? ` · ${lastfm.pending} Songs warten auf Internet` : ""}
+                </small>
+              </div>
+            </div>
+            <button class="secondary" onclick={lastfmLogout}><Icon name="logout" size={18} /> Trennen</button>
+          </div>
+          <div class="row">
+            <div class="label">
+              <strong>Gehörte Songs scrobbeln</strong>
+              <small>
+                Songs ab 30 Sekunden Länge, sobald die Hälfte (höchstens 4 Minuten) gehört ist – aus allen Quellen, auch
+                Spotify-Songs, die über YouTube Music laufen
+              </small>
+            </div>
+            {@render toggle(settings.lastfmScrobble, () => updateSetting("lastfmScrobble", !settings.lastfmScrobble), "Scrobbeln")}
+          </div>
+        {:else}
+          <div class="row">
+            <div class="label">
+              <strong>Nicht verbunden</strong>
+              <small>Gehörte Songs in deinem Last.fm-Profil sammeln – für Statistiken und Empfehlungen</small>
+            </div>
+            <button class="primary" onclick={lastfmLogin} disabled={lastfm.loggingIn}>
+              {lastfm.loggingIn ? "Warte auf Last.fm…" : "Mit Last.fm verbinden"}
+            </button>
+          </div>
+        {/if}
+        {#if lastfm.error}<p class="note warn">{lastfm.error}</p>{/if}
       </div>
     </section>
 
@@ -926,6 +1046,15 @@
   }
   .tempo input {
     width: 180px;
+  }
+  .avatar.lastfm {
+    background: #d51007;
+    color: #fff;
+    display: grid;
+    place-items: center;
+  }
+  .note.warn {
+    color: var(--accent);
   }
   .note {
     margin: 0;

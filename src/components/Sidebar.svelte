@@ -8,6 +8,7 @@
   const collapsed = $derived(ui.sidebarCollapsed);
 
   const items = [
+    { id: "home", icon: "home", label: "Startseite" },
     { id: "local", icon: "folder", label: "Lokale Musik" },
     { id: "youtube", icon: "youtube", label: "YouTube Music" },
     { id: "spotify", icon: "spotify", label: "Spotify" },

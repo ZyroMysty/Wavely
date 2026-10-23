@@ -1,7 +1,6 @@
 <script>
   import { onMount } from "svelte";
   import { refreshLibrary } from "./lib/library.svelte.js";
-  import { togglePlay } from "./lib/player.svelte.js";
   import { initYtm } from "./lib/ytm.svelte.js";
   import { initOffline } from "./lib/offline.svelte.js";
   import { initSpotify, spotify } from "./lib/spotify.svelte.js";
@@ -22,8 +21,13 @@
   import UpdateBanner from "./components/UpdateBanner.svelte";
   import { initUpdater } from "./lib/updater.svelte.js";
   import ChangelogDialog from "./components/ChangelogDialog.svelte";
+  import TransferDialog from "./components/TransferDialog.svelte";
   import { showWhatsNew } from "./lib/changelog.svelte.js";
   import { initSound } from "./lib/sound.svelte.js";
+  import HomeView from "./components/HomeView.svelte";
+  import ShortcutsDialog from "./components/ShortcutsDialog.svelte";
+  import { handleKey, applyGlobalShortcuts } from "./lib/shortcuts.svelte.js";
+  import { initLastFm } from "./lib/lastfm.svelte.js";
   import SettingsView from "./components/SettingsView.svelte";
   import { ui } from "./lib/ui.svelte.js";
   import { applyAppearance, settings } from "./lib/settings.svelte.js";
@@ -49,24 +53,21 @@
     initBridge();
     initUpdater();
     initSound();
+    initLastFm();
+    applyGlobalShortcuts();
     showWhatsNew();
   });
 
-  // Leertaste = Play/Pause (außer beim Tippen)
-  function onKeydown(e) {
-    if (e.code === "Space" && !(e.target instanceof HTMLInputElement)) {
-      e.preventDefault();
-      togglePlay();
-    }
-  }
 </script>
 
-<svelte:window onkeydown={onKeydown} />
+<svelte:window onkeydown={handleKey} />
 
 <div class="app" class:with-panel={ui.panel} class:collapsed={ui.sidebarCollapsed}>
   <Sidebar />
   <main>
-    {#if ui.view === "local"}
+    {#if ui.view === "home"}
+      <HomeView />
+    {:else if ui.view === "local"}
       <LocalView />
     {:else if ui.view === "offline"}
       <OfflineView />
@@ -88,6 +89,8 @@
 <Toast />
 <UpdateBanner />
 <ChangelogDialog />
+<TransferDialog />
+<ShortcutsDialog />
 
 <style>
   .app {

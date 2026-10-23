@@ -26,7 +26,7 @@ const DEFAULT_CLIENT_ID: &str = "5d9c0db17c284f5a959e0baa2294f80e";
 const REDIRECT_URI: &str = "http://127.0.0.1:43827/callback";
 const SCOPES: &str = "user-read-private playlist-read-private playlist-read-collaborative user-library-read \
                       user-read-recently-played user-follow-read \
-                      user-read-playback-state user-modify-playback-state user-read-currently-playing                       streaming user-read-email";
+                      user-read-playback-state user-modify-playback-state user-read-currently-playing                       streaming user-read-email playlist-modify-private playlist-modify-public";
 const LOGIN_WINDOW: &str = "spotify-login";
 const API: &str = "https://api.spotify.com/v1";
 /// Obergrenze beim Nachladen langer Listen
@@ -976,4 +976,92 @@ pub async fn spotify_transfer(spotify: State<'_, Spotify>, device_id: String, pl
 #[tauri::command]
 pub async fn spotify_access_token(spotify: State<'_, Spotify>) -> Result<String, String> {
     spotify.access_token(false).await
+}
+
+// --- Playlists übertragen (nach Spotify) ----------------------------------
+
+/// Sucht den passenden Spotify-Song zu einem Song aus einer anderen Quelle.
+#[tauri::command]
+pub async fn spotify_match(
+    spotify: State<'_, Spotify>,
+    title: String,
+    artist: Option<String>,
+    duration: f64,
+) -> Result<Option<SpTrack>, String> {
+    let first_artist = artist.as_deref().unwrap_or("").split(',').next().unwrap_or("").trim().to_string();
+    let wanted_title = normalize(&title);
+    let wanted_artist = first_artist.to_lowercase();
+    // Erst gezielt nach Titel + Künstler, sonst frei
+    let queries = [
+        format!("track:\"{title}\" artist:\"{first_artist}\""),
+        format!("{first_artist} {title}"),
+    ];
+    for query in queries {
+        let mut url = Url::parse(&format!("{API}/search")).map_err(err)?;
+        url.query_pairs_mut().append_pair("q", &query).append_pair("type", "track").append_pair("limit", "10");
+        let r = spotify.get(url.as_str()).await?;
+        let best = r["tracks"]["items"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|t| to_track(t, None))
+            .map(|t| {
+                let diff = if duration > 0.0 { (t.duration - duration).abs() } else { 10.0 };
+                let mut score = -diff.min(60.0);
+                let name = normalize(&t.title);
+                if name == wanted_title {
+                    score += 20.0;
+                } else if name.contains(&wanted_title) || wanted_title.contains(&name) {
+                    score += 8.0;
+                }
+                if t.artists.iter().any(|a| a.name.to_lowercase() == wanted_artist) {
+                    score += 15.0;
+                }
+                (score, t)
+            })
+            .max_by(|a, b| a.0.total_cmp(&b.0));
+        // Nur annehmen, wenn Titel oder Künstler wirklich passen
+        if let Some((score, track)) = best {
+            if score > 0.0 {
+                return Ok(Some(track));
+            }
+        }
+    }
+    Ok(None)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpCreated {
+    id: String,
+    url: Option<String>,
+}
+
+/// Neue Playlist im eigenen Spotify-Konto anlegen und Songs hinzufügen (Pakete à 100).
+#[tauri::command]
+pub async fn spotify_create_playlist(
+    spotify: State<'_, Spotify>,
+    name: String,
+    description: Option<String>,
+    public: bool,
+    track_ids: Vec<String>,
+) -> Result<SpCreated, String> {
+    let body = serde_json::json!({
+        "name": name,
+        "description": description.unwrap_or_default(),
+        "public": public,
+    });
+    let created = spotify
+        .player_request(reqwest::Method::POST, "/me/playlists", Some(body))
+        .await?
+        .ok_or("Spotify hat keine Playlist zurückgegeben")?;
+    let id = created["id"].as_str().ok_or("Spotify hat keine Playlist zurückgegeben")?.to_string();
+    for chunk in track_ids.chunks(100) {
+        let uris: Vec<String> = chunk.iter().map(|id| format!("spotify:track:{id}")).collect();
+        spotify
+            .player_request(reqwest::Method::POST, &format!("/playlists/{id}/items"), Some(serde_json::json!({ "uris": uris })))
+            .await?;
+    }
+    Ok(SpCreated { id, url: created["external_urls"]["spotify"].as_str().map(str::to_string) })
 }

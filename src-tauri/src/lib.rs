@@ -1,4 +1,5 @@
 mod artwork;
+mod lastfm;
 mod library;
 mod lyrics;
 mod offline;
@@ -98,6 +99,19 @@ async fn mini_player_open(app: AppHandle, pinned: bool, width: Option<f64>, heig
         .map_err(|e| e.to_string())
 }
 
+/// Merkt sich, ob Wavely beim automatischen Start mit Windows minimiert starten soll
+/// (Datei statt Einstellung, weil das Fenster entsteht, bevor die Oberfläche geladen ist).
+#[tauri::command]
+fn set_start_minimized(app: AppHandle, minimized: bool) -> Result<(), String> {
+    let path = app.path().app_data_dir().map_err(|e| e.to_string())?.join("start_minimized");
+    if minimized {
+        std::fs::write(path, "1").map_err(|e| e.to_string())
+    } else {
+        let _ = std::fs::remove_file(path);
+        Ok(())
+    }
+}
+
 /// Hauptfenster wieder anzeigen (z. B. aus dem Mini-Player).
 #[tauri::command]
 async fn show_main_window(app: AppHandle) -> Result<(), String> {
@@ -109,6 +123,16 @@ async fn show_main_window(app: AppHandle) -> Result<(), String> {
 
 pub fn run() {
     let app = tauri::Builder::default()
+        // Zweiter Start (z. B. Doppelklick, obwohl Wavely schon läuft): vorhandenes Fenster nach vorn holen
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
+        .plugin(tauri_plugin_autostart::Builder::new().args(["--autostart"]).build())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
@@ -168,6 +192,15 @@ pub fn run() {
             soundcloud::soundcloud_recent,
             soundcloud::soundcloud_stream,
             ytm::ytm_report_play,
+            ytm::ytm_home,
+            spotify::spotify_match,
+            spotify::spotify_create_playlist,
+            lastfm::lastfm_status,
+            lastfm::lastfm_login,
+            lastfm::lastfm_logout,
+            lastfm::lastfm_now_playing,
+            lastfm::lastfm_scrobble,
+            set_start_minimized,
             mini_player_open,
             show_main_window,
             #[cfg(windows)]
@@ -221,8 +254,14 @@ pub fn run() {
             // Hauptfenster selbst erstellen, um Freigaben zu beantworten: Das Mikrofon-Recht braucht
             // Chromium nur, um die Namen der Ausgabegeräte zu verraten (Auswahl Lautsprecher/Kopfhörer).
             // Wavely nimmt nichts auf – der Zugriff wird sofort wieder geschlossen.
-            let config = app.config().app.windows.iter().find(|w| w.label == "main").cloned().ok_or("Hauptfenster fehlt")?;
-            tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?
+            let mut config = app.config().app.windows.iter().find(|w| w.label == "main").cloned().ok_or("Hauptfenster fehlt")?;
+            // Automatischer Start mit Windows und „minimiert starten“: Fenster erst unsichtbar, dann minimiert zeigen
+            let start_minimized = std::env::args().any(|a| a == "--autostart")
+                && app.path().app_data_dir().map(|d| d.join("start_minimized").exists()).unwrap_or(false);
+            if start_minimized {
+                config.visible = false;
+            }
+            let main = tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?
                 .on_permission_request(|webview, kind| {
                     let own = webview.url().map(|u| u.host_str() == Some("tauri.localhost") || u.host_str() == Some("localhost")).unwrap_or(false);
                     match kind {
@@ -231,6 +270,11 @@ pub fn run() {
                     }
                 })
                 .build()?;
+            if start_minimized {
+                let _ = main.minimize();
+                let _ = main.show();
+                let _ = main.minimize();
+            }
 
             #[cfg(windows)]
             if let Some(main) = app.get_webview_window("main") {
@@ -244,10 +288,12 @@ pub fn run() {
             app.manage(ytm::Ytm::new(app.handle(), ytdlp)?);
             app.manage(spotify::Spotify::new(app.handle())?);
             app.manage(soundcloud::SoundCloud::new(app.handle())?);
+            app.manage(lastfm::LastFm::new(app.handle())?);
 
             // yt-dlp im Hintergrund aktuell halten (höchstens einmal am Tag)
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
+                lastfm::flush_pending(&handle).await;
                 handle.state::<ytm::Ytm>().update_tools().await;
             });
             Ok(())

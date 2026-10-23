@@ -4,6 +4,14 @@ Neue Punkte kommen zuerst unter „Unveröffentlicht“. Beim Veröffentlichen w
 
 ## Unveröffentlicht
 
+## 0.12.0 – 2026-10-23
+- Startseite mit Weiterhören, Mixes für dich, deinen Top-Songs, deinen Playlists, Charts und Neuerscheinungen
+- Playlists übertragen: von Spotify, YouTube Music oder SoundCloud als neue Playlist zu YouTube Music oder Spotify
+- Last.fm: gehörte Songs scrobbeln (auch ohne Internet, wird nachgereicht) und „Hört gerade“ im Profil
+- Tastenkürzel für Wiedergabe, Spulen, Lautstärke, Suche und mehr – Übersicht mit „?“; optional systemweit mit Strg+Alt
+- Mit Windows starten, auf Wunsch minimiert
+- Wavely läuft nur noch einmal: ein zweiter Start holt das vorhandene Fenster nach vorn
+
 ## 0.11.0 – 2026-10-23
 - Versionsverlauf in Wavely (Einstellungen → Über Wavely); nach einem Update erscheinen die Neuerungen automatisch
 - Lautstärke angleichen: Alle Songs klingen etwa gleich laut

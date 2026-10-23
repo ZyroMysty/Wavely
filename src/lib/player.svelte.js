@@ -19,6 +19,7 @@ import {
 } from "./spotifyPlayer.svelte.js";
 import { attachAudio, resumeAudio, setOutputGain, setFade, startTrack } from "./sound.svelte.js";
 import { consumeEndOfTrack } from "./sleepTimer.svelte.js";
+import { trackStarted as lastfmStarted, trackProgress as lastfmProgress } from "./lastfm.svelte.js";
 
 // Ein einziges Audio-Element für alle Quellen (lokal und YouTube Music).
 const audio = new Audio();
@@ -253,6 +254,12 @@ async function youtubeRadio(seed) {
   }
 }
 
+/** Mix starten: Song plus passende Songs (Startseite „Mixes für dich“) */
+export async function playMix(seed) {
+  const related = seed.source === "local" ? localRadio(seed) : await youtubeRadio(seed);
+  playList([seed, ...related], 0);
+}
+
 /** Lokal: bevorzugt gleicher Künstler, gleiches Album und gleicher Ordner, aufgefüllt mit Zufall. */
 function localRadio(seed) {
   const folder = (path) => path.replace(/[\\/][^\\/]*$/, "");
@@ -416,7 +423,10 @@ export function cycleRepeat() {
 
 // --- Audio-Events ---------------------------------------------------------
 
-audio.addEventListener("timeupdate", () => (player.position = audio.currentTime));
+audio.addEventListener("timeupdate", () => {
+  player.position = audio.currentTime;
+  lastfmProgress(audio.currentTime, player.duration);
+});
 audio.addEventListener("durationchange", () => {
   if (Number.isFinite(audio.duration)) player.duration = audio.duration;
 });
@@ -429,6 +439,7 @@ function startedPlaying() {
   errorStreak = 0;
   if (pendingHistory) {
     recordPlay(pendingHistory);
+    lastfmStarted(pendingHistory);
     // Nur echte YouTube-Music-Songs an den YouTube-Verlauf melden – Spotify-/SoundCloud-Songs,
     // die nur über YouTube abgespielt werden, gehören nicht in den YouTube-Verlauf
     const video = pendingHistory.source === "youtube" ? pendingHistory.id : null;
@@ -496,6 +507,7 @@ onSpotifyState((state) => {
     player.playing = state.playing;
     player.position = state.position;
     if (state.duration) player.duration = state.duration;
+    lastfmProgress(state.position, player.duration);
     if (state.playing && !spStarted) {
       spStarted = true;
       startedPlaying();

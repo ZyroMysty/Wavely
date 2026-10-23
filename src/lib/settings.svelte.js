@@ -7,7 +7,7 @@ const defaults = {
   theme: "dark",
   accent: "#ff4f7b",
   /** Ansicht beim Start: "local" | "youtube" | "spotify" | "soundcloud" | "offline" */
-  startView: "youtube",
+  startView: "home",
   discordEnabled: true,
   /** Was Discord in der Mitgliederliste zeigt: "details" (Songtitel) | "state" (Künstler) | "name" (Wavely) */
   discordDisplay: "details",
@@ -30,6 +30,12 @@ const defaults = {
   preservePitch: true,
   /** Ausgabegerät für Wavelys Player ("" = Windows-Standard) */
   outputDevice: "",
+  /** Gehörte Songs an Last.fm melden (wenn verbunden) */
+  lastfmScrobble: true,
+  /** Systemweite Tastenkürzel (auch wenn Wavely im Hintergrund ist) */
+  globalShortcuts: false,
+  /** Beim automatischen Start mit Windows minimiert starten */
+  startMinimized: true,
   /** Zuletzt benutzte Größe des Mini-Players */
   miniWidth: 360,
   miniHeight: 104,

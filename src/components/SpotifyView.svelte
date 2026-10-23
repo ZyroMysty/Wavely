@@ -1,4 +1,5 @@
 <script>
+  import { openTransfer } from "../lib/transfer.svelte.js";
   import { untrack } from "svelte";
   import { spotify, login, logout, loadLibrary, fetchCollection, fetchArtist, search } from "../lib/spotify.svelte.js";
   import { ui } from "../lib/ui.svelte.js";
@@ -209,6 +210,14 @@
           </button>
           <button class="secondary" onclick={() => playAll(collection.tracks, true)} disabled={loading}>
             <Icon name="shuffle" size={18} /> Zufall
+          </button>
+          <button
+            class="secondary"
+            onclick={() => openTransfer(collection, "spotify")}
+            disabled={loading || !collection.tracks.length}
+            title="Als neue Playlist bei einem anderen Dienst anlegen"
+          >
+            <Icon name="transfer" size={18} /> Übertragen
           </button>
           <button
             class="secondary"
