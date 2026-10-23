@@ -62,6 +62,7 @@
     "allow-ytm-report-play",
     "allow-mini-player-open",
     "allow-taskbar-update",
+    "allow-media-update",
     "allow-get-lyrics",
     "allow-offline-list",
     "allow-offline-save",

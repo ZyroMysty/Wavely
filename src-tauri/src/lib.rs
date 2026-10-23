@@ -7,6 +7,8 @@ mod soundcloud;
 mod spotify;
 #[cfg(windows)]
 mod taskbar;
+#[cfg(windows)]
+mod media;
 mod ytdlp;
 mod ytm;
 
@@ -168,6 +170,8 @@ pub fn run() {
             show_main_window,
             #[cfg(windows)]
             taskbar::taskbar_update,
+            #[cfg(windows)]
+            media::media_update,
             lyrics::get_lyrics,
             offline::offline_list,
             offline::offline_save,
@@ -211,6 +215,7 @@ pub fn run() {
             if let Some(main) = app.get_webview_window("main") {
                 taskbar::set_big_icon(&main);
                 taskbar::init(app.handle(), &main);
+                media::init(app.handle(), &main);
             }
             app.manage(artwork::Artwork::new(app.handle())?);
             let ytdlp = ytdlp::YtDlp::init(app.handle())?;

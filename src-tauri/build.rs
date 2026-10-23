@@ -58,6 +58,7 @@ fn main() {
             "mini_player_open",
             "show_main_window",
             "taskbar_update",
+            "media_update",
             "get_lyrics",
             "offline_list",
             "offline_save",

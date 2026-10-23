@@ -26,6 +26,8 @@ async function likeCurrent() {
 function runCommand(command) {
   const action = typeof command === "string" ? command : command.action;
   if (action === "toggle") togglePlay();
+  else if (action === "play") !player.playing && togglePlay();
+  else if (action === "pause") player.playing && togglePlay();
   else if (action === "next") next();
   else if (action === "previous") previous();
   else if (action === "like") likeCurrent();
@@ -77,6 +79,20 @@ export async function initBridge() {
         liked: canLike(track) ? isLiked(track.id) : null,
       };
       invoke("taskbar_update", { state }).catch(() => {});
+    });
+
+    // Windows-Mediensteuerung (Medientasten, Overlay)
+    $effect(() => {
+      const track = currentTrack();
+      const info = {
+        hasTrack: Boolean(track),
+        playing: player.playing,
+        title: track?.title ?? null,
+        artist: track?.artist ?? null,
+        album: track?.album ?? null,
+        artworkUrl: track ? hiResArtwork(track.artworkUrl) ?? null : null,
+      };
+      invoke("media_update", { info }).catch(() => {});
     });
 
     // Mini-Player: Zustand inkl. Position
