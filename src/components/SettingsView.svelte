@@ -14,6 +14,7 @@
   import { artworkSrc } from "../lib/artwork.js";
   import Icon from "./Icon.svelte";
   import Logo from "./Logo.svelte";
+  import { updater, checkForUpdates, installUpdate } from "../lib/updater.svelte.js";
 
   let version = $state("");
   let stats = $state(null);
@@ -434,9 +435,49 @@
             <Logo size={44} />
             <div class="label">
               <strong>Wavely {version}</strong>
-              <small>Leichtgewichtiger Musikplayer für lokale Musik und YouTube Music</small>
+              <small>Leichtgewichtiger Musikplayer für lokale Musik, YouTube Music, Spotify und SoundCloud</small>
             </div>
           </div>
+        </div>
+        <div class="row">
+          <div class="label">
+            <strong>Updates</strong>
+            <small>
+              {#if updater.status === "checking"}
+                Suche nach Updates…
+              {:else if updater.status === "none"}
+                Wavely ist auf dem neuesten Stand.
+              {:else if updater.status === "available"}
+                Version {updater.version} ist verfügbar.
+              {:else if updater.status === "downloading"}
+                Wird heruntergeladen{updater.progress != null ? ` (${Math.round(updater.progress * 100)} %)` : "…"}
+              {:else if updater.status === "installing"}
+                Wird installiert – Wavely startet gleich neu…
+              {:else if updater.status === "error"}
+                Update fehlgeschlagen: {updater.error}
+              {:else}
+                Neue Versionen kommen direkt von GitHub und werden vor der Installation auf ihre Echtheit geprüft.
+              {/if}
+            </small>
+          </div>
+          {#if updater.status === "available"}
+            <button class="primary" onclick={installUpdate}><Icon name="download" size={18} /> Jetzt aktualisieren</button>
+          {:else}
+            <button
+              class="secondary"
+              onclick={() => checkForUpdates(false)}
+              disabled={["checking", "downloading", "installing"].includes(updater.status)}
+            >
+              Nach Updates suchen
+            </button>
+          {/if}
+        </div>
+        <div class="row">
+          <div class="label">
+            <strong>Automatisch nach Updates suchen</strong>
+            <small>Beim Start und alle paar Stunden; installiert wird erst, wenn du es bestätigst</small>
+          </div>
+          {@render toggle(settings.autoUpdateCheck, () => updateSetting("autoUpdateCheck", !settings.autoUpdateCheck), "Automatisch nach Updates suchen")}
         </div>
         <div class="row column">
           <div class="label">

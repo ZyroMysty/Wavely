@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Wavely",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "identifier": "com.wavely.app",
   "build": {
     "devUrl": "http://localhost:1420",
@@ -41,6 +41,18 @@
     ],
     "externalBin": [
       "binaries/yt-dlp"
-    ]
+    ],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEUxQUQyQzQyMDk2QkQzRTYKUldUbTAyc0pRaXl0NGZSTGo5YWpKbnJCMTBZNFc3UFhaSFRqdkJsNS9Xd2hhNVFCdGVZRjRSUzkK",
+      "endpoints": [
+        "https://github.com/ZyroMysty/Wavely/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

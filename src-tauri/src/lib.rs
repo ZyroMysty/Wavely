@@ -110,6 +110,8 @@ async fn show_main_window(app: AppHandle) -> Result<(), String> {
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(Mutex::new(Presence::default()))
         .invoke_handler(tauri::generate_handler![
             update_presence,
