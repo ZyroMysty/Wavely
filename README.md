@@ -36,7 +36,9 @@
 
 ## Installation
 
-Den Installer `Wavely_<version>_x64-setup.exe` ausführen. Wavely aktualisiert das mitgelieferte yt-dlp einmal am Tag selbst.
+Den Installer `Wavely_<version>_x64-setup.exe` von der [Release-Seite](https://github.com/ZyroMysty/Wavely/releases/latest) ausführen. Danach sucht Wavely selbst nach neuen Versionen (signierte Updates über GitHub) und hält das mitgelieferte yt-dlp aktuell.
+
+Was sich in jeder Version geändert hat, steht in den [Release Notes](CHANGELOG.md).
 
 ### Spotify Premium
 
@@ -68,6 +70,8 @@ Installer bauen (landet in `src-tauri/target/release/bundle/nsis/`):
 ```bash
 npm run build
 ```
+
+Liegt der Update-Schlüssel unter `~/.tauri/wavely.key`, wird der Installer für automatische Updates signiert. `npm run release` veröffentlicht ihn dann als GitHub-Release, mit den Notizen der Version aus `CHANGELOG.md`.
 
 ## Aufbau
 

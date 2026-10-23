@@ -1,8 +1,9 @@
 // Gebaute Version als GitHub-Release veröffentlichen, damit installierte Wavely-Apps sie als Update finden.
 //
 //   npm run build
-//   npm run release -- "Was ist neu (eine Zeile pro Punkt)"
+//   npm run release
 //
+// Die Release Notes kommen aus dem Abschnitt „## <version>“ in CHANGELOG.md.
 // Lädt den signierten Installer und latest.json (Version, Notizen, Signatur, Download-Adresse) hoch.
 // Das GitHub-Token kommt aus der Git-Anmeldung (Git Credential Manager), es wird nirgends gespeichert.
 import { execFileSync } from "node:child_process";
@@ -13,7 +14,12 @@ const REPO = "ZyroMysty/Wavely";
 const root = join(import.meta.dirname, "..");
 const { version } = JSON.parse(readFileSync(join(root, "src-tauri", "tauri.conf.json"), "utf8"));
 const tag = `v${version}`;
-const notes = process.argv.slice(2).join(" ").replace(/\\n/g, "\n").trim() || `Wavely ${version}`;
+
+// Abschnitt „## 1.2.3 – Datum“ bis zur nächsten Überschrift
+const changelog = readFileSync(join(root, "CHANGELOG.md"), "utf8").replace(/\r/g, "");
+const section = changelog.split(/^## /m).find((part) => part.startsWith(`${version} `) || part.startsWith(`${version}\n`));
+const notes = section?.split("\n").slice(1).join("\n").trim();
+if (!notes) throw new Error(`In CHANGELOG.md fehlt der Abschnitt „## ${version}“ mit den Release Notes.`);
 
 const installer = join(root, "src-tauri", "target", "release", "bundle", "nsis", `Wavely_${version}_x64-setup.exe`);
 const signatureFile = `${installer}.sig`;
