@@ -19,6 +19,17 @@ const defaults = {
   autoUpdateCheck: true,
   /** Spotify (Premium): "wavely" = direkt in Wavely, sonst ID eines anderen Spotify-Geräts */
   spotifyDevice: "wavely",
+  /** Lautstärke der Songs angleichen */
+  normalize: false,
+  /** Equalizer: an/aus, gewählte Voreinstellung ("custom" = eigene) und Pegel der 10 Bänder in dB */
+  eqEnabled: false,
+  eqPreset: "flat",
+  eqGains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  /** Wiedergabetempo (1 = normal) und ob die Tonhöhe dabei gleich bleibt */
+  playbackRate: 1,
+  preservePitch: true,
+  /** Ausgabegerät für Wavelys Player ("" = Windows-Standard) */
+  outputDevice: "",
   /** Zuletzt benutzte Größe des Mini-Players */
   miniWidth: 360,
   miniHeight: 104,

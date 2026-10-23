@@ -15,6 +15,23 @@
   import Icon from "./Icon.svelte";
   import Logo from "./Logo.svelte";
   import { updater, checkForUpdates, installUpdate } from "../lib/updater.svelte.js";
+  import {
+    sound,
+    EQ_BANDS,
+    EQ_PRESETS,
+    selectEqPreset,
+    setEqBand,
+    setEqEnabled,
+    setNormalize,
+    setTempo,
+    setPreservePitch,
+    loadOutputs,
+    selectOutput,
+  } from "../lib/sound.svelte.js";
+  import { openChangelog } from "../lib/changelog.svelte.js";
+
+  const bandLabel = (f) => (f >= 1000 ? `${f / 1000}k` : String(f));
+  const formatDb = (db) => (db > 0 ? `+${db}` : String(db));
 
   let version = $state("");
   let stats = $state(null);
@@ -23,6 +40,7 @@
   const sections = [
     { id: "appearance", label: "Darstellung" },
     { id: "playback", label: "Wiedergabe" },
+    { id: "sound", label: "Klang" },
     { id: "discord", label: "Discord" },
     { id: "library", label: "Bibliothek" },
     { id: "youtube", label: "YouTube Music" },
@@ -196,6 +214,105 @@
             <option value="offline">Offline</option>
           </select>
         </div>
+      </div>
+    </section>
+
+    <!-- Klang -->
+    <section id="settings-sound">
+      <h2>Klang</h2>
+      <div class="card">
+        <div class="row">
+          <div class="label">
+            <strong>Lautstärke angleichen</strong>
+            <small>
+              Alle Songs klingen etwa gleich laut. Wavely misst jeden Song beim ersten Hören und merkt sich das Ergebnis.
+              {#if settings.normalize}Aktueller Song: {formatDb(sound.normalizeDb)} dB{/if}
+            </small>
+          </div>
+          {@render toggle(settings.normalize, () => setNormalize(!settings.normalize), "Lautstärke angleichen")}
+        </div>
+        <div class="row">
+          <div class="label">
+            <strong>Equalizer</strong>
+            <small>Bässe, Mitten und Höhen anpassen</small>
+          </div>
+          {@render toggle(settings.eqEnabled, () => setEqEnabled(!settings.eqEnabled), "Equalizer")}
+        </div>
+        <div class="row column" class:disabled={!settings.eqEnabled}>
+          <div class="eq-head">
+            <select value={settings.eqPreset} onchange={(e) => selectEqPreset(e.currentTarget.value)}>
+              {#each EQ_PRESETS as preset (preset.id)}
+                <option value={preset.id}>{preset.name}</option>
+              {/each}
+              {#if settings.eqPreset === "custom"}<option value="custom" disabled>Eigene Einstellung</option>{/if}
+            </select>
+            <button class="secondary" onclick={() => selectEqPreset("flat")}>Zurücksetzen</button>
+          </div>
+          <div class="eq">
+            {#each EQ_BANDS as band, i (band)}
+              <label class="band">
+                <span class="db">{formatDb(settings.eqGains[i])}</span>
+                <input
+                  type="range"
+                  min="-12"
+                  max="12"
+                  step="1"
+                  value={settings.eqGains[i]}
+                  style:--progress="{((settings.eqGains[i] + 12) / 24) * 100}%"
+                  aria-label="{bandLabel(band)} Hz"
+                  oninput={(e) => setEqBand(i, +e.currentTarget.value)}
+                  ondblclick={() => setEqBand(i, 0)}
+                />
+                <span class="hz">{bandLabel(band)}</span>
+              </label>
+            {/each}
+          </div>
+        </div>
+        <div class="row">
+          <div class="label">
+            <strong>Tempo</strong>
+            <small>Schneller oder langsamer abspielen ({settings.playbackRate.toLocaleString("de-DE")}×)</small>
+          </div>
+          <div class="tempo">
+            <input
+              type="range"
+              min="0.5"
+              max="2"
+              step="0.05"
+              value={settings.playbackRate}
+              style:--progress="{((settings.playbackRate - 0.5) / 1.5) * 100}%"
+              oninput={(e) => setTempo(+e.currentTarget.value)}
+            />
+            <button class="secondary" onclick={() => setTempo(1)} disabled={settings.playbackRate === 1}>Normal</button>
+          </div>
+        </div>
+        <div class="row">
+          <div class="label">
+            <strong>Tonhöhe beibehalten</strong>
+            <small>Aus: Schneller klingt höher, langsamer tiefer – wie bei „Sped up“- und „Slowed“-Versionen</small>
+          </div>
+          {@render toggle(settings.preservePitch, () => setPreservePitch(!settings.preservePitch), "Tonhöhe beibehalten")}
+        </div>
+        <div class="row">
+          <div class="label">
+            <strong>Ausgabegerät</strong>
+            <small>Lautsprecher oder Kopfhörer für Wavely, unabhängig von Windows</small>
+          </div>
+          <select
+            value={settings.outputDevice}
+            onfocus={() => loadOutputs()}
+            onchange={(e) => selectOutput(e.currentTarget.value)}
+          >
+            <option value="">Windows-Standard</option>
+            {#each sound.outputs as device (device.id)}
+              <option value={device.id}>{device.name}</option>
+            {/each}
+            {#if settings.outputDevice && !sound.outputs.some((o) => o.id === settings.outputDevice)}
+              <option value={settings.outputDevice}>Gespeichertes Gerät (nicht verbunden)</option>
+            {/if}
+          </select>
+        </div>
+        <p class="note">Bei Spotify Premium läuft die Wiedergabe über Spotify selbst – dort wirken diese Einstellungen nicht.</p>
       </div>
     </section>
 
@@ -479,6 +596,13 @@
           </div>
           {@render toggle(settings.autoUpdateCheck, () => updateSetting("autoUpdateCheck", !settings.autoUpdateCheck), "Automatisch nach Updates suchen")}
         </div>
+        <div class="row">
+          <div class="label">
+            <strong>Versionsverlauf</strong>
+            <small>Was sich in jeder Wavely-Version geändert hat</small>
+          </div>
+          <button class="secondary" onclick={() => openChangelog()}><Icon name="newReleases" size={18} /> Anzeigen</button>
+        </div>
         <div class="row column">
           <div class="label">
             <strong>Verwendete Projekte</strong>
@@ -751,6 +875,64 @@
   button:disabled {
     opacity: 0.5;
     cursor: default;
+  }
+  .eq-head {
+    display: flex;
+    gap: 8px;
+  }
+  .eq-head select {
+    flex: 1;
+  }
+  .eq {
+    display: grid;
+    grid-template-columns: repeat(10, minmax(0, 1fr));
+    gap: 4px;
+  }
+  .band {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+  }
+  .band input {
+    writing-mode: vertical-lr;
+    direction: rtl;
+    width: 4px;
+    height: 130px;
+    background: linear-gradient(to top, var(--accent) var(--progress), var(--hover) var(--progress));
+  }
+  .band input:hover {
+    background: linear-gradient(to top, var(--accent) var(--progress), var(--hover) var(--progress));
+  }
+  .band input::-webkit-slider-thumb {
+    opacity: 1;
+    width: 14px;
+    height: 14px;
+  }
+  .band .db {
+    color: var(--text);
+  }
+  .row.disabled .eq,
+  .row.disabled .eq-head {
+    opacity: 0.45;
+  }
+  .tempo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .tempo input {
+    width: 180px;
+  }
+  .note {
+    margin: 0;
+    padding: 12px 18px 16px;
+    border-top: 1px solid var(--border);
+    color: var(--text-dim);
+    font-size: 12px;
   }
   .row :global(.secondary),
   .row :global(.primary) {

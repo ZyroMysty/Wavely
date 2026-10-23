@@ -1,62 +1,79 @@
 <script>
-  import { spotifyOut, targetDevice, loadDevices, selectDevice, initSpotifyPlayer } from "../lib/spotifyPlayer.svelte.js";
-  import { player, currentTrack } from "../lib/player.svelte.js";
+  import Popover from "./Popover.svelte";
   import Icon from "./Icon.svelte";
+  import { spotifyOut, targetDevice, loadDevices, selectDevice, initSpotifyPlayer } from "../lib/spotifyPlayer.svelte.js";
+  import { spotify } from "../lib/spotify.svelte.js";
+  import { player, currentTrack } from "../lib/player.svelte.js";
+  import { settings } from "../lib/settings.svelte.js";
+  import { sound, loadOutputs, selectOutput } from "../lib/sound.svelte.js";
 
-  let open = $state(false);
-  let root = $state();
   let loading = $state(false);
 
-  const target = $derived(targetDevice());
-  const activeName = $derived(
+  const spotifyOn = $derived(spotify.status === "loggedIn");
+  const target = $derived(spotifyOn ? targetDevice() : "wavely");
+  const remoteName = $derived(
     target === "wavely" ? null : (spotifyOut.devices.find((d) => d.id === target)?.name ?? "anderes Gerät"),
   );
+  const output = $derived(settings.outputDevice || "");
+  const outputName = $derived(sound.outputs.find((o) => o.id === output)?.name);
 
-  async function toggle() {
-    open = !open;
-    if (open) {
-      loading = true;
-      await initSpotifyPlayer();
-      await loadDevices();
-      loading = false;
-    }
+  async function opened() {
+    loading = true;
+    const jobs = [loadOutputs()];
+    if (spotifyOn) jobs.push(initSpotifyPlayer().then(loadDevices));
+    await Promise.all(jobs);
+    loading = false;
   }
 
-  async function choose(id) {
-    open = false;
+  /** Ausgabe an diesem PC: Gerät wählen und Spotify (falls woanders) zurück zu Wavely holen */
+  async function chooseOutput(id, close) {
+    close();
+    await selectOutput(id);
+    if (spotifyOn && target !== "wavely") await chooseSpotify("wavely");
+  }
+
+  async function chooseSpotify(id, close) {
+    close?.();
     const playingSpotify = currentTrack()?.source === "spotify" && player.playing;
     await selectDevice(id, playingSpotify);
   }
 
-  function close(event) {
-    if (open && !root?.contains(event.target)) open = false;
-  }
-
-  const iconFor = (kind) => ({ Smartphone: "phone", Speaker: "speaker", TV: "tv" })[kind] ?? "devices";
+  const iconFor = (kind) => ({ Smartphone: "phone", Speaker: "speaker", TV: "tv", Computer: "computer" })[kind] ?? "devices";
+  const outputIcon = (name = "") => (/kopfh|headph|headset|earbud|airpods|buds/i.test(name) ? "headphones" : "speaker");
+  const title = $derived(
+    remoteName ? `Spotify läuft auf: ${remoteName}` : outputName ? `Ausgabe: ${outputName}` : "Ausgabegerät wählen",
+  );
 </script>
 
-<svelte:window onmousedown={close} onkeydown={(e) => e.key === "Escape" && (open = false)} />
+<Popover icon="devices" {title} active={Boolean(remoteName || output)} width={300} onopen={opened}>
+  {#snippet children({ close })}
+    <h4>Dieser PC</h4>
+    <button class="item" class:active={!remoteName && !output} onclick={() => chooseOutput("", close)}>
+      <Icon name="computer" size={18} />
+      <span>
+        <strong>Windows-Standard</strong>
+        <small>Das Gerät, das in Windows eingestellt ist</small>
+      </span>
+    </button>
+    {#if loading && !sound.outputs.length}
+      <p class="hint">Geräte werden gesucht…</p>
+    {:else}
+      {#each sound.outputs as device (device.id)}
+        <button class="item" class:active={!remoteName && output === device.id} onclick={() => chooseOutput(device.id, close)}>
+          <Icon name={outputIcon(device.name)} size={18} />
+          <span><strong>{device.name}</strong></span>
+        </button>
+      {/each}
+    {/if}
 
-<div class="picker" bind:this={root}>
-  <button class="small" class:on={target !== "wavely"} title={activeName ? `Spotify läuft auf: ${activeName}` : "Spotify-Gerät wählen"} onclick={toggle}>
-    <Icon name="devices" size={20} />
-  </button>
-
-  {#if open}
-    <div class="menu" role="menu">
-      <h4>Spotify abspielen auf</h4>
-      <button role="menuitem" class:active={target === "wavely"} onclick={() => choose("wavely")}>
-        <Icon name="devices" size={18} />
-        <span>
-          <strong>Wavely (dieser PC)</strong>
-          <small>{spotifyOut.premium === false ? "Spotify Free: über YouTube Music" : "Direkt in Wavely"}</small>
-        </span>
-      </button>
+    {#if spotifyOn}
+      <hr />
+      <h4>Spotify Connect</h4>
       {#if loading}
         <p class="hint">Geräte werden gesucht…</p>
       {:else}
         {#each spotifyOut.devices as device (device.id)}
-          <button role="menuitem" class:active={target === device.id} onclick={() => choose(device.id)}>
+          <button class="item" class:active={target === device.id} onclick={() => chooseSpotify(device.id, close)}>
             <Icon name={iconFor(device.kind)} size={18} />
             <span>
               <strong>{device.name}</strong>
@@ -68,81 +85,23 @@
         {/each}
       {/if}
       {#if spotifyOut.premium === false}
-        <p class="hint">Andere Geräte lassen sich nur mit Spotify Premium steuern.</p>
+        <p class="hint">Spotify-Geräte lassen sich nur mit Spotify Premium steuern.</p>
       {/if}
       {#if spotifyOut.notice}<p class="hint warn">{spotifyOut.notice}</p>{/if}
-    </div>
-  {/if}
-</div>
+    {/if}
+  {/snippet}
+</Popover>
 
 <style>
-  .picker {
-    position: relative;
-  }
-  .small {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    display: grid;
-    place-items: center;
-    color: var(--text-dim);
-  }
-  .small:hover {
-    color: var(--text);
-  }
-  .small.on {
-    color: var(--accent);
-  }
-  .menu {
-    position: absolute;
-    right: -40px;
-    bottom: calc(100% + 12px);
-    z-index: 60;
-    width: 290px;
-    padding: 8px;
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
-  }
-  h4 {
-    margin: 6px 8px 8px;
-    font-size: 13px;
-    color: var(--text-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-  .menu button {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 8px 10px;
-    border-radius: 6px;
-    text-align: left;
-  }
-  .menu button:hover {
-    background: var(--hover);
-  }
-  .menu button.active {
-    color: var(--accent);
-  }
-  .menu span {
+  span {
     display: flex;
     flex-direction: column;
     min-width: 0;
   }
-  .menu small {
-    color: var(--text-dim);
-    font-size: 12px;
-  }
-  .hint {
-    margin: 8px 10px 4px;
-    color: var(--text-dim);
-    font-size: 12px;
-    line-height: 1.4;
-  }
-  .hint.warn {
-    color: var(--accent);
+  strong {
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 </style>

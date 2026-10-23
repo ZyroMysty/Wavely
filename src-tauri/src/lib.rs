@@ -192,7 +192,12 @@ pub fn run() {
                 .and_then(|v| v.to_str().ok())
                 .map(str::to_string);
             tauri::async_runtime::spawn(async move {
-                let response = app.state::<ytm::Ytm>().serve_stream(&id, range.as_deref()).await;
+                let mut response = app.state::<ytm::Ytm>().serve_stream(&id, range.as_deref()).await;
+                // Der Equalizer (Web Audio) darf das Audio nur mit CORS-Freigabe verarbeiten
+                response.headers_mut().insert(
+                    tauri::http::header::ACCESS_CONTROL_ALLOW_ORIGIN,
+                    tauri::http::HeaderValue::from_static("*"),
+                );
                 responder.respond(response);
             });
         })
@@ -213,6 +218,20 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            // Hauptfenster selbst erstellen, um Freigaben zu beantworten: Das Mikrofon-Recht braucht
+            // Chromium nur, um die Namen der Ausgabegeräte zu verraten (Auswahl Lautsprecher/Kopfhörer).
+            // Wavely nimmt nichts auf – der Zugriff wird sofort wieder geschlossen.
+            let config = app.config().app.windows.iter().find(|w| w.label == "main").cloned().ok_or("Hauptfenster fehlt")?;
+            tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?
+                .on_permission_request(|webview, kind| {
+                    let own = webview.url().map(|u| u.host_str() == Some("tauri.localhost") || u.host_str() == Some("localhost")).unwrap_or(false);
+                    match kind {
+                        tauri::webview::PermissionKind::Microphone if own => tauri::webview::PermissionResponse::Allow,
+                        _ => tauri::webview::PermissionResponse::Default,
+                    }
+                })
+                .build()?;
+
             #[cfg(windows)]
             if let Some(main) = app.get_webview_window("main") {
                 taskbar::set_big_icon(&main);

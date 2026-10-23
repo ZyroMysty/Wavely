@@ -4,6 +4,14 @@ Neue Punkte kommen zuerst unter „Unveröffentlicht“. Beim Veröffentlichen w
 
 ## Unveröffentlicht
 
+## 0.11.0 – 2026-10-23
+- Versionsverlauf in Wavely (Einstellungen → Über Wavely); nach einem Update erscheinen die Neuerungen automatisch
+- Lautstärke angleichen: Alle Songs klingen etwa gleich laut
+- Equalizer mit 10 Bändern und Voreinstellungen (Bass Boost, Gesang, Rock, Podcast …)
+- Schlaf-Timer: Musik stoppt nach einer gewählten Zeit oder am Ende des Songs und wird sanft ausgeblendet
+- Tempo ändern (0,5× bis 2×), wahlweise mit gleicher oder mitwandernder Tonhöhe
+- Ausgabegerät wählen: Lautsprecher oder Kopfhörer direkt in Wavely, zusammen mit den Spotify-Geräten
+
 ## 0.10.0 – 2026-10-23
 - Automatische Updates: Wavely sucht selbst nach neuen Versionen und installiert sie nach Bestätigung
 - Updates sind signiert und werden vor der Installation auf Echtheit geprüft

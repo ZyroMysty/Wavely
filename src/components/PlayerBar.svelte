@@ -19,7 +19,8 @@
   import Cover from "./Cover.svelte";
   import ArtistLinks from "./ArtistLinks.svelte";
   import DevicePicker from "./DevicePicker.svelte";
-  import { spotify } from "../lib/spotify.svelte.js";
+  import SoundMenu from "./SoundMenu.svelte";
+  import SleepTimerMenu from "./SleepTimerMenu.svelte";
   import { spotifyOut, targetDevice } from "../lib/spotifyPlayer.svelte.js";
   import Icon from "./Icon.svelte";
 
@@ -119,9 +120,9 @@
   </div>
 
   <div class="right">
-    {#if spotify.status === "loggedIn"}
-      <DevicePicker />
-    {/if}
+    <SleepTimerMenu />
+    <SoundMenu />
+    <DevicePicker />
     <button class="small" title="Mini-Player" onclick={() => invoke("mini_player_open", { pinned: settings.miniPinned, width: settings.miniWidth, height: settings.miniHeight })}>
       <Icon name="miniPlayer" size={20} />
     </button>
@@ -157,7 +158,8 @@
     background: var(--surface);
     border-top: 1px solid var(--border);
     display: grid;
-    grid-template-columns: 1fr minmax(320px, 2fr) 1fr;
+    /* rechts so breit wie die Knöpfe, links Titel, Mitte Steuerung */
+    grid-template-columns: minmax(140px, 1fr) minmax(240px, 1.5fr) auto;
     align-items: center;
     gap: 16px;
     padding: 0 20px;
@@ -254,9 +256,15 @@
     display: flex;
     justify-content: flex-end;
     align-items: center;
-    gap: 8px;
+    gap: 4px;
   }
   .volume {
-    width: 110px;
+    width: 96px;
+    margin-left: 4px;
+  }
+  @media (max-width: 1000px) {
+    .volume {
+      display: none;
+    }
   }
 </style>

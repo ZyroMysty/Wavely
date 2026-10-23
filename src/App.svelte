@@ -21,6 +21,9 @@
   import Toast from "./components/Toast.svelte";
   import UpdateBanner from "./components/UpdateBanner.svelte";
   import { initUpdater } from "./lib/updater.svelte.js";
+  import ChangelogDialog from "./components/ChangelogDialog.svelte";
+  import { showWhatsNew } from "./lib/changelog.svelte.js";
+  import { initSound } from "./lib/sound.svelte.js";
   import SettingsView from "./components/SettingsView.svelte";
   import { ui } from "./lib/ui.svelte.js";
   import { applyAppearance, settings } from "./lib/settings.svelte.js";
@@ -45,6 +48,8 @@
     initSoundCloud();
     initBridge();
     initUpdater();
+    initSound();
+    showWhatsNew();
   });
 
   // Leertaste = Play/Pause (außer beim Tippen)
@@ -82,6 +87,7 @@
 <NewPlaylistDialog />
 <Toast />
 <UpdateBanner />
+<ChangelogDialog />
 
 <style>
   .app {

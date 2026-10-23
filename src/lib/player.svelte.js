@@ -17,6 +17,8 @@ import {
   stopPolling as stopSpotifyPolling,
   onSpotifyState,
 } from "./spotifyPlayer.svelte.js";
+import { attachAudio, resumeAudio, setOutputGain, setFade, startTrack } from "./sound.svelte.js";
+import { consumeEndOfTrack } from "./sleepTimer.svelte.js";
 
 // Ein einziges Audio-Element für alle Quellen (lokal und YouTube Music).
 const audio = new Audio();
@@ -60,7 +62,10 @@ export const player = $state({
  * im leisen Bereich viel feiner; ganz rechts bleibt es gleich laut.
  */
 const gain = (slider) => Math.pow(slider, 3);
-audio.volume = gain(player.volume);
+// Lautstärke regelt der Klang-Signalweg (sound.svelte.js), das Element selbst bleibt auf 100 %
+attachAudio(audio);
+const applyVolume = () => setOutputGain(player.muted ? 0 : gain(player.volume));
+applyVolume();
 
 let nextQid = 1;
 /** Song, der beim ersten „playing“ in den Verlauf kommt */
@@ -88,13 +93,16 @@ async function sourceUrl(track) {
   const saved = offlinePath(track.id);
   if (saved) return convertFileSrc(saved);
   // SoundCloud: direkt als MP3; nur 30-Sekunden-Ausschnitte laufen über YouTube Music
-  if (track.source === "soundcloud") {
+  if (track.source === "soundcloud" && !viaYouTube.has(track.qid)) {
     const direct = await soundcloudStream(track);
     if (direct) return direct;
   }
   // Sonst über den eigenen Stream-Dienst im Rust-Teil (ytstream://<videoId>)
   return convertFileSrc(await videoId(track), "ytstream");
 }
+
+/** SoundCloud-Songs, deren direkter Stream nicht ging (dann über YouTube Music) */
+const viaYouTube = new Set();
 
 /** Verhindert, dass ein langsam aufgelöster Song einen später gewählten überschreibt */
 let loadToken = 0;
@@ -172,6 +180,8 @@ function loadAudio(track, token) {
   sourceUrl(track)
     .then((src) => {
       if (token !== loadToken) return;
+      resumeAudio();
+      startTrack(`${track.source}:${track.id}`);
       audio.src = src;
       audio.play().catch((e) => console.error("Wiedergabe fehlgeschlagen:", e));
       prefetchUpcoming();
@@ -305,8 +315,38 @@ export function togglePlay() {
     sendPresence();
     return;
   }
-  if (audio.paused) audio.play();
-  else audio.pause();
+  if (audio.paused) {
+    resumeAudio();
+    setFade(1, 0.05);
+    audio.play();
+  } else audio.pause();
+}
+
+/** Schlaf-Timer: sanft ausblenden, dann anhalten */
+export function pauseForSleep() {
+  if (!currentTrack()) return;
+  const FADE = 8;
+  if (engine === "spotify") {
+    const start = player.muted ? 0 : player.volume;
+    let step = 0;
+    const timer = setInterval(() => {
+      step++;
+      spotifyVolume(start * (1 - step / FADE));
+      if (step >= FADE) {
+        clearInterval(timer);
+        spotifyPause();
+        player.playing = false;
+        sendPresence();
+        setTimeout(() => spotifyVolume(start), 1500);
+      }
+    }, 1000);
+    return;
+  }
+  setFade(0, FADE);
+  setTimeout(() => {
+    audio.pause();
+    setFade(1, 0.05);
+  }, FADE * 1000);
 }
 
 export async function next() {
@@ -343,15 +383,14 @@ export function seek(seconds) {
 export function setVolume(value) {
   player.volume = value;
   player.muted = false;
-  audio.volume = gain(value);
-  audio.muted = false;
+  applyVolume();
   if (engine === "spotify") spotifyVolume(value);
   store("volumeSlider", value);
 }
 
 export function toggleMute() {
   player.muted = !player.muted;
-  audio.muted = player.muted;
+  applyVolume();
   if (engine === "spotify") spotifyVolume(player.muted ? 0 : player.volume);
 }
 
@@ -406,7 +445,14 @@ audio.addEventListener("pause", () => {
   sendPresence();
 });
 audio.addEventListener("seeked", sendPresence);
+audio.addEventListener("ratechange", sendPresence);
 audio.addEventListener("ended", () => {
+  // Schlaf-Timer „Ende des Songs“
+  if (consumeEndOfTrack()) {
+    player.playing = false;
+    sendPresence();
+    return;
+  }
   if (player.repeat === "one") {
     audio.currentTime = 0;
     audio.play();
@@ -424,6 +470,13 @@ audio.addEventListener("error", () => {
     player.error = "Mehrere Songs hintereinander konnten nicht abgespielt werden – Wiedergabe angehalten.";
     player.playing = false;
     errorStreak = 0;
+    return;
+  }
+  // Direkter SoundCloud-Stream ging nicht → einmal über YouTube Music versuchen
+  if (track.source === "soundcloud" && !viaYouTube.has(track.qid) && !audio.src.includes("ytstream")) {
+    viaYouTube.add(track.qid);
+    errorStreak--;
+    load(player.index);
     return;
   }
   player.error = `„${track.title}“ konnte nicht abgespielt werden.`;
@@ -460,6 +513,12 @@ onSpotifyState((state) => {
 function finishSpotifyTrack() {
   if (spFinished) return;
   spFinished = true;
+  if (consumeEndOfTrack()) {
+    spotifyPause();
+    player.playing = false;
+    sendPresence();
+    return;
+  }
   if (player.repeat === "one") {
     load(player.index);
   } else {
@@ -475,6 +534,7 @@ export function sendPresence() {
     invoke("clear_presence").catch(() => {});
     return;
   }
+  const rate = engine === "audio" ? audio.playbackRate || 1 : 1;
   invoke("update_presence", {
     track: {
       title: t.title,
@@ -482,8 +542,9 @@ export function sendPresence() {
       album: t.album ?? null,
       artwork: t.artworkUrl ?? null,
       url: t.url ?? null,
-      position: player.position,
-      duration: player.duration,
+      // Bei geändertem Tempo läuft die Zeit in Discord entsprechend schneller/langsamer
+      position: player.position / rate,
+      duration: player.duration / rate,
       paused: !player.playing,
       display: settings.discordDisplay,
     },
