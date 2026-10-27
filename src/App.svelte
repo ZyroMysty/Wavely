@@ -1,6 +1,10 @@
 <script>
   import { onMount } from "svelte";
-  import { refreshLibrary } from "./lib/library.svelte.js";
+  import { refreshLibrary, watchLibrary } from "./lib/library.svelte.js";
+  import PlaylistView from "./components/PlaylistView.svelte";
+  import RecapView from "./components/RecapView.svelte";
+  import { initPlaylists } from "./lib/playlists.svelte.js";
+  import { initStats } from "./lib/stats.svelte.js";
   import { initYtm } from "./lib/ytm.svelte.js";
   import { initOffline } from "./lib/offline.svelte.js";
   import { initSpotify, spotify } from "./lib/spotify.svelte.js";
@@ -46,6 +50,9 @@
 
   onMount(() => {
     refreshLibrary();
+    watchLibrary();
+    initPlaylists();
+    initStats();
     initYtm();
     initOffline();
     initSpotify();
@@ -67,6 +74,10 @@
   <main>
     {#if ui.view === "home"}
       <HomeView />
+    {:else if ui.view === "playlist"}
+      <PlaylistView />
+    {:else if ui.view === "recap"}
+      <RecapView />
     {:else if ui.view === "local"}
       <LocalView />
     {:else if ui.view === "offline"}

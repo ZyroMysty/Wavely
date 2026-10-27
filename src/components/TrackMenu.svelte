@@ -1,12 +1,13 @@
 <script>
   import { ui, showToast } from "../lib/ui.svelte.js";
-  import { playNext, addToQueue } from "../lib/player.svelte.js";
+  import { playNext, addToQueue, playMix } from "../lib/player.svelte.js";
+  import { playlists, addTracks, createPlaylist } from "../lib/playlists.svelte.js";
   import { offline, isOffline, saveTrack, removeTrack } from "../lib/offline.svelte.js";
   import { ytm, isLiked, toggleLike, editablePlaylists, addToPlaylist } from "../lib/ytm.svelte.js";
   import Icon from "./Icon.svelte";
 
   let menu = $state();
-  /** "main" oder "playlists" (Auswahl beim Hinzufügen) */
+  /** "main", "playlists" (YouTube Music) oder "wavely" (Wavely-Playlists) */
   let page = $state("main");
 
   const track = $derived(ui.menu?.track);
@@ -19,7 +20,7 @@
   const position = $derived.by(() => {
     if (!ui.menu) return { x: 0, y: 0 };
     const width = 250;
-    const height = page === "playlists" ? 380 : 260;
+    const height = page === "main" ? 360 : 380;
     return {
       x: Math.max(8, Math.min(ui.menu.x, window.innerWidth - width - 8)),
       y: Math.max(8, Math.min(ui.menu.y, window.innerHeight - height - 8)),
@@ -68,6 +69,33 @@
     ui.newPlaylist = { tracks: [t] };
   }
 
+  async function startRadio() {
+    const t = track;
+    close();
+    showToast(`Radio zu „${t.title}“ wird gestartet…`);
+    try {
+      await playMix(t);
+    } catch (e) {
+      showToast(`Radio konnte nicht gestartet werden: ${e}`, true);
+    }
+  }
+
+  function addToWavely(playlist) {
+    const t = track;
+    close();
+    const added = addTracks(playlist.id, [t]);
+    showToast(added ? `Zu „${playlist.name}“ hinzugefügt` : `„${t.title}“ ist schon in „${playlist.name}“`);
+  }
+
+  function newWavelyPlaylist() {
+    const t = track;
+    close();
+    const playlist = createPlaylist(t.title ? `Mix mit ${t.title}` : "Neue Playlist", [t]);
+    ui.playlistId = playlist.id;
+    ui.renamePlaylist = true;
+    ui.view = "playlist";
+  }
+
   function onOutside(event) {
     if (ui.menu && !menu?.contains(event.target)) close();
   }
@@ -84,6 +112,14 @@
       <button role="menuitem" onclick={() => run(addToQueue)}>
         <Icon name="addQueue" size={18} /> Zur Warteschlange hinzufügen
       </button>
+      <button role="menuitem" onclick={startRadio}>
+        <Icon name="radio" size={18} /> Radio starten
+      </button>
+      <hr />
+      <button role="menuitem" onclick={() => (page = "wavely")}>
+        <Icon name="playlistAdd" size={18} /> Zu Wavely-Playlist hinzufügen
+        <span class="chevron"><Icon name="chevron" size={18} /></span>
+      </button>
 
       {#if youtube && loggedIn}
         <hr />
@@ -92,7 +128,7 @@
           {isLiked(track.id) ? "Gefällt mir nicht mehr" : "Gefällt mir"}
         </button>
         <button role="menuitem" onclick={() => (page = "playlists")}>
-          <Icon name="playlistAdd" size={18} /> Zu Playlist hinzufügen
+          <Icon name="youtube" size={18} /> Zu YouTube-Playlist hinzufügen
           <span class="chevron"><Icon name="chevron" size={18} /></span>
         </button>
       {/if}
@@ -111,9 +147,26 @@
           </button>
         {/if}
       {/if}
+    {:else if page === "wavely"}
+      <button class="back" onclick={() => (page = "main")}>
+        <Icon name="previous" size={16} /> Zu Wavely-Playlist hinzufügen
+      </button>
+      <hr />
+      <button role="menuitem" onclick={newWavelyPlaylist}>
+        <Icon name="plus" size={18} /> Neue Playlist…
+      </button>
+      <div class="list">
+        {#each playlists.list as playlist (playlist.id)}
+          <button role="menuitem" onclick={() => addToWavely(playlist)}>
+            <Icon name="queue" size={18} /> <span class="label">{playlist.name}</span>
+          </button>
+        {:else}
+          <p class="hint">Noch keine Wavely-Playlists.</p>
+        {/each}
+      </div>
     {:else}
       <button class="back" onclick={() => (page = "main")}>
-        <Icon name="previous" size={16} /> Zu Playlist hinzufügen
+        <Icon name="previous" size={16} /> Zu YouTube-Playlist hinzufügen
       </button>
       <hr />
       <button role="menuitem" onclick={newPlaylist}>

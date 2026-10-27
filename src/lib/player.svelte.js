@@ -5,7 +5,7 @@ import { settings } from "./settings.svelte.js";
 import { recordPlay } from "./history.svelte.js";
 import { ytm } from "./ytm.svelte.js";
 import { resolveVideo } from "./spotify.svelte.js";
-import { streamUrl as soundcloudStream, relatedTracks as soundcloudRelated } from "./soundcloud.svelte.js";
+import { relatedTracks as soundcloudRelated } from "./soundcloud.svelte.js";
 import { offlinePath, allTracks as offlineTracks } from "./offline.svelte.js";
 import {
   canPlayOnSpotify,
@@ -20,6 +20,7 @@ import {
 import { attachAudio, resumeAudio, setOutputGain, setFade, startTrack } from "./sound.svelte.js";
 import { consumeEndOfTrack } from "./sleepTimer.svelte.js";
 import { trackStarted as lastfmStarted, trackProgress as lastfmProgress } from "./lastfm.svelte.js";
+import { statsStarted, statsProgress, statsFlush } from "./stats.svelte.js";
 
 // Ein einziges Audio-Element für alle Quellen (lokal und YouTube Music).
 const audio = new Audio();
@@ -93,10 +94,10 @@ async function sourceUrl(track) {
   // Offline gespeichert: Datei direkt abspielen (auch ohne Internet)
   const saved = offlinePath(track.id);
   if (saved) return convertFileSrc(saved);
-  // SoundCloud: direkt als MP3; nur 30-Sekunden-Ausschnitte laufen über YouTube Music
-  if (track.source === "soundcloud" && !viaYouTube.has(track.qid)) {
-    const direct = await soundcloudStream(track);
-    if (direct) return direct;
+  // SoundCloud direkt (Rust setzt die HLS-Stücke zusammen); 30-Sekunden-Ausschnitte und
+  // geschützte Songs laufen über YouTube Music (scstream antwortet dann mit 404 → Fehler → YouTube)
+  if (track.source === "soundcloud" && !track.snipped && !viaYouTube.has(track.qid)) {
+    return convertFileSrc(String(track.id), "scstream");
   }
   // Sonst über den eigenen Stream-Dienst im Rust-Teil (ytstream://<videoId>)
   return convertFileSrc(await videoId(track), "ytstream");
@@ -130,17 +131,22 @@ function shuffled(list) {
 function prefetchUpcoming() {
   const upcoming = player.queue[player.index + 1];
   if (!upcoming || upcoming.source === "local" || offlinePath(upcoming.id)) return;
-  if (upcoming.source === "soundcloud" && !upcoming.snipped) return; // direkte MP3, nichts vorzubereiten
+  if (upcoming.source === "soundcloud" && !upcoming.snipped) {
+    invoke("soundcloud_prefetch", { id: String(upcoming.id) }).catch(() => {});
+    return;
+  }
   videoId(upcoming)
     .then((id) => invoke("ytm_prefetch", { id }))
     .catch(() => {});
 }
 
-function load(index) {
+function load(index, startAt = 0) {
   const track = player.queue[index];
   if (!track) return;
+  needsLoad = false;
+  statsFlush();
   player.index = index;
-  player.position = 0;
+  player.position = startAt;
   player.duration = track.duration || 0;
   player.loading = true;
   player.error = null;
@@ -155,7 +161,7 @@ function load(index) {
     audio.pause();
     engine = "spotify";
     spStarted = spNearEnd = spFinished = false;
-    playOnSpotify(track)
+    playOnSpotify(track, startAt)
       .then(() => {
         if (token !== loadToken) return;
         extendWithAutoplay();
@@ -164,7 +170,7 @@ function load(index) {
         if (token !== loadToken) return;
         engine = "audio";
         stopSpotifyPolling();
-        loadAudio(track, token);
+        loadAudio(track, token, startAt);
       });
     return;
   }
@@ -174,16 +180,18 @@ function load(index) {
     stopSpotifyPolling();
   }
   engine = "audio";
-  loadAudio(track, token);
+  loadAudio(track, token, startAt);
 }
 
-function loadAudio(track, token) {
+function loadAudio(track, token, startAt = 0) {
   sourceUrl(track)
     .then((src) => {
       if (token !== loadToken) return;
       resumeAudio();
       startTrack(`${track.source}:${track.id}`);
       audio.src = src;
+      // Fortsetzen nach dem Neustart: an der gespeicherten Stelle beginnen
+      if (startAt > 0) audio.currentTime = startAt;
       audio.play().catch((e) => console.error("Wiedergabe fehlgeschlagen:", e));
       prefetchUpcoming();
       extendWithAutoplay();
@@ -194,6 +202,60 @@ function loadAudio(track, token) {
       player.error = `„${track.title}“ konnte nicht gefunden werden: ${e}`;
     });
 }
+
+// --- Fortsetzen nach dem Neustart -----------------------------------------
+
+const RESUME_KEY = "resume";
+/** Wiederhergestellte Warteschlange: Song erst laden, wenn auf Play gedrückt wird */
+let needsLoad = false;
+
+function saveResume() {
+  if (!player.queue.length) {
+    store(RESUME_KEY, null);
+    return;
+  }
+  // Höchstens 300 Songs rund um den aktuellen speichern
+  const start = Math.max(0, player.index - 50);
+  const queue = player.queue.slice(start, start + 300).map(({ qid, ytId, ...t }) => t);
+  store(RESUME_KEY, {
+    queue,
+    index: player.index - start,
+    position: Math.floor(player.position),
+    shuffle: player.shuffle,
+    repeat: player.repeat,
+  });
+}
+
+function restoreResume() {
+  const saved = stored(RESUME_KEY, null);
+  if (!saved?.queue?.length) return;
+  player.queue = saved.queue.map((t) => entry(t, t.auto));
+  originalQueue = [...player.queue];
+  player.index = Math.min(Math.max(0, saved.index), player.queue.length - 1);
+  player.position = saved.position || 0;
+  player.duration = currentTrack()?.duration || 0;
+  player.shuffle = Boolean(saved.shuffle);
+  player.repeat = saved.repeat ?? "off";
+  needsLoad = true;
+}
+
+let lastResumeSave = 0;
+$effect.root(() => {
+  $effect(() => {
+    player.queue.length;
+    player.index;
+    player.shuffle;
+    player.repeat;
+    saveResume();
+  });
+});
+// Position höchstens alle 5 Sekunden speichern, beim Schließen sofort
+function saveResumeSoon() {
+  if (Date.now() - lastResumeSave < 5000) return;
+  lastResumeSave = Date.now();
+  saveResume();
+}
+window.addEventListener("pagehide", saveResume);
 
 // --- Warteschlange -------------------------------------------------------
 
@@ -315,6 +377,10 @@ export function toggleAutoplay() {
 
 export function togglePlay() {
   if (!currentTrack()) return;
+  if (needsLoad) {
+    load(player.index, player.position);
+    return;
+  }
   if (engine === "spotify") {
     if (player.playing) spotifyPause();
     else spotifyResume();
@@ -377,6 +443,10 @@ export function previous() {
 }
 
 export function seek(seconds) {
+  if (needsLoad) {
+    player.position = seconds;
+    return;
+  }
   if (engine === "spotify") {
     spotifySeek(seconds);
     player.position = seconds;
@@ -425,7 +495,9 @@ export function cycleRepeat() {
 
 audio.addEventListener("timeupdate", () => {
   player.position = audio.currentTime;
+  saveResumeSoon();
   lastfmProgress(audio.currentTime, player.duration);
+  statsProgress(audio.currentTime);
 });
 audio.addEventListener("durationchange", () => {
   if (Number.isFinite(audio.duration)) player.duration = audio.duration;
@@ -440,6 +512,7 @@ function startedPlaying() {
   if (pendingHistory) {
     recordPlay(pendingHistory);
     lastfmStarted(pendingHistory);
+    statsStarted(pendingHistory);
     // Nur echte YouTube-Music-Songs an den YouTube-Verlauf melden – Spotify-/SoundCloud-Songs,
     // die nur über YouTube abgespielt werden, gehören nicht in den YouTube-Verlauf
     const video = pendingHistory.source === "youtube" ? pendingHistory.id : null;
@@ -458,6 +531,7 @@ audio.addEventListener("pause", () => {
 audio.addEventListener("seeked", sendPresence);
 audio.addEventListener("ratechange", sendPresence);
 audio.addEventListener("ended", () => {
+  statsFlush();
   // Schlaf-Timer „Ende des Songs“
   if (consumeEndOfTrack()) {
     player.playing = false;
@@ -507,7 +581,9 @@ onSpotifyState((state) => {
     player.playing = state.playing;
     player.position = state.position;
     if (state.duration) player.duration = state.duration;
+    saveResumeSoon();
     lastfmProgress(state.position, player.duration);
+    statsProgress(state.position);
     if (state.playing && !spStarted) {
       spStarted = true;
       startedPlaying();
@@ -587,3 +663,5 @@ if ("mediaSession" in navigator) {
   navigator.mediaSession.setActionHandler("previoustrack", previous);
   navigator.mediaSession.setActionHandler("seekto", (e) => seek(e.seekTime));
 }
+
+restoreResume();

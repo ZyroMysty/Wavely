@@ -15,7 +15,7 @@
     target = TARGETS.find((t) => t.id !== transfer.from.source && targetAvailable(t.id))?.id ?? null;
   });
 
-  const sourceName = (id) => ({ youtube: "YouTube Music", spotify: "Spotify", soundcloud: "SoundCloud", local: "Lokal" })[id] ?? id;
+  const sourceName = (id) => ({ youtube: "YouTube Music", spotify: "Spotify", soundcloud: "SoundCloud", local: "Lokal", wavely: "deiner Wavely-Playlist" })[id] ?? id;
   const progress = $derived(transfer.total ? transfer.done / transfer.total : 0);
 
   function openResult() {

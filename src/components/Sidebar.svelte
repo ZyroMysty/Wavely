@@ -3,6 +3,7 @@
   import { ui, toggleSidebar } from "../lib/ui.svelte.js";
   import Icon from "./Icon.svelte";
   import Logo from "./Logo.svelte";
+  import { playlists, createPlaylist } from "../lib/playlists.svelte.js";
 
   const folderName = (path) => path.split(/[\\/]/).filter(Boolean).pop() ?? path;
   const collapsed = $derived(ui.sidebarCollapsed);
@@ -14,6 +15,7 @@
     { id: "spotify", icon: "spotify", label: "Spotify" },
     { id: "soundcloud", icon: "soundcloud", label: "SoundCloud" },
     { id: "offline", icon: "download", label: "Offline" },
+    { id: "recap", icon: "insights", label: "Rückblick" },
   ];
 
   function open(id) {
@@ -22,6 +24,17 @@
     if (id === "spotify" && ui.view === "spotify") ui.spHome++;
     if (id === "soundcloud" && ui.view === "soundcloud") ui.scHome++;
     ui.view = id;
+  }
+
+  function openPlaylist(id) {
+    ui.playlistId = id;
+    ui.view = "playlist";
+  }
+
+  function newPlaylist() {
+    const playlist = createPlaylist("Neue Playlist");
+    ui.renamePlaylist = true;
+    openPlaylist(playlist.id);
   }
 </script>
 
@@ -46,6 +59,30 @@
       </button>
     {/each}
   </nav>
+
+  {#if !collapsed}
+    <div class="section">
+      <div class="section-title">
+        Playlists
+        <button class="icon-btn" title="Neue Wavely-Playlist" onclick={newPlaylist}>
+          <Icon name="plus" size={16} />
+        </button>
+      </div>
+      {#each playlists.list as playlist (playlist.id)}
+        <button
+          class="folder playlist"
+          class:active={ui.view === "playlist" && ui.playlistId === playlist.id}
+          title={playlist.name}
+          onclick={() => openPlaylist(playlist.id)}
+        >
+          <span>{playlist.name}</span>
+          <small>{playlist.items.length}</small>
+        </button>
+      {:else}
+        <p class="hint">Songs aus allen Quellen mischen</p>
+      {/each}
+    </div>
+  {/if}
 
   {#if collapsed}
     <button class="icon-btn add" title="Ordner hinzufügen" onclick={addFolder}>
@@ -171,6 +208,28 @@
   .add {
     width: 32px;
     height: 32px;
+  }
+  .playlist {
+    width: 100%;
+    text-align: left;
+    gap: 8px;
+  }
+  .playlist:hover {
+    background: var(--hover);
+  }
+  .playlist.active {
+    color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .playlist span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .playlist small {
+    color: var(--text-dim);
+    font-size: 12px;
+    flex-shrink: 0;
   }
   .folder {
     display: flex;

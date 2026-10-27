@@ -1,3 +1,4 @@
+import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 
@@ -32,4 +33,9 @@ export async function addFolder() {
 export async function removeFolder(path) {
   await invoke("remove_folder", { path });
   await refreshLibrary();
+}
+
+/** Musikordner beobachten: neue oder gelöschte Dateien erscheinen automatisch (siehe library.rs) */
+export async function watchLibrary() {
+  await listen("library-changed", () => refreshLibrary());
 }

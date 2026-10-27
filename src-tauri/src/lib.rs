@@ -6,6 +6,7 @@ mod offline;
 mod presence;
 mod soundcloud;
 mod spotify;
+mod store;
 #[cfg(windows)]
 mod taskbar;
 #[cfg(windows)]
@@ -42,6 +43,7 @@ async fn clear_presence(state: State<'_, Mutex<Presence>>) -> Result<(), String>
 async fn get_library(app: AppHandle) -> Result<LibraryView, String> {
     let folders = library::load_settings(&app).folders;
     library::allow_folders(&app, &folders);
+    library::watch(&app, &folders);
 
     let to_scan = folders.clone();
     let tracks = tauri::async_runtime::spawn_blocking(move || library::scan(&to_scan))
@@ -191,6 +193,7 @@ pub fn run() {
             soundcloud::soundcloud_related,
             soundcloud::soundcloud_recent,
             soundcloud::soundcloud_stream,
+            soundcloud::soundcloud_prefetch,
             ytm::ytm_report_play,
             ytm::ytm_home,
             spotify::spotify_match,
@@ -201,6 +204,10 @@ pub fn run() {
             lastfm::lastfm_now_playing,
             lastfm::lastfm_scrobble,
             set_start_minimized,
+            store::playlists_load,
+            store::playlists_save,
+            store::stats_append,
+            store::stats_load,
             mini_player_open,
             show_main_window,
             #[cfg(windows)]
@@ -232,6 +239,19 @@ pub fn run() {
                     tauri::http::HeaderValue::from_static("*"),
                 );
                 responder.respond(response);
+            });
+        })
+        // SoundCloud direkt: Song einmal komplett laden (HLS-Stücke zusammengesetzt), dann wie eine Datei abspielen
+        .register_asynchronous_uri_scheme_protocol("scstream", |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            let id = request.uri().path().trim_start_matches('/').to_string();
+            let range = request
+                .headers()
+                .get(tauri::http::header::RANGE)
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string);
+            tauri::async_runtime::spawn(async move {
+                responder.respond(app.state::<soundcloud::SoundCloud>().serve_stream(&id, range.as_deref()).await);
             });
         })
         // Cover-Bilder über Rust laden und zwischenspeichern (artwork://<url>)
@@ -289,6 +309,8 @@ pub fn run() {
             app.manage(spotify::Spotify::new(app.handle())?);
             app.manage(soundcloud::SoundCloud::new(app.handle())?);
             app.manage(lastfm::LastFm::new(app.handle())?);
+            app.manage(store::Store::new(app.handle())?);
+            app.manage(library::Watcher::default());
 
             // yt-dlp im Hintergrund aktuell halten (höchstens einmal am Tag)
             let handle = app.handle().clone();

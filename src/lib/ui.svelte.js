@@ -30,6 +30,10 @@ export const ui = $state({
   /** Dasselbe für SoundCloud */
   scNav: null,
   scHome: 0,
+  /** Geöffnete Wavely-Playlist (Ansicht „playlist“) */
+  playlistId: null,
+  /** Name der gerade angelegten Playlist direkt bearbeiten */
+  renamePlaylist: false,
   /** Dialog „Neue Playlist“: { tracks } oder null */
   newPlaylist: null,
   /** Kurzer Hinweis unten: { text, error } oder null */

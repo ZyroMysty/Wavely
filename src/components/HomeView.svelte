@@ -12,6 +12,8 @@
   import TrackList from "./TrackList.svelte";
   import Icon from "./Icon.svelte";
   import { artworkSrc } from "../lib/artwork.js";
+  import { playlists as wavelyPlaylists, coversOf } from "../lib/playlists.svelte.js";
+  import { ui } from "../lib/ui.svelte.js";
 
   onMount(() => loadCharts());
 
@@ -24,6 +26,13 @@
   // Playlists aus allen verbundenen Diensten (die ersten paar je Dienst)
   const playlists = $derived(
     [
+      ...wavelyPlaylists.list.slice(0, 6).map((p) => ({
+        id: p.id,
+        title: p.name,
+        subtitle: `Wavely · ${p.items.length} ${p.items.length === 1 ? "Song" : "Songs"}`,
+        artworkUrl: coversOf(p)[0]?.artworkUrl ?? null,
+        source: "wavely",
+      })),
       ...(ytm.library?.playlists ?? []).slice(0, 6).map((p) => ({ ...p, source: "youtube" })),
       ...(spotify.library?.playlists ?? []).slice(0, 6).map((p) => ({ ...p, source: "spotify" })),
       ...(soundcloud.library?.playlists ?? []).slice(0, 4).map((p) => ({ ...p, source: "soundcloud" })),
@@ -42,7 +51,8 @@
     }
   }
 
-  const openPlaylist = (item) => openIn(item.source, { type: "collection", kind: item.kind ?? "playlist", id: item.id, title: item.title });
+  const openPlaylist = (item) =>
+    item.source === "wavely" ? ((ui.playlistId = item.id), (ui.view = "playlist")) : openIn(item.source, { type: "collection", kind: item.kind ?? "playlist", id: item.id, title: item.title });
   const openChartsAlbum = (item) => openIn("youtube", { type: "collection", kind: "album", id: item.id, title: item.title });
   const charts = $derived(home.charts);
   const chartTracks = $derived((charts?.topTracks ?? []).map((t) => ({ ...t, source: "youtube" })));

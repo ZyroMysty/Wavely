@@ -11,14 +11,23 @@
    * covers: kleine Cover in jeder Zeile anzeigen (für YouTube Music)
    * single: nur den angeklickten Song spielen (danach übernimmt Autoplay), z. B. bei Suchergebnissen
    */
-  let { tracks, covers = false, single = false } = $props();
+  let { tracks, covers = false, single = false, onremove = undefined, onmove = undefined } = $props();
 
   const play = (i) => (single ? playList([tracks[i]]) : playList(tracks, i));
+
+  // Umsortieren per Ziehen (nur wenn `onmove` übergeben wird, z. B. in Wavely-Playlists)
+  let dragFrom = $state(null);
+  let dragOver = $state(null);
+  function drop(i) {
+    if (dragFrom !== null && dragFrom !== i) onmove(dragFrom, i);
+    dragFrom = dragOver = null;
+  }
 </script>
 
 <div class="table">
-  <div class="row head" class:covers>
+  <div class="row head" class:covers class:editable={onremove}>
     <span>#</span><span>Titel</span><span>Album</span><span class="right">Dauer</span>
+    {#if onremove}<span></span>{/if}
   </div>
   {#each tracks as track, i (track.id + ":" + i)}
     {@const active = currentTrack()?.id === track.id}
@@ -26,6 +35,17 @@
       class="row"
       class:covers
       class:active
+      class:editable={onremove}
+      class:drop-target={dragOver === i && dragFrom !== i}
+      draggable={Boolean(onmove)}
+      ondragstart={() => (dragFrom = i)}
+      ondragover={(e) => {
+        if (dragFrom === null) return;
+        e.preventDefault();
+        dragOver = i;
+      }}
+      ondrop={() => drop(i)}
+      ondragend={() => (dragFrom = dragOver = null)}
       role="button"
       tabindex="-1"
       ondblclick={() => play(i)}
@@ -64,6 +84,17 @@
         {/if}
       </span>
       <span class="dim right">{track.duration ? formatTime(track.duration) : ""}</span>
+      {#if onremove}
+        <button
+          class="remove"
+          title="Aus der Playlist entfernen"
+          onclick={(e) => {
+            e.stopPropagation();
+            onremove(i);
+          }}
+          ondblclick={(e) => e.stopPropagation()}><Icon name="close" size={16} /></button
+        >
+      {/if}
     </div>
   {/each}
 </div>
@@ -80,6 +111,31 @@
     align-items: center;
     padding: 8px 12px;
     border-radius: 8px;
+  }
+  .row.editable {
+    grid-template-columns: 40px minmax(0, 2fr) minmax(0, 1fr) 70px 32px;
+  }
+  .row.drop-target {
+    box-shadow: inset 0 2px 0 var(--accent);
+  }
+  .row[draggable="true"] {
+    cursor: grab;
+  }
+  .remove {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    color: var(--text-dim);
+    opacity: 0;
+  }
+  .row:hover .remove {
+    opacity: 1;
+  }
+  .remove:hover {
+    color: var(--text);
+    background: var(--hover);
   }
   .row.covers:not(.head) {
     padding: 6px 12px;

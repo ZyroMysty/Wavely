@@ -4,6 +4,14 @@ Neue Punkte kommen zuerst unter „Unveröffentlicht“. Beim Veröffentlichen w
 
 ## Unveröffentlicht
 
+## 0.13.0 – 2026-10-27
+- SoundCloud-Songs laufen wieder direkt von SoundCloud statt über YouTube Music – ohne Fehlzuordnungen und mit Remixes, die es nur dort gibt
+- Wavely-Playlists: Songs aus allen Quellen in einer Playlist mischen, umsortieren per Ziehen, übertragen zu YouTube Music oder Spotify
+- Rückblick: Hörminuten, Top-Songs, Top-Künstler, Hörzeiten und Lieblingsquellen für 7 Tage, 30 Tage, das Jahr oder insgesamt
+- Weiterhören: Wavely merkt sich Warteschlange und Stelle und macht nach dem Neustart genau dort weiter
+- „Radio starten“ per Rechtsklick auf einen Song
+- Musikordner werden beobachtet: neue oder gelöschte Dateien erscheinen sofort in Wavely
+
 ## 0.12.0 – 2026-10-23
 - Startseite mit Weiterhören, Mixes für dich, deinen Top-Songs, deinen Playlists, Charts und Neuerscheinungen
 - Playlists übertragen: von Spotify, YouTube Music oder SoundCloud als neue Playlist zu YouTube Music oder Spotify

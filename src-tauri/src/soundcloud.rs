@@ -27,6 +27,8 @@ pub struct SoundCloud {
     dir: PathBuf,
     client_id: Mutex<Option<String>>,
     token: Mutex<Option<String>>,
+    /// Songs werden für die Wiedergabe einmal komplett geladen (siehe serve_stream); nie zwei gleichzeitig
+    preparing: Mutex<()>,
 }
 
 impl SoundCloud {
@@ -39,6 +41,7 @@ impl SoundCloud {
             dir,
             client_id: Mutex::new(None),
             token: Mutex::new(token.map(|t| t.trim().to_string())),
+            preparing: Mutex::new(()),
         })
     }
 
@@ -538,4 +541,209 @@ pub async fn soundcloud_stream(sc: State<'_, SoundCloud>, id: String) -> Result<
     let base = transcoding["url"].as_str().ok_or("Stream fehlt")?;
     let info = sc.get(&format!("{base}?track_authorization={auth}")).await?;
     Ok(info["url"].as_str().map(str::to_string))
+}
+
+// --- Direkte Wiedergabe (scstream://<id>) ----------------------------------
+//
+// SoundCloud liefert fast nur noch HLS: eine Startdatei (init.mp4) plus Stücke à 10 Sekunden (.m4s),
+// zusammen ein „fragmentiertes MP4“. Wavely lädt alle Stücke parallel, setzt sie zu einer Datei
+// zusammen und spielt diese wie eine normale Datei ab (mit Spulen). Geschützte Go+-Songs und
+// 30-Sekunden-Ausschnitte gehen nicht – dann antwortet der Dienst mit 404 und der Player nimmt YouTube Music.
+
+/// Zuletzt gespielte Songs bleiben im Zwischenspeicher, damit Wiederholen sofort startet
+const CACHE_FILES: usize = 30;
+
+struct Prepared {
+    path: PathBuf,
+    mime: &'static str,
+}
+
+/// Eine Adresse laden (mit zwei Wiederholungen bei Netzwerkfehlern)
+async fn fetch_bytes(http: &reqwest::Client, url: &str) -> Result<Vec<u8>, String> {
+    let mut last = String::new();
+    for _ in 0..3 {
+        match http.get(url).send().await {
+            Ok(r) if r.status().is_success() => return r.bytes().await.map(|b| b.to_vec()).map_err(err),
+            Ok(r) => last = format!("SoundCloud antwortete mit {}", r.status()),
+            Err(e) => last = err(e),
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    }
+    Err(last)
+}
+
+/// Rangfolge der Formate: MP3 am Stück, AAC (160k vor 96k), MP3 als HLS; sonst ungeeignet
+fn rank(t: &Value) -> Option<u8> {
+    let protocol = t["format"]["protocol"].as_str().unwrap_or("");
+    let mime = t["format"]["mime_type"].as_str().unwrap_or("");
+    let preset = t["preset"].as_str().unwrap_or("");
+    if t["snipped"].as_bool().unwrap_or(false) || protocol.contains("encrypted") || mime.contains("mpegurl") {
+        return None;
+    }
+    match protocol {
+        "progressive" if mime.starts_with("audio/mpeg") => Some(0),
+        "hls" if mime.starts_with("audio/mp4") && preset.contains("160") => Some(1),
+        "hls" if mime.starts_with("audio/mp4") => Some(2),
+        "hls" if mime.starts_with("audio/mpeg") => Some(3),
+        _ => None,
+    }
+}
+
+impl SoundCloud {
+    fn cache_dir(&self) -> PathBuf {
+        self.dir.join("cache")
+    }
+
+    fn cached(&self, id: &str) -> Option<Prepared> {
+        for (ext, mime) in [("m4a", "audio/mp4"), ("mp3", "audio/mpeg")] {
+            let path = self.cache_dir().join(format!("{id}.{ext}"));
+            if path.exists() {
+                return Some(Prepared { path, mime });
+            }
+        }
+        None
+    }
+
+    /// Song vollständig in den Zwischenspeicher laden (oder NOT_PLAYABLE, wenn er nicht direkt spielbar ist)
+    async fn prepare(&self, id: &str) -> Result<Prepared, String> {
+        let _guard = self.preparing.lock().await;
+        if let Some(found) = self.cached(id) {
+            return Ok(found);
+        }
+        let track = self.get(&format!("/tracks/{id}")).await?;
+        if matches!(track["policy"].as_str(), Some("BLOCK") | Some("SNIP")) {
+            return Err("NOT_PLAYABLE".into());
+        }
+        let auth = track["track_authorization"].as_str().unwrap_or_default().to_string();
+        let transcodings = track["media"]["transcodings"].as_array().cloned().unwrap_or_default();
+        let chosen = transcodings
+            .iter()
+            .filter_map(|t| Some((rank(t)?, t)))
+            .min_by_key(|(r, _)| *r)
+            .map(|(_, t)| t)
+            .ok_or("NOT_PLAYABLE")?;
+
+        let base = chosen["url"].as_str().ok_or("Stream fehlt")?;
+        let info = self.get(&format!("{base}?track_authorization={auth}")).await?;
+        let url = info["url"].as_str().ok_or("Stream fehlt")?.to_string();
+        let is_mp4 = chosen["format"]["mime_type"].as_str().unwrap_or("").starts_with("audio/mp4");
+        let (ext, mime) = if is_mp4 { ("m4a", "audio/mp4") } else { ("mp3", "audio/mpeg") };
+
+        let data = if chosen["format"]["protocol"].as_str() == Some("progressive") {
+            fetch_bytes(&self.http, &url).await?
+        } else {
+            let playlist = String::from_utf8(fetch_bytes(&self.http, &url).await?).map_err(err)?;
+            let init = playlist
+                .lines()
+                .find(|l| l.starts_with("#EXT-X-MAP"))
+                .and_then(|l| l.split("URI=\"").nth(1))
+                .and_then(|rest| rest.split('"').next())
+                .map(str::to_string);
+            let segments: Vec<String> =
+                playlist.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).map(str::to_string).collect();
+            if segments.is_empty() {
+                return Err("Leere Stream-Liste".into());
+            }
+            // Stücke parallel laden (höchstens 6 gleichzeitig), Reihenfolge bleibt erhalten
+            let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(6));
+            let tasks: Vec<_> = init
+                .into_iter()
+                .chain(segments)
+                .map(|url| {
+                    let semaphore = semaphore.clone();
+                    let http = self.http.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let _permit = semaphore.acquire().await.map_err(err)?;
+                        fetch_bytes(&http, &url).await
+                    })
+                })
+                .collect();
+            let mut data = Vec::new();
+            for task in tasks {
+                data.extend(task.await.map_err(err)??);
+            }
+            data
+        };
+
+        let dir = self.cache_dir();
+        std::fs::create_dir_all(&dir).map_err(err)?;
+        let path = dir.join(format!("{id}.{ext}"));
+        std::fs::write(&path, data).map_err(err)?;
+        self.trim_cache();
+        Ok(Prepared { path, mime })
+    }
+
+    fn trim_cache(&self) {
+        let Ok(entries) = std::fs::read_dir(self.cache_dir()) else { return };
+        let mut files: Vec<_> = entries
+            .filter_map(|e| e.ok())
+            .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
+            .collect();
+        if files.len() <= CACHE_FILES {
+            return;
+        }
+        files.sort();
+        for (_, path) in files.iter().take(files.len() - CACHE_FILES) {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+
+    /// Antwort auf `scstream://<id>` (mit Range, damit Spulen geht)
+    pub async fn serve_stream(&self, id: &str, range: Option<&str>) -> tauri::http::Response<Vec<u8>> {
+        use tauri::http::{header, Response, StatusCode};
+        let respond = |status: StatusCode, body: Vec<u8>| {
+            Response::builder()
+                .status(status)
+                .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+                .body(body)
+                .unwrap()
+        };
+        if id.is_empty() || !id.chars().all(|c| c.is_ascii_digit()) {
+            return respond(StatusCode::BAD_REQUEST, Vec::new());
+        }
+        let prepared = match self.prepare(id).await {
+            Ok(p) => p,
+            Err(e) if e == "NOT_PLAYABLE" => return respond(StatusCode::NOT_FOUND, e.into_bytes()),
+            Err(e) => return respond(StatusCode::BAD_GATEWAY, e.into_bytes()),
+        };
+        let Ok(data) = std::fs::read(&prepared.path) else {
+            return respond(StatusCode::INTERNAL_SERVER_ERROR, Vec::new());
+        };
+        let total = data.len() as u64;
+        let (start, end) = range
+            .and_then(|r| r.strip_prefix("bytes="))
+            .map(|spec| {
+                let (a, b) = spec.split_once('-').unwrap_or((spec, ""));
+                (a.trim().parse::<u64>().unwrap_or(0), b.trim().parse::<u64>().ok())
+            })
+            .unwrap_or((0, None));
+        if start >= total {
+            return Response::builder()
+                .status(StatusCode::RANGE_NOT_SATISFIABLE)
+                .header(header::CONTENT_RANGE, format!("bytes */{total}"))
+                .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+                .body(Vec::new())
+                .unwrap();
+        }
+        let end = end.unwrap_or(total - 1).min(total - 1);
+        Response::builder()
+            .status(StatusCode::PARTIAL_CONTENT)
+            .header(header::CONTENT_TYPE, prepared.mime)
+            .header(header::ACCEPT_RANGES, "bytes")
+            .header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{total}"))
+            .header(header::CONTENT_LENGTH, end - start + 1)
+            .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+            .body(data[start as usize..=end as usize].to_vec())
+            .unwrap()
+    }
+}
+
+/// Nächsten Song schon vorab laden, damit er sofort startet
+#[tauri::command]
+pub async fn soundcloud_prefetch(sc: State<'_, SoundCloud>, id: String) -> Result<(), String> {
+    if !id.is_empty() && id.chars().all(|c| c.is_ascii_digit()) {
+        sc.prepare(&id).await.map(|_| ())
+    } else {
+        Ok(())
+    }
 }

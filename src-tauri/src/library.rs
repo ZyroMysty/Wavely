@@ -140,3 +140,41 @@ pub fn cover(path: &str) -> Option<String> {
         Some(format!("data:{mime};base64,{}", STANDARD.encode(data)))
     })
 }
+
+// --- Ordner beobachten -------------------------------------------------------
+
+/// Beobachtet die Musikordner; neue, gelöschte oder umbenannte Audiodateien melden sich
+/// (gesammelt nach 2 Sekunden Ruhe) als Event `library-changed` bei der Oberfläche.
+#[derive(Default)]
+pub struct Watcher(
+    std::sync::Mutex<Option<(Vec<String>, notify_debouncer_mini::Debouncer<notify_debouncer_mini::notify::RecommendedWatcher>)>>,
+);
+
+pub fn watch(app: &AppHandle, folders: &[String]) {
+    use notify_debouncer_mini::{new_debouncer, notify::RecursiveMode, DebounceEventResult};
+    use tauri::Emitter;
+
+    let Some(state) = app.try_state::<Watcher>() else { return };
+    let mut current = state.0.lock().unwrap();
+    if current.as_ref().is_some_and(|(watched, _)| watched == folders) {
+        return;
+    }
+    *current = None;
+    if folders.is_empty() {
+        return;
+    }
+    let handle = app.clone();
+    let Ok(mut debouncer) = new_debouncer(std::time::Duration::from_secs(2), move |result: DebounceEventResult| {
+        if let Ok(events) = result {
+            if events.iter().any(|e| is_audio(&e.path)) {
+                let _ = handle.emit("library-changed", ());
+            }
+        }
+    }) else {
+        return;
+    };
+    for folder in folders {
+        let _ = debouncer.watcher().watch(Path::new(folder), RecursiveMode::Recursive);
+    }
+    *current = Some((folders.to_vec(), debouncer));
+}
