@@ -4,6 +4,12 @@ Neue Punkte kommen zuerst unter „Unveröffentlicht“. Beim Veröffentlichen w
 
 ## Unveröffentlicht
 
+## 0.14.0 – 2026-10-27
+- Wavely-Konto (E-Mail und Passwort) in den Einstellungen – mit „Passwort vergessen“ und „Konto löschen“
+- Verlauf, Rückblick und Wavely-Playlists sind auf jedem PC mit deinem Konto gleich, auch Änderungen ohne Internet werden nachgereicht
+- Zusammen hören: Raum starten, Code oder Link „wavely://join/…“ an Freunde schicken – alle hören synchron dasselbe
+- Feedback-Knopf in der Seitenleiste: Fehler melden, Ideen oder Wünsche direkt aus Wavely schicken
+
 ## 0.13.0 – 2026-10-27
 - SoundCloud-Songs laufen wieder direkt von SoundCloud statt über YouTube Music – ohne Fehlzuordnungen und mit Remixes, die es nur dort gibt
 - Wavely-Playlists: Songs aus allen Quellen in einer Playlist mischen, umsortieren per Ziehen, übertragen zu YouTube Music oder Spotify

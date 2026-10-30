@@ -17,6 +17,10 @@ function slim(track) {
   return rest;
 }
 
+let markReady;
+/** Erfüllt, sobald die Playlists von der Platte geladen sind (der Abgleich wartet darauf) */
+export const playlistsReady = new Promise((resolve) => (markReady = resolve));
+
 export async function initPlaylists() {
   try {
     const text = await invoke("playlists_load");
@@ -26,12 +30,29 @@ export async function initPlaylists() {
     console.error("Playlists:", e);
   }
   playlists.loaded = true;
+  markReady();
+}
+
+/** Für den Abgleich mit dem Wavely-Konto */
+const listeners = new Set();
+let deletedIds = [];
+export function onPlaylistsChanged(fn) {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
 }
 
 let saveTimer;
-function save() {
+let notifyPending = false;
+function save(notify = true) {
   clearTimeout(saveTimer);
+  notifyPending ||= notify;
   saveTimer = setTimeout(() => {
+    if (notifyPending) {
+      notifyPending = false;
+      const deleted = deletedIds;
+      deletedIds = [];
+      listeners.forEach((fn) => fn(playlists.list, deleted));
+    }
     const json = JSON.stringify({ version: 1, playlists: $state.snapshot(playlists.list) });
     invoke("playlists_save", { json }).catch((e) => showToast(`Playlists konnten nicht gespeichert werden: ${e}`, true));
   }, 300);
@@ -64,7 +85,38 @@ export function renamePlaylist(id, name) {
 
 export function deletePlaylist(id) {
   playlists.list = playlists.list.filter((p) => p.id !== id);
+  deletedIds.push(id);
   save();
+}
+
+/** Stand aus der Cloud übernehmen: neuere Fassungen ersetzen, gelöschte entfernen */
+export function applyRemotePlaylists(remote) {
+  let changed = false;
+  for (const r of remote) {
+    const index = playlists.list.findIndex((p) => p.id === r.id);
+    const mine = playlists.list[index];
+    if (r.deleted) {
+      if (mine && mine.updatedAt <= r.updatedAt) {
+        playlists.list.splice(index, 1);
+        changed = true;
+      }
+      continue;
+    }
+    if (mine && mine.updatedAt >= r.updatedAt) continue;
+    const { deleted, ...data } = r;
+    // Lokale Dateien: Pfad vom eigenen PC behalten, falls der Song hier existiert
+    data.items = (data.items ?? []).map((item) => {
+      const ownItem = mine?.items.find((i) => i.id === item.id);
+      return ownItem?.track.path ? { ...item, track: { ...item.track, path: ownItem.track.path } } : item;
+    });
+    if (mine) playlists.list[index] = data;
+    else playlists.list.push(data);
+    changed = true;
+  }
+  if (changed) {
+    playlists.list.sort((a, b) => b.createdAt - a.createdAt);
+    save(false);
+  }
 }
 
 /** Songs anhängen; gibt die Anzahl der neu hinzugefügten zurück (Doppelte werden übersprungen) */

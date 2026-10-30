@@ -133,6 +133,9 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
+        // Einladungslinks „wavely://join/CODE“ (Zusammen hören); der Installer meldet das Schema bei Windows an
+        .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_autostart::Builder::new().args(["--autostart"]).build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())

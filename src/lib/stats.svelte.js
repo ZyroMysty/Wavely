@@ -67,11 +67,24 @@ export function statsFlush() {
   backup();
 }
 
+/** Für den Abgleich mit dem Wavely-Konto: neue Einträge melden */
+const listeners = new Set();
+export function onPlaysWritten(fn) {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+
+/** Einträge von anderen Geräten in die Datei übernehmen */
+export async function appendPlays(entries) {
+  await invoke("stats_append", { entries });
+}
+
 function write() {
   if (!pending.length) return;
   const entries = pending;
   pending = [];
   invoke("stats_append", { entries })
+    .then(() => listeners.forEach((fn) => fn(entries)))
     .then(backup)
     .catch(() => (pending = [...entries, ...pending]));
 }

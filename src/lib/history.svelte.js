@@ -35,6 +35,15 @@ export function recordPlay(track) {
   save();
 }
 
+/** Einträge von anderen Geräten einsortieren (neueste zuerst, ohne Doppelte) */
+export function mergeHistory(entries) {
+  const seen = new Set(history.entries.map((e) => `${e.playedAt}:${e.track.id}`));
+  const fresh = entries.filter((e) => !seen.has(`${e.playedAt}:${e.track.id}`));
+  if (!fresh.length) return;
+  history.entries = [...history.entries, ...fresh].sort((a, b) => b.playedAt - a.playedAt).slice(0, MAX_ENTRIES);
+  save();
+}
+
 export function removeEntry(index) {
   history.entries.splice(index, 1);
   save();

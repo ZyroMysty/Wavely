@@ -4,6 +4,7 @@
   import Icon from "./Icon.svelte";
   import Logo from "./Logo.svelte";
   import { playlists, createPlaylist } from "../lib/playlists.svelte.js";
+  import { feedback } from "../lib/feedback.svelte.js";
 
   const folderName = (path) => path.split(/[\\/]/).filter(Boolean).pop() ?? path;
   const collapsed = $derived(ui.sidebarCollapsed);
@@ -110,6 +111,10 @@
   {/if}
 
   <nav class="bottom">
+    <button title={collapsed ? "Feedback" : null} onclick={() => (feedback.open = true)}>
+      <Icon name="feedback" size={18} />
+      {#if !collapsed}Feedback{/if}
+    </button>
     <button class:active={ui.view === "settings"} title={collapsed ? "Einstellungen" : null} onclick={() => open("settings")}>
       <Icon name="settings" size={18} />
       {#if !collapsed}Einstellungen{/if}

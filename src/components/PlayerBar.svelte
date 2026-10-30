@@ -21,6 +21,7 @@
   import DevicePicker from "./DevicePicker.svelte";
   import SoundMenu from "./SoundMenu.svelte";
   import SleepTimerMenu from "./SleepTimerMenu.svelte";
+  import TogetherMenu from "./TogetherMenu.svelte";
   import { spotifyOut, targetDevice } from "../lib/spotifyPlayer.svelte.js";
   import Icon from "./Icon.svelte";
 
@@ -120,6 +121,7 @@
   </div>
 
   <div class="right">
+    <TogetherMenu />
     <SleepTimerMenu />
     <SoundMenu />
     <DevicePicker />

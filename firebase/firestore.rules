@@ -1,0 +1,44 @@
+rules_version = '2';
+
+// Sicherheitsregeln für das Wavely-Firebase-Projekt.
+// In der Firebase-Konsole unter Firestore Database → Regeln einfügen und „Veröffentlichen“ klicken.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Eigene Daten (Verlauf, Rückblick, Wavely-Playlists): nur der angemeldete Nutzer selbst
+    match /users/{uid}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Feedback: jeder darf eins schicken (auch ohne Konto), lesen nur in der Firebase-Konsole
+    match /feedback/{id} {
+      allow create: if request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 5000
+        && request.resource.data.kind in ['bug', 'idea', 'other']
+        && request.resource.data.keys().hasOnly(['kind', 'text', 'contact', 'createdAt', 'uid', 'version', 'system']);
+      allow read, update, delete: if false;
+    }
+
+    // Zusammen hören: Wer den Code kennt (und angemeldet ist), darf mitlesen; ändern darf nur der Gastgeber
+    match /rooms/{code} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.host == request.auth.uid
+        && code.size() == 6;
+      allow update: if request.auth != null
+        && resource.data.host == request.auth.uid
+        && request.resource.data.host == resource.data.host;
+      allow delete: if request.auth != null && resource.data.host == request.auth.uid;
+
+      // Gäste tragen sich selbst ein; der Gastgeber darf beim Beenden aufräumen
+      match /members/{uid} {
+        allow read: if request.auth != null;
+        allow create, update: if request.auth != null && request.auth.uid == uid;
+        allow delete: if request.auth != null
+          && (request.auth.uid == uid
+              || get(/databases/$(database)/documents/rooms/$(code)).data.host == request.auth.uid);
+      }
+    }
+  }
+}

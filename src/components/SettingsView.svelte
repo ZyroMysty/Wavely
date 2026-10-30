@@ -29,6 +29,7 @@
     selectOutput,
   } from "../lib/sound.svelte.js";
   import { openChangelog } from "../lib/changelog.svelte.js";
+  import AccountSection from "./AccountSection.svelte";
   import { shortcuts, setGlobalShortcuts } from "../lib/shortcuts.svelte.js";
   import { lastfm, login as lastfmLogin, logout as lastfmLogout } from "../lib/lastfm.svelte.js";
   import { enable as enableAutostart, disable as disableAutostart, isEnabled as autostartEnabled } from "@tauri-apps/plugin-autostart";
@@ -60,6 +61,7 @@
   let confirmClear = $state(false);
 
   const sections = [
+    { id: "account", label: "Wavely-Konto" },
     { id: "appearance", label: "Darstellung" },
     { id: "playback", label: "Wiedergabe" },
     { id: "sound", label: "Klang" },
@@ -158,6 +160,8 @@
   </nav>
 
   <div class="content">
+    <AccountSection />
+
     <!-- Darstellung -->
     <section id="settings-appearance">
       <h2>Darstellung</h2>

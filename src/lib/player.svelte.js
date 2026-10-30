@@ -86,10 +86,13 @@ export function currentTrack() {
 
 /** YouTube-Video zum Song: YouTube-Songs direkt, Spotify-/SoundCloud-Songs über die Zuordnung */
 async function videoId(track) {
+  // Lokaler Song ohne Datei auf diesem PC (aus dem Wavely-Konto eines anderen Geräts)
+  if (track.source === "local") return resolveVideo({ ...track, id: `local:${track.id}` });
   return track.source === "spotify" || track.source === "soundcloud" ? await resolveVideo(track) : track.id;
 }
 
 async function sourceUrl(track) {
+  if (track.source === "local" && !track.path) return convertFileSrc(await videoId(track), "ytstream");
   if (track.source === "local") return convertFileSrc(track.path);
   // Offline gespeichert: Datei direkt abspielen (auch ohne Internet)
   const saved = offlinePath(track.id);
@@ -339,8 +342,14 @@ function localRadio(seed) {
   return shuffled([...shuffled(related).slice(0, 8), ...shuffled(others).slice(0, 12)]);
 }
 
+/** Beim Mithören (Zusammen hören) bestimmt der Gastgeber, was als Nächstes kommt */
+let autoplayBlocked = false;
+export function setAutoplayBlocked(blocked) {
+  autoplayBlocked = blocked;
+}
+
 async function extendWithAutoplay() {
-  if (!player.autoplay || player.repeat !== "off" || autoplayPending) return;
+  if (autoplayBlocked || !player.autoplay || player.repeat !== "off" || autoplayPending) return;
   if (player.index < player.queue.length - 2) return;
   const seed = currentTrack();
   if (!seed) return;

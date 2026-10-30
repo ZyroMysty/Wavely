@@ -33,7 +33,12 @@
   import { handleKey, applyGlobalShortcuts } from "./lib/shortcuts.svelte.js";
   import { initLastFm } from "./lib/lastfm.svelte.js";
   import SettingsView from "./components/SettingsView.svelte";
-  import { ui } from "./lib/ui.svelte.js";
+  import { ui, showToast } from "./lib/ui.svelte.js";
+  import { account, initAccount } from "./lib/account.svelte.js";
+  import FeedbackDialog from "./components/FeedbackDialog.svelte";
+  import { joinRoom, codeFromLink } from "./lib/together.svelte.js";
+  import { onOpenUrl, getCurrent as getCurrentLinks } from "@tauri-apps/plugin-deep-link";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
   import { applyAppearance, settings } from "./lib/settings.svelte.js";
 
   // Spotify-Player (Premium) im Hintergrund vorbereiten, sobald das Konto bekannt ist
@@ -63,6 +68,33 @@
     initLastFm();
     applyGlobalShortcuts();
     showWhatsNew();
+    initAccount();
+    initInviteLinks();
+  });
+
+  // Einladungslinks „wavely://join/CODE“: beim Start mitgegeben oder später (zweiter Aufruf)
+  let pendingInvite = $state(null);
+  async function handleLinks(urls) {
+    const code = (urls ?? []).map(codeFromLink).find(Boolean);
+    if (!code) return;
+    pendingInvite = code;
+    getCurrentWindow().setFocus().catch(() => {});
+  }
+  async function initInviteLinks() {
+    handleLinks(await getCurrentLinks().catch(() => null));
+    onOpenUrl(handleLinks).catch(() => {});
+  }
+  $effect(() => {
+    if (!pendingInvite || account.status === "checking") return;
+    const code = pendingInvite;
+    pendingInvite = null;
+    if (account.status !== "loggedIn") {
+      showToast("Zum Mithören bitte zuerst im Wavely-Konto anmelden");
+      ui.view = "settings";
+      setTimeout(() => document.getElementById("settings-account")?.scrollIntoView(), 50);
+      return;
+    }
+    joinRoom(code).catch((e) => showToast(String(e?.message ?? e), true));
   });
 
 </script>
@@ -102,6 +134,7 @@
 <ChangelogDialog />
 <TransferDialog />
 <ShortcutsDialog />
+<FeedbackDialog />
 
 <style>
   .app {
