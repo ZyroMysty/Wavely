@@ -1,4 +1,5 @@
 mod artwork;
+mod channels;
 mod lastfm;
 mod library;
 mod lyrics;
@@ -199,6 +200,9 @@ pub fn run() {
             soundcloud::soundcloud_prefetch,
             ytm::ytm_report_play,
             ytm::ytm_home,
+            ytm::set_audio_quality,
+            channels::update_check,
+            channels::update_install,
             spotify::spotify_match,
             spotify::spotify_create_playlist,
             lastfm::lastfm_status,
@@ -313,6 +317,7 @@ pub fn run() {
             app.manage(soundcloud::SoundCloud::new(app.handle())?);
             app.manage(lastfm::LastFm::new(app.handle())?);
             app.manage(store::Store::new(app.handle())?);
+            app.manage(channels::PendingUpdate::default());
             app.manage(library::Watcher::default());
 
             // yt-dlp im Hintergrund aktuell halten (höchstens einmal am Tag)

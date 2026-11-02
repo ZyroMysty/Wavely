@@ -6,14 +6,21 @@
 // Die Release Notes kommen aus dem Abschnitt „## <version>“ in CHANGELOG.md.
 // Lädt den signierten Installer und latest.json (Version, Notizen, Signatur, Download-Adresse) hoch.
 // Das GitHub-Token kommt aus der Git-Anmeldung (Git Credential Manager), es wird nirgends gespeichert.
+//
+// Testversion (nur für Admins):  Version wie „0.15.0-test.1“, dann  npm run release -- --test
+// → GitHub-Pre-Release; statt latest.json wird updates/latest-test.json im Repository aktualisiert.
+// Normale Nutzer bekommen davon nichts mit.
 import { execFileSync } from "node:child_process";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
 import { basename, join } from "node:path";
 
 const REPO = "ZyroMysty/Wavely";
 const root = join(import.meta.dirname, "..");
 const { version } = JSON.parse(readFileSync(join(root, "src-tauri", "tauri.conf.json"), "utf8"));
 const tag = `v${version}`;
+const isTest = process.argv.includes("--test");
+if (isTest && !version.includes("-")) throw new Error(`Testversionen brauchen eine Nummer wie „${version}-test.1“.`);
+if (!isTest && version.includes("-")) throw new Error(`„${version}“ ist eine Testversion – mit „npm run release -- --test“ veröffentlichen.`);
 
 // Abschnitt „## 1.2.3 – Datum“ bis zur nächsten Überschrift
 const changelog = readFileSync(join(root, "CHANGELOG.md"), "utf8").replace(/\r/g, "");
@@ -72,10 +79,16 @@ const latest = {
   },
 };
 
-console.log(`Erstelle Release ${tag}…`);
+console.log(`Erstelle ${isTest ? "Testversion" : "Release"} ${tag}…`);
 const release = await github("/releases", {
   method: "POST",
-  body: JSON.stringify({ tag_name: tag, target_commitish: head, name: `Wavely ${version}`, body: notes }),
+  body: JSON.stringify({
+    tag_name: tag,
+    target_commitish: head,
+    name: isTest ? `Wavely ${version} (Testversion)` : `Wavely ${version}`,
+    body: isTest ? `Testversion – nur für Admins gedacht.\n\n${notes}` : notes,
+    prerelease: isTest,
+  }),
 });
 
 async function upload(name, data, type) {
@@ -85,5 +98,15 @@ async function upload(name, data, type) {
 }
 
 await upload(installerName, readFileSync(installer), "application/octet-stream");
-await upload("latest.json", JSON.stringify(latest, null, 2), "application/json");
+if (isTest) {
+  // Test-Kanal: Datei im Repository, die nur Admin-Apps abfragen (siehe src-tauri/src/channels.rs)
+  mkdirSync(join(root, "updates"), { recursive: true });
+  writeFileSync(join(root, "updates", "latest-test.json"), JSON.stringify(latest, null, 2) + "\n");
+  execFileSync("git", ["add", "updates/latest-test.json"], { cwd: root });
+  execFileSync("git", ["commit", "-q", "-m", `Testversion ${version} für Admins`], { cwd: root });
+  execFileSync("git", ["push", "-q", "origin", "HEAD"], { cwd: root, stdio: "inherit" });
+  console.log("  Test-Kanal aktualisiert: updates/latest-test.json");
+} else {
+  await upload("latest.json", JSON.stringify(latest, null, 2), "application/json");
+}
 console.log(`Fertig: ${release.html_url}`);

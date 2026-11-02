@@ -12,9 +12,9 @@
     cycleRepeat,
   } from "../lib/player.svelte.js";
   import { formatTime } from "../lib/format.js";
-  import { ui, togglePanel, showToast } from "../lib/ui.svelte.js";
+  import { ui, togglePanel, showToast, openMiniPlayer } from "../lib/ui.svelte.js";
   import { invoke } from "@tauri-apps/api/core";
-  import { settings } from "../lib/settings.svelte.js";
+  import { settings, moduleOn } from "../lib/settings.svelte.js";
   import { ytm, isLiked, toggleLike } from "../lib/ytm.svelte.js";
   import Cover from "./Cover.svelte";
   import ArtistLinks from "./ArtistLinks.svelte";
@@ -121,11 +121,11 @@
   </div>
 
   <div class="right">
-    <TogetherMenu />
+    {#if moduleOn("together")}<TogetherMenu />{/if}
     <SleepTimerMenu />
     <SoundMenu />
     <DevicePicker />
-    <button class="small" title="Mini-Player" onclick={() => invoke("mini_player_open", { pinned: settings.miniPinned, width: settings.miniWidth, height: settings.miniHeight })}>
+    <button class="small" title="Mini-Player" onclick={openMiniPlayer}>
       <Icon name="miniPlayer" size={20} />
     </button>
     <button class="small" class:on={ui.panel === "lyrics"} title="Liedtext" onclick={() => togglePanel("lyrics")}>

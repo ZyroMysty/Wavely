@@ -1,6 +1,6 @@
 [package]
 name = "wavely"
-version = "0.14.0"
+version = "0.15.0"
 edition = "2021"
 
 [lib]
@@ -34,6 +34,7 @@ tauri-plugin-global-shortcut = "2.4.1"
 notify-debouncer-mini = "0.7.0"
 tauri-plugin-deep-link = "2.6.2"
 tauri-plugin-clipboard-manager = "2.5.0"
+semver = "1.0.28"
 
 # Kleine Release-Binary
 [profile.release]

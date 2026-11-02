@@ -1,6 +1,7 @@
 <script>
   import { changelog, releases, formatDate } from "../lib/changelog.svelte.js";
   import Logo from "./Logo.svelte";
+  import { account } from "../lib/account.svelte.js";
 
   let showAll = $state(false);
 
@@ -8,7 +9,9 @@
     if (changelog.open) showAll = !changelog.highlight;
   });
 
-  const shown = $derived(showAll ? releases : releases.filter((r) => r.version === changelog.highlight));
+  // Testversionen (z. B. 0.15.0-test.1) sehen nur Admins
+  const visible = $derived(releases.filter((r) => !r.version.includes("-") || account.admin));
+  const shown = $derived(showAll ? visible : releases.filter((r) => r.version === changelog.highlight));
   const close = () => (changelog.open = false);
 </script>
 

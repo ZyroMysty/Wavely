@@ -16,9 +16,42 @@ const UPDATE_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 /// Unter Windows kein Konsolenfenster öffnen
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+/// Gewünschte Audioqualität (Einstellungen → Wiedergabe / Offline)
+#[derive(Clone, Copy, PartialEq, Default, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Quality {
+    /// ~64 kbit Opus – etwa halber Speicher, klingt dank Opus trotzdem ordentlich
+    Low,
+    /// Beste Qualität ohne Premium (Opus/AAC ~130 kbit)
+    #[default]
+    High,
+    /// 256 kbit AAC – nur mit YouTube Premium (Anmelde-Cookies werden an yt-dlp übergeben)
+    Premium,
+}
+
+impl Quality {
+    fn format(self, youtube: bool) -> &'static str {
+        match (self, youtube) {
+            (Quality::Low, _) => "bestaudio[abr<=80]/bestaudio",
+            (Quality::Premium, true) => "bestaudio[abr>200]/bestaudio[ext=webm]/bestaudio",
+            (_, true) => "bestaudio[ext=webm]/bestaudio",
+            (_, false) => "bestaudio/best",
+        }
+    }
+}
+
+#[derive(Default)]
+struct QualitySettings {
+    stream: Quality,
+    download: Quality,
+    /// Cookie-Datei mit der YouTube-Anmeldung (nur für „Premium“)
+    cookies: Option<PathBuf>,
+}
+
 #[derive(Clone)]
 pub struct YtDlp {
     path: PathBuf,
+    quality: std::sync::Arc<std::sync::Mutex<QualitySettings>>,
 }
 
 pub struct AudioInfo {
@@ -58,7 +91,23 @@ impl YtDlp {
             std::fs::copy(&bundled, &path)
                 .map_err(|e| format!("yt-dlp nicht gefunden ({}): {e}", bundled.display()))?;
         }
-        Ok(Self { path })
+        Ok(Self { path, quality: Default::default() })
+    }
+
+    pub fn set_quality(&self, stream: Quality, download: Quality, cookies: Option<PathBuf>) {
+        *self.quality.lock().unwrap() = QualitySettings { stream, download, cookies };
+    }
+
+    /// Formatauswahl (+ Cookies bei „Premium“) für einen Aufruf
+    fn quality_args(&self, download: bool, youtube: bool) -> Vec<String> {
+        let settings = self.quality.lock().unwrap();
+        let quality = if download { settings.download } else { settings.stream };
+        let mut args = vec!["-f".to_string(), quality.format(youtube).to_string()];
+        if let (Quality::Premium, true, Some(cookies)) = (quality, youtube, &settings.cookies) {
+            args.push("--cookies".into());
+            args.push(cookies.to_string_lossy().into_owned());
+        }
+        args
     }
 
     fn command(&self) -> Command {
@@ -102,11 +151,11 @@ impl YtDlp {
     /// Lädt eine beliebige von yt-dlp unterstützte Adresse (z. B. SoundCloud) nach `dir/<name>.<ext>`.
     pub async fn download_url(&self, url: &str, name: &str, dir: &std::path::Path) -> Result<PathBuf, String> {
         let template = dir.join(format!("{name}.%(ext)s"));
+        let youtube = url.contains("youtube.com");
         let output = self
             .command()
+            .args(self.quality_args(true, youtube))
             .args([
-                "-f",
-                "bestaudio[ext=webm]/bestaudio/best",
                 "--no-playlist",
                 "--no-warnings",
                 "--no-progress",
@@ -138,9 +187,8 @@ impl YtDlp {
     pub async fn audio(&self, video_id: &str) -> Result<AudioInfo, String> {
         let output = self
             .command()
+            .args(self.quality_args(false, true))
             .args([
-                "-f",
-                "bestaudio[ext=webm]/bestaudio",
                 "-J",
                 "--no-playlist",
                 "--no-warnings",

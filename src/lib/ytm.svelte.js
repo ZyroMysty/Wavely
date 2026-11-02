@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ui } from "./ui.svelte.js";
+import { applyQuality } from "./settings.svelte.js";
 
 export const ytm = $state({
   status: "checking", // "checking" | "loggedOut" | "loggedIn"
@@ -22,6 +23,8 @@ export async function initYtm() {
     if (event.payload.loggedIn) {
       ytm.status = "loggedIn";
       loadAccountData();
+      // Für „Premium“-Qualität braucht yt-dlp die neue Anmeldung
+      applyQuality();
     } else {
       ytm.error = event.payload.error ?? "Anmeldung fehlgeschlagen";
     }

@@ -4,6 +4,12 @@ Neue Punkte kommen zuerst unter „Unveröffentlicht“. Beim Veröffentlichen w
 
 ## Unveröffentlicht
 
+## 0.15.0 – 2026-11-02
+- Dienste ein- und ausschalten (Einstellungen → Dienste): Wer z. B. SoundCloud oder Spotify nicht braucht, blendet sie komplett aus
+- Der Mini-Player minimiert das Hauptfenster in die Taskleiste und holt es beim Schließen zurück – abschaltbar
+- Audioqualität wählbar, getrennt für Streaming und Downloads: Datensparend (~64 kbit), Hoch (~130 kbit) oder Premium (256 kbit mit YouTube Premium)
+- Testversionen für Admins: eigener Update-Kanal für inoffizielle Versionen
+
 ## 0.14.0 – 2026-10-27
 - Wavely-Konto (E-Mail und Passwort) in den Einstellungen – mit „Passwort vergessen“ und „Konto löschen“
 - Verlauf, Rückblick und Wavely-Playlists sind auf jedem PC mit deinem Konto gleich, auch Änderungen ohne Internet werden nachgereicht

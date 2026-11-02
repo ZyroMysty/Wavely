@@ -1,10 +1,13 @@
-import { check } from "@tauri-apps/plugin-updater";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { settings } from "./settings.svelte.js";
+import { account } from "./account.svelte.js";
 
 /**
  * Automatische Updates: Wavely fragt bei GitHub (Releases → latest.json) nach einer neuen Version,
  * lädt den signierten Installer herunter und startet ihn. Ohne gültige Signatur wird nichts installiert.
+ * Admins können zusätzlich Testversionen bekommen (Test-Kanal, siehe channels.rs).
  */
 
 const CHECK_INTERVAL = 6 * 60 * 60 * 1000;
@@ -14,6 +17,8 @@ export const updater = $state({
   status: "idle",
   version: null,
   notes: null,
+  /** Testversion (nur Admins) */
+  test: false,
   /** Download-Fortschritt 0–1, solange die Größe bekannt ist */
   progress: null,
   error: null,
@@ -21,7 +26,8 @@ export const updater = $state({
   dismissed: false,
 });
 
-let update = null;
+/** Test-Kanal nur für Admins, die ihn eingeschaltet haben */
+export const testChannelActive = () => Boolean(account.admin && settings.testChannel);
 
 /** Nach einer neuen Version suchen. `silent`: Fehler nicht anzeigen (automatische Prüfung). */
 export async function checkForUpdates(silent = false) {
@@ -29,11 +35,13 @@ export async function checkForUpdates(silent = false) {
   updater.status = "checking";
   updater.error = null;
   try {
-    update = await check();
-    if (update) {
+    const found = await invoke("update_check", { test: testChannelActive() });
+    if (found) {
       updater.status = "available";
-      updater.version = update.version;
-      updater.notes = update.body ?? null;
+      updater.version = found.version;
+      updater.notes = found.notes ?? null;
+      updater.test = found.test;
+      updater.dismissed = false;
     } else {
       updater.status = "none";
     }
@@ -45,32 +53,27 @@ export async function checkForUpdates(silent = false) {
 
 /** Update herunterladen und installieren; Wavely beendet sich dabei und startet neu. */
 export async function installUpdate() {
-  if (!update) return;
   updater.status = "downloading";
   updater.progress = null;
-  let total = 0;
-  let received = 0;
+  const off = await listen("update-progress", ({ payload }) => {
+    if (payload.finished) updater.status = "installing";
+    else if (payload.total) updater.progress = Math.min(payload.received / payload.total, 1);
+  });
   try {
-    await update.downloadAndInstall((event) => {
-      if (event.event === "Started") {
-        total = event.data.contentLength ?? 0;
-      } else if (event.event === "Progress") {
-        received += event.data.chunkLength;
-        if (total) updater.progress = Math.min(received / total, 1);
-      } else if (event.event === "Finished") {
-        updater.status = "installing";
-      }
-    });
+    await invoke("update_install");
     await relaunch();
   } catch (e) {
     updater.status = "error";
     updater.error = String(e);
+  } finally {
+    off();
   }
 }
 
 /** Beim Start und danach alle paar Stunden prüfen (abschaltbar in den Einstellungen). */
 export function initUpdater() {
   const auto = () => settings.autoUpdateCheck && checkForUpdates(true);
-  setTimeout(auto, 5000);
+  // Etwas warten, damit das Wavely-Konto (Admin oder nicht) schon bekannt ist
+  setTimeout(auto, 8000);
   setInterval(auto, CHECK_INTERVAL);
 }

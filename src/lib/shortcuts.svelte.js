@@ -13,7 +13,7 @@ import {
   cycleRepeat,
 } from "./player.svelte.js";
 import { settings, updateSetting } from "./settings.svelte.js";
-import { ui, togglePanel, showToast } from "./ui.svelte.js";
+import { ui, togglePanel, showToast, openMiniPlayer } from "./ui.svelte.js";
 import { ytm, isLiked, toggleLike } from "./ytm.svelte.js";
 
 /**
@@ -105,7 +105,7 @@ export function handleKey(e) {
   else if (ctrl && key === "q") action = () => togglePanel("queue");
   else if (ctrl && key === "h") action = () => togglePanel("history");
   else if (ctrl && key === "m")
-    action = () => invoke("mini_player_open", { pinned: settings.miniPinned, width: settings.miniWidth, height: settings.miniHeight });
+    action = openMiniPlayer;
   else if (ctrl && key === ",") action = () => (ui.view = "settings");
   else if (!ctrl && !e.altKey) {
     if (key === "m") action = toggleMute;

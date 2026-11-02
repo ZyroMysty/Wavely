@@ -9,7 +9,8 @@ import {
   reauthenticateWithCredential,
   EmailAuthProvider,
 } from "firebase/auth";
-import { auth } from "./firebase.js";
+import { doc, getDoc } from "firebase/firestore";
+import { auth, db } from "./firebase.js";
 import { startSync, stopSync, deleteCloudData } from "./sync.svelte.js";
 import { leaveRoom } from "./together.svelte.js";
 import { showToast } from "./ui.svelte.js";
@@ -20,6 +21,8 @@ export const account = $state({
   status: "checking",
   /** { uid, email, name } */
   user: null,
+  /** Admin (Firestore admins/{uid}, nur in der Firebase-Konsole anlegbar): darf Testversionen bekommen */
+  admin: false,
 });
 
 export function initAccount() {
@@ -28,9 +31,13 @@ export function initAccount() {
       account.user = { uid: user.uid, email: user.email, name: user.displayName || user.email?.split("@")[0] };
       account.status = "loggedIn";
       startSync(user.uid);
+      getDoc(doc(db, "admins", user.uid))
+        .then((snap) => (account.admin = snap.exists()))
+        .catch(() => (account.admin = false));
     } else {
       account.user = null;
       account.status = "loggedOut";
+      account.admin = false;
       stopSync();
     }
   });

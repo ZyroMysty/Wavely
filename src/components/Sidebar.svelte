@@ -5,11 +5,13 @@
   import Logo from "./Logo.svelte";
   import { playlists, createPlaylist } from "../lib/playlists.svelte.js";
   import { feedback } from "../lib/feedback.svelte.js";
+  import { moduleOn } from "../lib/settings.svelte.js";
+  import { MODULE_VIEWS } from "../lib/modules.svelte.js";
 
   const folderName = (path) => path.split(/[\\/]/).filter(Boolean).pop() ?? path;
   const collapsed = $derived(ui.sidebarCollapsed);
 
-  const items = [
+  const allItems = [
     { id: "home", icon: "home", label: "Startseite" },
     { id: "local", icon: "folder", label: "Lokale Musik" },
     { id: "youtube", icon: "youtube", label: "YouTube Music" },
@@ -18,6 +20,8 @@
     { id: "offline", icon: "download", label: "Offline" },
     { id: "recap", icon: "insights", label: "Rückblick" },
   ];
+  // Abgeschaltete Dienste (Einstellungen → Dienste) nicht anzeigen
+  const items = $derived(allItems.filter((item) => !MODULE_VIEWS.includes(item.id) || moduleOn(item.id)));
 
   function open(id) {
     // Erneuter Klick auf YouTube Music führt zurück zur Bibliothek
@@ -85,7 +89,9 @@
     </div>
   {/if}
 
-  {#if collapsed}
+  {#if !moduleOn("local")}
+    <!-- Lokale Musik abgeschaltet: keine Ordner -->
+  {:else if collapsed}
     <button class="icon-btn add" title="Ordner hinzufügen" onclick={addFolder}>
       <Icon name="plus" size={18} />
     </button>

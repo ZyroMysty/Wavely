@@ -1,5 +1,13 @@
 /** Zustand der Oberfläche, der nicht zu einer bestimmten Ansicht gehört. */
+import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { settings } from "./settings.svelte.js";
+
+/** Mini-Player öffnen; standardmäßig verschwindet das Hauptfenster dabei in die Taskleiste */
+export async function openMiniPlayer() {
+  await invoke("mini_player_open", { pinned: settings.miniPinned, width: settings.miniWidth, height: settings.miniHeight });
+  if (settings.miniMinimizesMain) await getCurrentWindow().minimize().catch(() => {});
+}
 
 function stored(key, fallback) {
   try {

@@ -84,6 +84,12 @@
     await invoke("show_main_window");
     await win.close();
   }
+
+  // Wurde das Hauptfenster beim Öffnen minimiert, kommt es beim Schließen zurück
+  async function close() {
+    if (settings.miniMinimizesMain) await invoke("show_main_window").catch(() => {});
+    await win.close();
+  }
 </script>
 
 <svelte:window onresize={onResize} />
@@ -94,7 +100,7 @@
       <Icon name="pin" size={15} />
     </button>
     <button title="Großes Fenster öffnen" onclick={expand}><Icon name="expandWindow" size={15} /></button>
-    <button title="Schließen" onclick={() => win.close()}><Icon name="close" size={15} /></button>
+    <button title="Schließen" onclick={close}><Icon name="close" size={15} /></button>
   </div>
 
   <div class="cover" style:width="{coverSize}px" style:height="{coverSize}px" data-tauri-drag-region>

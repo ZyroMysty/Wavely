@@ -1,4 +1,5 @@
 /** Einstellungen, die der Nutzer auf der Einstellungsseite ändern kann (lokal gespeichert). */
+import { invoke } from "@tauri-apps/api/core";
 
 const KEY = "settings";
 
@@ -36,14 +37,34 @@ const defaults = {
   globalShortcuts: false,
   /** Beim automatischen Start mit Windows minimiert starten */
   startMinimized: true,
+  /** Beim Öffnen des Mini-Players das Hauptfenster minimieren */
+  miniMinimizesMain: true,
+  /** Dienste, die in Wavely erscheinen (abgeschaltete werden nicht geladen und nicht angezeigt) */
+  modules: { youtube: true, spotify: true, soundcloud: true, local: true, lastfm: true, together: true },
+  /** Audioqualität: "low" (~128 kbit) | "high" (beste ohne Premium) | "premium" (256 kbit, braucht YouTube Premium) */
+  streamQuality: "high",
+  downloadQuality: "high",
+  /** Admins: zusätzlich Testversionen als Update anbieten */
+  testChannel: false,
   /** Zuletzt benutzte Größe des Mini-Players */
   miniWidth: 360,
   miniHeight: 104,
 };
 
+/** Ist ein Dienst eingeschaltet? */
+export const moduleOn = (id) => settings.modules?.[id] !== false;
+
+/** Audioqualität an yt-dlp weitergeben (beim Start und nach jeder Änderung) */
+export function applyQuality() {
+  return invoke("set_audio_quality", { stream: settings.streamQuality, download: settings.downloadQuality }).catch((e) =>
+    console.warn("Qualität:", e),
+  );
+}
+
 function load() {
   try {
-    return { ...defaults, ...JSON.parse(localStorage.getItem(KEY) ?? "{}") };
+    const saved = JSON.parse(localStorage.getItem(KEY) ?? "{}");
+    return { ...defaults, ...saved, modules: { ...defaults.modules, ...saved.modules } };
   } catch {
     return { ...defaults };
   }

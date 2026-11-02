@@ -23,6 +23,13 @@ service cloud.firestore {
       allow read, update, delete: if request.auth != null && request.auth.uid == 'DEINE_UID';
     }
 
+    // Admins (bekommen Testversionen): Dokument admins/{UID} von Hand in der Konsole anlegen.
+    // Jeder darf nur nachsehen, ob er selbst Admin ist; ändern geht nur in der Konsole.
+    match /admins/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
     // Zusammen hören: Wer den Code kennt (und angemeldet ist), darf mitlesen; ändern darf nur der Gastgeber
     match /rooms/{code} {
       allow read: if request.auth != null;

@@ -1,7 +1,8 @@
 <script>
   import { onMount } from "svelte";
   import { getVersion } from "@tauri-apps/api/app";
-  import { settings, updateSetting, resetAppearance, ACCENTS } from "../lib/settings.svelte.js";
+  import { settings, updateSetting, resetAppearance, ACCENTS, moduleOn, applyQuality } from "../lib/settings.svelte.js";
+  import { MODULES, setModule } from "../lib/modules.svelte.js";
   import { ui, toggleSidebar, showToast } from "../lib/ui.svelte.js";
   import { player, toggleAutoplay, sendPresence } from "../lib/player.svelte.js";
   import { library, addFolder, removeFolder } from "../lib/library.svelte.js";
@@ -30,6 +31,7 @@
   } from "../lib/sound.svelte.js";
   import { openChangelog } from "../lib/changelog.svelte.js";
   import AccountSection from "./AccountSection.svelte";
+  import { account } from "../lib/account.svelte.js";
   import { shortcuts, setGlobalShortcuts } from "../lib/shortcuts.svelte.js";
   import { lastfm, login as lastfmLogin, logout as lastfmLogout } from "../lib/lastfm.svelte.js";
   import { enable as enableAutostart, disable as disableAutostart, isEnabled as autostartEnabled } from "@tauri-apps/plugin-autostart";
@@ -60,22 +62,37 @@
   let stats = $state(null);
   let confirmClear = $state(false);
 
-  const sections = [
+  // `module`: nur anzeigen, wenn der Dienst eingeschaltet ist
+  const allSections = [
     { id: "account", label: "Wavely-Konto" },
     { id: "appearance", label: "Darstellung" },
     { id: "playback", label: "Wiedergabe" },
+    { id: "modules", label: "Dienste" },
     { id: "sound", label: "Klang" },
     { id: "shortcuts", label: "Tastenkürzel" },
     { id: "system", label: "Windows" },
     { id: "discord", label: "Discord" },
-    { id: "lastfm", label: "Last.fm" },
-    { id: "library", label: "Bibliothek" },
-    { id: "youtube", label: "YouTube Music" },
-    { id: "spotify", label: "Spotify" },
-    { id: "soundcloud", label: "SoundCloud" },
+    { id: "lastfm", label: "Last.fm", module: "lastfm" },
+    { id: "library", label: "Bibliothek", module: "local" },
+    { id: "youtube", label: "YouTube Music", module: "youtube" },
+    { id: "spotify", label: "Spotify", module: "spotify" },
+    { id: "soundcloud", label: "SoundCloud", module: "soundcloud" },
     { id: "offline", label: "Offline" },
     { id: "about", label: "Über Wavely" },
   ];
+  const sections = $derived(allSections.filter((s) => !s.module || moduleOn(s.module)));
+
+  const QUALITIES = [
+    { id: "low", label: "Datensparend (~64 kbit)" },
+    { id: "high", label: "Hoch (~130 kbit)" },
+    { id: "premium", label: "Premium (256 kbit)" },
+  ];
+  async function setQuality(key, value) {
+    updateSetting(key, value);
+    await applyQuality();
+    if (value === "premium" && ytm.status !== "loggedIn")
+      showToast("Premium-Qualität braucht eine YouTube-Music-Anmeldung mit Premium – sonst nimmt Wavely „Hoch“");
+  }
 
   const themes = [
     { value: "system", label: "Wie Windows" },
@@ -247,6 +264,38 @@
             <option value="offline">Offline</option>
           </select>
         </div>
+        <div class="row">
+          <div class="label">
+            <strong>Streaming-Qualität</strong>
+            <small>Für Songs, die über YouTube laufen. „Premium“ (256 kbit) gibt es nur mit YouTube Premium.</small>
+          </div>
+          <select value={settings.streamQuality} onchange={(e) => setQuality("streamQuality", e.currentTarget.value)}>
+            {#each QUALITIES as q (q.id)}<option value={q.id}>{q.label}</option>{/each}
+          </select>
+        </div>
+        <div class="row">
+          <div class="label">
+            <strong>Mini-Player minimiert das Hauptfenster</strong>
+            <small>Beim Öffnen des Mini-Players verschwindet Wavely in die Taskleiste und kommt beim Schließen zurück</small>
+          </div>
+          {@render toggle(settings.miniMinimizesMain, () => updateSetting("miniMinimizesMain", !settings.miniMinimizesMain), "Mini-Player minimiert das Hauptfenster")}
+        </div>
+      </div>
+    </section>
+
+    <!-- Dienste -->
+    <section id="settings-modules">
+      <h2>Dienste</h2>
+      <div class="card">
+        {#each MODULES as m (m.id)}
+          <div class="row">
+            <div class="label">
+              <strong>{m.name}</strong>
+              <small>{m.hint}</small>
+            </div>
+            {@render toggle(moduleOn(m.id), () => setModule(m.id, !moduleOn(m.id)), m.name)}
+          </div>
+        {/each}
       </div>
     </section>
 
@@ -421,7 +470,7 @@
     </section>
 
     <!-- Bibliothek -->
-    <section id="settings-library">
+    <section id="settings-library" hidden={!moduleOn("local")}>
       <h2>Bibliothek</h2>
       <div class="card">
         <div class="row column">
@@ -448,7 +497,7 @@
     </section>
 
     <!-- YouTube Music -->
-    <section id="settings-youtube">
+    <section id="settings-youtube" hidden={!moduleOn("youtube")}>
       <h2>YouTube Music</h2>
       <div class="card">
         {#if ytm.status === "loggedIn"}
@@ -488,7 +537,7 @@
     </section>
 
     <!-- Spotify -->
-    <section id="settings-spotify">
+    <section id="settings-spotify" hidden={!moduleOn("spotify")}>
       <h2>Spotify</h2>
       <div class="card">
         <div class="row">
@@ -519,7 +568,7 @@
     </section>
 
     <!-- Spotify: Wiedergabe & eigene App -->
-    <section id="settings-spotify-app">
+    <section id="settings-spotify-app" hidden={!moduleOn("spotify")}>
       <div class="card">
         <div class="row column">
           <div class="label">
@@ -558,7 +607,7 @@
     </section>
 
     <!-- SoundCloud -->
-    <section id="settings-soundcloud">
+    <section id="settings-soundcloud" hidden={!moduleOn("soundcloud")}>
       <h2>SoundCloud</h2>
       <div class="card">
         <div class="row">
@@ -589,7 +638,7 @@
     </section>
 
     <!-- Last.fm -->
-    <section id="settings-lastfm">
+    <section id="settings-lastfm" hidden={!moduleOn("lastfm")}>
       <h2>Last.fm</h2>
       <div class="card">
         {#if !lastfm.available}
@@ -641,6 +690,15 @@
     <section id="settings-offline">
       <h2>Offline</h2>
       <div class="card">
+        <div class="row">
+          <div class="label">
+            <strong>Download-Qualität</strong>
+            <small>„Datensparend“ braucht etwa halb so viel Speicher. Gilt für neue Downloads.</small>
+          </div>
+          <select value={settings.downloadQuality} onchange={(e) => setQuality("downloadQuality", e.currentTarget.value)}>
+            {#each QUALITIES as q (q.id)}<option value={q.id}>{q.label}</option>{/each}
+          </select>
+        </div>
         <div class="row">
           <div class="label">
             <strong>Gespeicherte Songs</strong>
@@ -720,6 +778,20 @@
           </div>
           {@render toggle(settings.autoUpdateCheck, () => updateSetting("autoUpdateCheck", !settings.autoUpdateCheck), "Automatisch nach Updates suchen")}
         </div>
+        {#if account.admin}
+          <div class="row">
+            <div class="label">
+              <strong>Testversionen erhalten <span class="badge">Admin</span></strong>
+              <small>
+                Inoffizielle Versionen vor allen anderen. Ausschalten bringt dich mit der nächsten stabilen Version zurück.
+              </small>
+            </div>
+            {@render toggle(settings.testChannel, () => {
+              updateSetting("testChannel", !settings.testChannel);
+              checkForUpdates(false);
+            }, "Testversionen erhalten")}
+          </div>
+        {/if}
         <div class="row">
           <div class="label">
             <strong>Versionsverlauf</strong>
@@ -1059,6 +1131,16 @@
   }
   .note.warn {
     color: var(--accent);
+  }
+  .badge {
+    margin-left: 6px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    vertical-align: 2px;
   }
   .note {
     margin: 0;

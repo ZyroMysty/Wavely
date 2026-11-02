@@ -5,6 +5,8 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "core:window:allow-minimize",
+    "core:window:allow-set-focus",
     "dialog:allow-open",
     "updater:default",
     "process:allow-restart",
@@ -17,6 +19,9 @@
     "global-shortcut:allow-unregister",
     "global-shortcut:allow-unregister-all",
     "allow-ytm-home",
+    "allow-set-audio-quality",
+    "allow-update-check",
+    "allow-update-install",
     "allow-spotify-match",
     "allow-spotify-create-playlist",
     "allow-lastfm-status",

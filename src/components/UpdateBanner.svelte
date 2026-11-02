@@ -11,7 +11,7 @@
 {#if visible}
   <div class="banner" role="status">
     <div class="text">
-      <strong>Wavely {updater.version} ist da</strong>
+      <strong>{updater.test ? "Testversion" : "Wavely"} {updater.version} ist da</strong>
       <small>
         {#if updater.status === "installing"}
           Wird installiert – Wavely startet gleich neu…

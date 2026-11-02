@@ -1,15 +1,13 @@
 <script>
   import { onMount } from "svelte";
-  import { refreshLibrary, watchLibrary } from "./lib/library.svelte.js";
+  import { initModules } from "./lib/modules.svelte.js";
   import PlaylistView from "./components/PlaylistView.svelte";
   import RecapView from "./components/RecapView.svelte";
   import { initPlaylists } from "./lib/playlists.svelte.js";
   import { initStats } from "./lib/stats.svelte.js";
-  import { initYtm } from "./lib/ytm.svelte.js";
   import { initOffline } from "./lib/offline.svelte.js";
-  import { initSpotify, spotify } from "./lib/spotify.svelte.js";
+  import { spotify } from "./lib/spotify.svelte.js";
   import { initSpotifyPlayer } from "./lib/spotifyPlayer.svelte.js";
-  import { initSoundCloud } from "./lib/soundcloud.svelte.js";
   import SoundCloudView from "./components/SoundCloudView.svelte";
   import SpotifyView from "./components/SpotifyView.svelte";
   import { initBridge } from "./lib/bridge.svelte.js";
@@ -31,7 +29,6 @@
   import HomeView from "./components/HomeView.svelte";
   import ShortcutsDialog from "./components/ShortcutsDialog.svelte";
   import { handleKey, applyGlobalShortcuts } from "./lib/shortcuts.svelte.js";
-  import { initLastFm } from "./lib/lastfm.svelte.js";
   import SettingsView from "./components/SettingsView.svelte";
   import { ui, showToast } from "./lib/ui.svelte.js";
   import { account, initAccount } from "./lib/account.svelte.js";
@@ -54,18 +51,14 @@
   });
 
   onMount(() => {
-    refreshLibrary();
-    watchLibrary();
+    // Lokale Musik, YouTube Music, Spotify, SoundCloud, Last.fm – nur was eingeschaltet ist
+    initModules();
     initPlaylists();
     initStats();
-    initYtm();
     initOffline();
-    initSpotify();
-    initSoundCloud();
     initBridge();
     initUpdater();
     initSound();
-    initLastFm();
     applyGlobalShortcuts();
     showWhatsNew();
     initAccount();

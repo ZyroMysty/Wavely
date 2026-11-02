@@ -560,6 +560,45 @@ pub async fn ytm_prefetch(ytm: State<'_, Ytm>, id: String) -> Result<(), String>
     Ok(())
 }
 
+/// Audioqualität für Streaming und Downloads setzen. Für „Premium“ bekommt yt-dlp die
+/// YouTube-Anmeldung als Cookie-Datei (sonst liefert YouTube keine 256-kbit-Streams).
+#[tauri::command]
+pub async fn set_audio_quality(
+    ytm: State<'_, Ytm>,
+    stream: crate::ytdlp::Quality,
+    download: crate::ytdlp::Quality,
+) -> Result<(), String> {
+    use crate::ytdlp::Quality;
+    let path = ytm.login_marker.with_file_name("cookies.txt");
+    let wants_premium = stream == Quality::Premium || download == Quality::Premium;
+    let cookies = match ytm.rp.user_auth_cookie_header() {
+        Some((header, _)) if wants_premium => {
+            // Netscape-Format, wie yt-dlp es erwartet
+            let expires = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0)
+                + 365 * 86_400;
+            let mut text = String::from("# Netscape HTTP Cookie File\n");
+            for pair in header.split(';').map(str::trim).filter(|p| !p.is_empty()) {
+                if let Some((name, value)) = pair.split_once('=') {
+                    text.push_str(&format!(".youtube.com\tTRUE\t/\tTRUE\t{expires}\t{name}\t{value}\n"));
+                }
+            }
+            std::fs::write(&path, text).map_err(err)?;
+            Some(path)
+        }
+        _ => {
+            let _ = std::fs::remove_file(&path);
+            None
+        }
+    };
+    ytm.ytdlp.set_quality(stream, download, cookies);
+    // Schon ermittelte Stream-Adressen gelten für die alte Qualität
+    ytm.streams.lock().await.clear();
+    Ok(())
+}
+
 /// „Radio“ zu einem Song: ähnliche Titel, die YouTube Music danach spielen würde.
 #[tauri::command]
 pub async fn ytm_radio(ytm: State<'_, Ytm>, id: String) -> Result<Vec<YtTrack>, String> {
