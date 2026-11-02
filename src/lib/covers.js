@@ -11,8 +11,8 @@ const cache = new Map();
  */
 export function coverFor(track, size = 512) {
   if (!track) return Promise.resolve(null);
-  if (track.artworkUrl) return Promise.resolve(artworkSrc(track.artworkUrl));
   const pixels = size <= 64 ? 128 : 512;
+  if (track.artworkUrl) return Promise.resolve(artworkSrc(track.artworkUrl, pixels));
   const key = `${pixels}:${track.path}`;
   let cover = cache.get(key);
   if (cover) {

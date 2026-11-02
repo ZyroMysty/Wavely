@@ -6,6 +6,9 @@
   import { player } from "../lib/player.svelte.js";
   import { library } from "../lib/library.svelte.js";
   import { coverCacheSize } from "../lib/covers.js";
+  import { ytm } from "../lib/ytm.svelte.js";
+  import { history as listenHistory } from "../lib/history.svelte.js";
+  import { playlists } from "../lib/playlists.svelte.js";
   import Icon from "./Icon.svelte";
 
   /** Abfrage alle 2 Sekunden, Verlauf der letzten 5 Minuten */
@@ -68,6 +71,10 @@
       storage,
       queue: player.queue.length,
       library: library.tracks.length,
+      liked: Object.keys(ytm.liked).length,
+      history: listenHistory.entries.length,
+      playlistItems: playlists.list.reduce((sum, p) => sum + p.items.length, 0),
+      playlistCount: playlists.list.length,
     };
   }
 
@@ -116,6 +123,7 @@
       `Wavely ${version} – Diagnose ${new Date().toLocaleString("de-DE")}`,
       `WebView2 ${snapshot.webviewVersion ?? "?"}, Hardwarebeschleunigung ${snapshot.hardwareAcceleration ? "an" : "aus"}, ${snapshot.cores} Kerne, läuft seit ${uptime}`,
       `Browser-Argumente: ${snapshot.browserArgs}`,
+      `Rust-Speicher belegt: ${mb(snapshot.rustHeapBytes)} MB`,
       "",
       `Gesamt: privat ${mb(total.privateBytes)} MB, Working Set ${mb(total.workingSet)} MB, CPU ${total.cpu.toFixed(1)} %`,
       ...snapshot.processes.map(
@@ -125,6 +133,7 @@
       "",
       `Oberfläche: JS-Heap ${mb(page.heapUsed)}/${mb(page.heapTotal)} MB, ${page.domNodes} DOM-Knoten, ${page.images} Bilder, ${page.covers} Cover im Speicher, localStorage ${mb(page.storage)} MB`,
       `Warteschlange ${page.queue} Songs, Bibliothek ${page.library} Songs, Mini-Player ${ui.miniOpen ? "offen" : "zu"}`,
+      `Daten: ${page.liked} Likes, ${page.history} Verlauf, ${page.playlistCount} Wavely-Playlists mit ${page.playlistItems} Songs, Ansicht ${ui.view}`,
       ...(folders ?? []).map((f) => `${f.label}: ${mb(f.bytes)} MB in ${f.files} Dateien (${f.path})`),
     ];
     return lines.join("\n");
@@ -203,6 +212,7 @@
             <dt>Hardwarebeschleunigung</dt><dd>{snapshot.hardwareAcceleration ? "an" : "aus"}</dd>
             <dt>Läuft seit</dt><dd>{uptime}</dd>
             <dt>Prozessorkerne</dt><dd>{snapshot.cores}</dd>
+            <dt>Rust-Speicher belegt</dt><dd>{mb(snapshot.rustHeapBytes)} MB (Rest des Rust-Prozesses: Code, Threads, von Windows reserviert)</dd>
             <dt>Browser-Argumente</dt><dd class="mono">{snapshot.browserArgs}</dd>
             {#if page}
               <dt>JS-Speicher</dt><dd>{mb(page.heapUsed)} von {mb(page.heapTotal)} MB belegt</dd>
@@ -210,6 +220,7 @@
               <dt>Cover im Speicher</dt><dd>{page.covers} (lokale Dateien)</dd>
               <dt>Gespeicherte Einstellungen</dt><dd>{mb(page.storage)} MB</dd>
               <dt>Warteschlange / Bibliothek</dt><dd>{page.queue} / {page.library} Songs</dd>
+              <dt>Daten im Speicher</dt><dd>{page.liked} Likes, {page.history} Verlauf, {page.playlistCount} Wavely-Playlists mit {page.playlistItems} Songs</dd>
               <dt>Mini-Player</dt><dd>{ui.miniOpen ? "offen" : "geschlossen"}</dd>
             {/if}
             {#each folders ?? [] as f (f.label)}

@@ -28,7 +28,7 @@
 <div class="account" bind:this={root}>
   <button class="avatar" title={acc?.name ?? "Konto"} onclick={() => (open = !open)}>
     {#if acc?.photoUrl}
-      <img src={artworkSrc(acc.photoUrl)} alt="" />
+      <img src={artworkSrc(acc.photoUrl, 128)} alt="" />
     {:else}
       <span>{initial}</span>
     {/if}
@@ -39,7 +39,7 @@
       <div class="who">
         <div class="avatar big">
           {#if acc?.photoUrl}
-            <img src={artworkSrc(acc.photoUrl)} alt="" />
+            <img src={artworkSrc(acc.photoUrl, 128)} alt="" />
           {:else}
             <span>{initial}</span>
           {/if}

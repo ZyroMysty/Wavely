@@ -1,3 +1,6 @@
+#[global_allocator]
+static ALLOCATOR: diagnostics::CountingAllocator = diagnostics::CountingAllocator;
+
 mod artwork;
 mod channels;
 mod diagnostics;
@@ -246,8 +249,10 @@ pub fn run() {
         .register_asynchronous_uri_scheme_protocol("artwork", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
             let encoded = request.uri().path().trim_start_matches('/').to_string();
+            // Gewünschte Größe: artwork://<url>?s=<Pixel>
+            let size = request.uri().query().and_then(|q| q.strip_prefix("s=")).and_then(|s| s.parse().ok());
             tauri::async_runtime::spawn(async move {
-                responder.respond(app.state::<artwork::Artwork>().serve(&encoded).await);
+                responder.respond(app.state::<artwork::Artwork>().serve(&encoded, size).await);
             });
         })
         // Ohne Hauptfenster läuft keine Musik: Schließen beendet Wavely ganz (auch den Mini-Player)

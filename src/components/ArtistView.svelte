@@ -44,7 +44,7 @@
 <div class="artist">
   <div class="hero" class:no-image={!artist?.imageUrl}>
     {#if artist?.imageUrl}
-      <img src={artworkSrc(artist.imageUrl)} alt="" />
+      <img src={artworkSrc(artist.imageUrl, 1600)} alt="" />
     {/if}
     <div class="hero-text">
       <p class="kind">Künstler</p>

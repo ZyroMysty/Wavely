@@ -2,10 +2,50 @@
 //! yt-dlp), WebView2-Version und Größe der Datenordner. Die Oberfläche fragt regelmäßig nach und
 //! rechnet aus den CPU-Zeiten die Auslastung aus.
 
-use std::{collections::HashMap, path::Path};
+use std::{
+    alloc::{GlobalAlloc, Layout, System},
+    collections::HashMap,
+    path::Path,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
+
+/// Zählt, wie viel Speicher der Rust-Teil gerade wirklich belegt (Rest des privaten Speichers:
+/// von Windows reserviert, Programmcode, Threads …). Kostet praktisch nichts.
+pub struct CountingAllocator;
+
+static RUST_HEAP: AtomicUsize = AtomicUsize::new(0);
+
+unsafe impl GlobalAlloc for CountingAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        let ptr = System.alloc(layout);
+        if !ptr.is_null() {
+            RUST_HEAP.fetch_add(layout.size(), Ordering::Relaxed);
+        }
+        ptr
+    }
+    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+        let ptr = System.alloc_zeroed(layout);
+        if !ptr.is_null() {
+            RUST_HEAP.fetch_add(layout.size(), Ordering::Relaxed);
+        }
+        ptr
+    }
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        System.dealloc(ptr, layout);
+        RUST_HEAP.fetch_sub(layout.size(), Ordering::Relaxed);
+    }
+    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        let new = System.realloc(ptr, layout, new_size);
+        if !new.is_null() {
+            RUST_HEAP.fetch_add(new_size, Ordering::Relaxed);
+            RUST_HEAP.fetch_sub(layout.size(), Ordering::Relaxed);
+        }
+        new
+    }
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,6 +81,8 @@ pub struct Snapshot {
     /// Startzeit von Wavely (Unix-Millisekunden)
     started_ms: u64,
     cores: usize,
+    /// Davon wirklich vom Rust-Teil belegt
+    rust_heap_bytes: u64,
 }
 
 #[tauri::command]
@@ -54,6 +96,7 @@ pub async fn diagnostics_snapshot(app: AppHandle) -> Result<Snapshot, String> {
         hardware_acceleration: crate::memory::hardware_acceleration_get(app.clone()),
         started_ms: started_ms(),
         cores: std::thread::available_parallelism().map_or(1, |n| n.get()),
+        rust_heap_bytes: RUST_HEAP.load(Ordering::Relaxed) as u64,
     })
 }
 

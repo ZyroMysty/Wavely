@@ -1,9 +1,13 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 
-/** Bild-URL für die Anzeige: YouTube-Bilder laufen über den Bild-Cache im Rust-Teil. */
-export function artworkSrc(url) {
+/**
+ * Bild-URL für die Anzeige: Bilder aus dem Netz laufen über den Bild-Cache im Rust-Teil und
+ * werden dort auf `size` Pixel verkleinert (jedes Bild liegt entpackt im Arbeitsspeicher).
+ * Standard reicht für Karten und Kopfbereiche bis ~250 px.
+ */
+export function artworkSrc(url, size = 320) {
   if (!url || !url.startsWith("https://")) return url;
-  return convertFileSrc(url, "artwork");
+  return `${convertFileSrc(url, "artwork")}?s=${size}`;
 }
 
 /**

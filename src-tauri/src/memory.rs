@@ -57,7 +57,30 @@ pub fn on_window_event(window: &Window, event: &WindowEvent) {
     if let Some(webview) = window.app_handle().get_webview_window(window.label()) {
         set_low_memory(&webview, low);
     }
+    if low {
+        compact_heaps();
+    }
 }
+
+/// Freien Speicher des Rust-Teils an Windows zurückgeben: Nach großen, kurzlebigen Aufgaben
+/// (Bibliothek laden, Cover verkleinern …) behält der Windows-Heap ihn sonst reserviert.
+#[cfg(windows)]
+fn compact_heaps() {
+    use windows::Win32::{
+        Foundation::HANDLE,
+        System::Memory::{GetProcessHeaps, HeapCompact, HEAP_NONE},
+    };
+    unsafe {
+        let mut heaps = [HANDLE::default(); 64];
+        let count = (GetProcessHeaps(&mut heaps) as usize).min(heaps.len());
+        for heap in &heaps[..count] {
+            HeapCompact(*heap, HEAP_NONE);
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn compact_heaps() {}
 
 #[cfg(windows)]
 fn set_low_memory(webview: &tauri::WebviewWindow, low: bool) {
@@ -68,7 +91,10 @@ fn set_low_memory(webview: &tauri::WebviewWindow, low: bool) {
         };
         use windows::core::Interface;
 
-        let Ok(core) = w.controller().CoreWebView2().and_then(|c| c.cast::<ICoreWebView2_19>()) else {
+        let controller = w.controller();
+        // Unsichtbar schalten gibt die Zeichenflächen des Fensters frei (die Musik läuft weiter)
+        let _ = controller.SetIsVisible(!low);
+        let Ok(core) = controller.CoreWebView2().and_then(|c| c.cast::<ICoreWebView2_19>()) else {
             return;
         };
         let level = if low { COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW } else { COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL };

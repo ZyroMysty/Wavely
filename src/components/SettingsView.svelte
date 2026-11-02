@@ -537,7 +537,7 @@
             <div class="account">
               <div class="avatar">
                 {#if ytm.account?.photoUrl}
-                  <img src={artworkSrc(ytm.account.photoUrl)} alt="" />
+                  <img src={artworkSrc(ytm.account.photoUrl, 128)} alt="" />
                 {:else}
                   {(ytm.account?.name ?? "?").charAt(0)}
                 {/if}
@@ -577,7 +577,7 @@
             <div class="account">
               <div class="avatar">
                 {#if spotify.account?.photoUrl}
-                  <img src={artworkSrc(spotify.account.photoUrl)} alt="" />
+                  <img src={artworkSrc(spotify.account.photoUrl, 128)} alt="" />
                 {:else}
                   {(spotify.account?.name ?? "S").charAt(0)}
                 {/if}
@@ -647,7 +647,7 @@
             <div class="account">
               <div class="avatar">
                 {#if soundcloud.account?.photoUrl}
-                  <img src={artworkSrc(soundcloud.account.photoUrl)} alt="" />
+                  <img src={artworkSrc(soundcloud.account.photoUrl, 128)} alt="" />
                 {:else}
                   {(soundcloud.account?.name ?? "S").charAt(0)}
                 {/if}

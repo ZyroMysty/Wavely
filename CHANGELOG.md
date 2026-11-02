@@ -4,6 +4,12 @@ Neue Punkte kommen zuerst unter „Unveröffentlicht“. Beim Veröffentlichen w
 
 ## Unveröffentlicht
 
+## 0.16.0-test.3 – 2026-11-02
+- Bilder werden in der Größe geladen, in der sie angezeigt werden – vorher oft das Zehnfache (z. B. 544 px für ein 40-px-Cover)
+- Lange Songlisten (ab 150 Songs, z. B. „Gefällt mir“) bauen nur die sichtbaren Zeilen auf: bei 400 Songs rund 15 MB weniger, bei Tausenden entsprechend mehr
+- Minimiert gibt Wavely noch mehr Speicher frei, die Musik läuft weiter
+- Diagnose zeigt zusätzlich den tatsächlich belegten Speicher des Rust-Teils und wie viele Likes, Verlaufs- und Playlist-Einträge geladen sind
+
 ## 0.16.0-test.2 – 2026-11-02
 - Neuer Mini-Player ohne Browser-Technik: sieht aus wie vorher, braucht aber statt rund 30 MB nur wenige MB – Lautstärke jetzt auch mit dem Mausrad
 - Noch weniger Arbeitsspeicher: Grafik und Ton laufen nicht mehr als eigene Hintergrundprozesse

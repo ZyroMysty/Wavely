@@ -47,10 +47,16 @@ impl Artwork {
         })
     }
 
-    /// Beantwortet `artwork://<url-kodierte Bild-URL>`.
-    pub async fn serve(&self, encoded: &str) -> Response<Vec<u8>> {
+    /// Beantwortet `artwork://<url-kodierte Bild-URL>?s=<Pixel>`. Mit `s` wird das Bild auf
+    /// höchstens s × s verkleinert: Die Oberfläche hält jedes Bild entpackt im Speicher
+    /// (Breite × Höhe × 4 Byte), und YouTube liefert oft 544 px oder mehr für 40-px-Cover.
+    pub async fn serve(&self, encoded: &str, size: Option<u32>) -> Response<Vec<u8>> {
         let url = percent_decode_str(encoded).decode_utf8_lossy().into_owned();
-        match self.load(&url).await {
+        let result = match size {
+            Some(size) => self.load_sized(&url, size.clamp(32, 2048)).await,
+            None => self.load(&url).await,
+        };
+        match result {
             Ok(bytes) => Response::builder()
                 .header(header::CONTENT_TYPE, sniff_mime(&bytes))
                 .header(header::CACHE_CONTROL, "max-age=604800")
@@ -61,6 +67,20 @@ impl Artwork {
                 .body(message.into_bytes())
                 .unwrap(),
         }
+    }
+
+    /// Verkleinerte Fassung, ebenfalls auf der Festplatte zwischengespeichert
+    async fn load_sized(&self, url: &str, size: u32) -> Result<Vec<u8>, String> {
+        let file = self.dir.join(format!("{}_{size}", cache_name(url)));
+        if let Ok(bytes) = tokio::fs::read(&file).await {
+            return Ok(bytes);
+        }
+        let original = self.load(url).await?;
+        let bytes = tauri::async_runtime::spawn_blocking(move || shrink(&original, size).unwrap_or(original))
+            .await
+            .map_err(|e| e.to_string())?;
+        let _ = tokio::fs::write(&file, &bytes).await;
+        Ok(bytes)
     }
 
     /// Lädt ein Bild in den Cache (z. B. für Offline-Songs).
@@ -77,9 +97,7 @@ impl Artwork {
             return Err(format!("Bildquelle nicht erlaubt: {host}"));
         }
 
-        let mut hasher = DefaultHasher::new();
-        url.hash(&mut hasher);
-        let file = self.dir.join(format!("{:016x}", hasher.finish()));
+        let file = self.dir.join(cache_name(url));
         if let Ok(bytes) = tokio::fs::read(&file).await {
             return Ok(bytes);
         }
@@ -101,6 +119,24 @@ impl Artwork {
         }
         Err("Bild nicht verfügbar".into())
     }
+}
+
+fn cache_name(url: &str) -> String {
+    let mut hasher = DefaultHasher::new();
+    url.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
+/// Auf höchstens size × size verkleinern (JPEG); None, wenn das Bild schon klein genug ist
+fn shrink(bytes: &[u8], size: u32) -> Option<Vec<u8>> {
+    let image = image::load_from_memory(bytes).ok()?;
+    if image.width() <= size && image.height() <= size {
+        return None;
+    }
+    let mut out = Vec::new();
+    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 88);
+    image.resize(size, size, image::imageops::FilterType::CatmullRom).to_rgb8().write_with_encoder(encoder).ok()?;
+    Some(out)
 }
 
 fn sniff_mime(bytes: &[u8]) -> &'static str {

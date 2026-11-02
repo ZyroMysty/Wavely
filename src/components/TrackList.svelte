@@ -1,4 +1,5 @@
 <script>
+  import { untrack } from "svelte";
   import { player, playList, currentTrack } from "../lib/player.svelte.js";
   import { formatTime } from "../lib/format.js";
   import { openTrackMenu, openAlbum } from "../lib/ui.svelte.js";
@@ -22,6 +23,51 @@
     if (dragFrom !== null && dragFrom !== i) onmove(dragFrom, i);
     dragFrom = dragOver = null;
   }
+
+  // Lange Listen (z. B. „Gefällt mir“ mit Tausenden Songs): nur die sichtbaren Zeilen aufbauen,
+  // der Rest ist ein leerer Platzhalter gleicher Höhe – spart Arbeitsspeicher und Zeit
+  const VIRTUAL_FROM = 150;
+  const BUFFER = 30;
+  const virtual = $derived(tracks.length > VIRTUAL_FROM);
+  let rowsElement = $state();
+  let rowHeight = $state(52);
+  let range = $state({ start: 0, end: 80 });
+  const offset = $derived(virtual ? Math.min(range.start, tracks.length) : 0);
+  const visible = $derived(virtual ? tracks.slice(offset, range.end) : tracks);
+
+  function scrollParent(element) {
+    for (let e = element.parentElement; e; e = e.parentElement) {
+      if (/(auto|scroll)/.test(getComputedStyle(e).overflowY)) return e;
+    }
+    return document.scrollingElement;
+  }
+
+  $effect(() => {
+    if (!virtual || !rowsElement) return;
+    const count = tracks.length;
+    const scroller = scrollParent(rowsElement);
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const row = rowsElement.querySelector(".row");
+      if (row?.offsetHeight) rowHeight = row.offsetHeight;
+      const top = rowsElement.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+      const first = Math.floor(-top / rowHeight);
+      const start = Math.max(0, first - BUFFER);
+      const end = Math.min(count, Math.max(0, first) + Math.ceil(scroller.clientHeight / rowHeight) + BUFFER);
+      if (start !== range.start || end !== range.end) range = { start, end };
+    };
+    const schedule = () => (frame ||= requestAnimationFrame(update));
+    untrack(update);
+    scroller.addEventListener("scroll", schedule, { passive: true });
+    const resize = new ResizeObserver(schedule);
+    resize.observe(scroller);
+    return () => {
+      scroller.removeEventListener("scroll", schedule);
+      resize.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  });
 </script>
 
 <div class="table">
@@ -29,7 +75,10 @@
     <span>#</span><span>Titel</span><span>Album</span><span class="right">Dauer</span>
     {#if onremove}<span></span>{/if}
   </div>
-  {#each tracks as track, i (track.id + ":" + i)}
+  <div bind:this={rowsElement} class="rows">
+  {#if virtual}<div style:height="{offset * rowHeight}px"></div>{/if}
+  {#each visible as track, j (track.id + ":" + (offset + j))}
+    {@const i = offset + j}
     {@const active = currentTrack()?.id === track.id}
     <div
       class="row"
@@ -97,10 +146,13 @@
       {/if}
     </div>
   {/each}
+  {#if virtual}<div style:height="{Math.max(0, tracks.length - range.end) * rowHeight}px"></div>{/if}
+  </div>
 </div>
 
 <style>
-  .table {
+  .table,
+  .rows {
     display: flex;
     flex-direction: column;
   }
