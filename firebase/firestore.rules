@@ -10,14 +10,17 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
 
-    // Feedback: jeder darf eins schicken (auch ohne Konto), lesen nur in der Firebase-Konsole
+    // Feedback: jeder darf eins schicken (auch ohne Konto).
+    // Lesen, als übernommen markieren und löschen: nur Wavely Tickets mit dem Konto der Entwicklerin.
+    // DEINE_UID durch die eigene UID ersetzen – Wavely Tickets zeigt sie nach der Anmeldung
+    // unter „Konto“ an, samt fertig ausgefülltem Abschnitt zum Kopieren.
     match /feedback/{id} {
       allow create: if request.resource.data.text is string
         && request.resource.data.text.size() > 0
         && request.resource.data.text.size() <= 5000
         && request.resource.data.kind in ['bug', 'idea', 'other']
         && request.resource.data.keys().hasOnly(['kind', 'text', 'contact', 'createdAt', 'uid', 'version', 'system']);
-      allow read, update, delete: if false;
+      allow read, update, delete: if request.auth != null && request.auth.uid == 'DEINE_UID';
     }
 
     // Zusammen hören: Wer den Code kennt (und angemeldet ist), darf mitlesen; ändern darf nur der Gastgeber
