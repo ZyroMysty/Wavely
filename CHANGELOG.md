@@ -4,6 +4,12 @@ Neue Punkte kommen zuerst unter „Unveröffentlicht“. Beim Veröffentlichen w
 
 ## Unveröffentlicht
 
+## 0.16.0-test.1 – 2026-11-02
+- Wavely braucht deutlich weniger Arbeitsspeicher: Die Oberfläche wird ohne Grafikkarte gezeichnet (rund 70 MB weniger) – bei Problemen unter Einstellungen → Windows → Hardwarebeschleunigung wieder einschalten
+- Minimiert gibt Wavely Speicher frei, die Musik läuft normal weiter
+- Cover lokaler Songs werden verkleinert geladen und erst, wenn sie ins Bild kommen
+- Spotify-Cover in passender statt größter Auflösung
+
 ## 0.15.0 – 2026-11-02
 - Dienste ein- und ausschalten (Einstellungen → Dienste): Wer z. B. SoundCloud oder Spotify nicht braucht, blendet sie komplett aus
 - Der Mini-Player minimiert das Hauptfenster in die Taskleiste und holt es beim Schließen zurück – abschaltbar

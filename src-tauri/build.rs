@@ -74,6 +74,8 @@ fn main() {
             "stats_load",
             "mini_player_open",
             "show_main_window",
+            "hardware_acceleration_get",
+            "hardware_acceleration_set",
             "taskbar_update",
             "media_update",
             "get_lyrics",

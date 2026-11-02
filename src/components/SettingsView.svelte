@@ -35,6 +35,7 @@
   import { shortcuts, setGlobalShortcuts } from "../lib/shortcuts.svelte.js";
   import { lastfm, login as lastfmLogin, logout as lastfmLogout } from "../lib/lastfm.svelte.js";
   import { enable as enableAutostart, disable as disableAutostart, isEnabled as autostartEnabled } from "@tauri-apps/plugin-autostart";
+  import { relaunch } from "@tauri-apps/plugin-process";
 
   // Mit Windows starten (Eintrag in Windows' Autostart)
   let autostart = $state(false);
@@ -53,6 +54,19 @@
   async function setStartMinimized(on) {
     updateSetting("startMinimized", on);
     await invoke("set_start_minimized", { minimized: on }).catch(() => {});
+  }
+
+  // Hardwarebeschleunigung (Standard: aus, spart Arbeitsspeicher) – wirkt erst nach einem Neustart
+  let hardwareAcceleration = $state(false);
+  let hardwareAccelerationChanged = $state(false);
+  async function setHardwareAcceleration(on) {
+    try {
+      await invoke("hardware_acceleration_set", { enabled: on });
+      hardwareAcceleration = on;
+      hardwareAccelerationChanged = !hardwareAccelerationChanged;
+    } catch (e) {
+      showToast(`Konnte nicht geändert werden: ${e}`, true);
+    }
   }
 
   const bandLabel = (f) => (f >= 1000 ? `${f / 1000}k` : String(f));
@@ -124,6 +138,9 @@
   onMount(async () => {
     autostartEnabled()
       .then((on) => (autostart = on))
+      .catch(() => {});
+    invoke("hardware_acceleration_get")
+      .then((on) => (hardwareAcceleration = on))
       .catch(() => {});
     invoke("spotify_get_client_id")
       .then((info) => {
@@ -437,6 +454,21 @@
           </div>
           {@render toggle(settings.startMinimized, () => setStartMinimized(!settings.startMinimized), "Minimiert starten")}
         </div>
+        <div class="row">
+          <div class="label">
+            <strong>Hardwarebeschleunigung</strong>
+            <small>Die Grafikkarte zeichnet die Oberfläche. Aus spart rund 70 MB Arbeitsspeicher – nur einschalten, wenn etwas ruckelt oder falsch aussieht</small>
+          </div>
+          {@render toggle(hardwareAcceleration, () => setHardwareAcceleration(!hardwareAcceleration), "Hardwarebeschleunigung")}
+        </div>
+        {#if hardwareAccelerationChanged}
+          <div class="row">
+            <div class="label">
+              <small>Die Änderung wirkt nach einem Neustart von Wavely</small>
+            </div>
+            <button class="secondary" onclick={() => relaunch()}>Jetzt neu starten</button>
+          </div>
+        {/if}
       </div>
     </section>
 

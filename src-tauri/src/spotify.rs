@@ -300,11 +300,16 @@ impl Spotify {
 
 // --- Umwandlung in die Formate der Oberfläche ----------------------------
 
+/// Kleinstes Bild ab 300 px (Spotify liefert meist 640, 300 und 64) – größer braucht Wavely nirgends,
+/// und jedes Cover belegt entpackt Breite × Höhe × 4 Byte im Speicher. Ohne Größenangabe: das größte.
 fn best_image(images: &Value) -> Option<String> {
+    let images = images.as_array()?;
+    let width = |i: &&Value| i["width"].as_u64().unwrap_or(0);
     images
-        .as_array()?
         .iter()
-        .max_by_key(|i| i["width"].as_u64().unwrap_or(0))
+        .filter(|i| width(i) >= 300)
+        .min_by_key(width)
+        .or_else(|| images.iter().max_by_key(width))
         .and_then(|i| i["url"].as_str())
         .map(str::to_string)
 }
@@ -450,6 +455,8 @@ pub async fn spotify_login(app: AppHandle, spotify: State<'_, Spotify>) -> Resul
     let handle = app.clone();
     WebviewWindowBuilder::new(&app, LOGIN_WINDOW, WebviewUrl::External(url))
         .title("Bei Spotify anmelden")
+        // gleicher WebView2-Ordner wie das Hauptfenster → gleiche Browser-Argumente
+        .additional_browser_args(&app.state::<crate::memory::BrowserArgs>().0)
         .inner_size(480.0, 720.0)
         .on_navigation(move |target| {
             if !target.as_str().starts_with(REDIRECT_URI) {

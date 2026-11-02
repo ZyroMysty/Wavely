@@ -3,6 +3,7 @@ mod channels;
 mod lastfm;
 mod library;
 mod lyrics;
+mod memory;
 mod offline;
 mod presence;
 mod soundcloud;
@@ -71,8 +72,9 @@ async fn remove_folder(app: AppHandle, path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn get_cover(path: String) -> Result<Option<String>, String> {
-    tauri::async_runtime::spawn_blocking(move || library::cover(&path))
+async fn get_cover(path: String, size: Option<u32>) -> Result<Option<String>, String> {
+    let size = size.unwrap_or(512).clamp(32, 1024);
+    tauri::async_runtime::spawn_blocking(move || library::cover(&path, size))
         .await
         .map_err(|e| e.to_string())
 }
@@ -94,6 +96,7 @@ async fn mini_player_open(app: AppHandle, pinned: bool, width: Option<f64>, heig
         .maximizable(false)
         .decorations(false)
         .always_on_top(pinned)
+        .additional_browser_args(&app.state::<memory::BrowserArgs>().0)
         .build()
         .map(|_window| {
             #[cfg(windows)]
@@ -203,6 +206,8 @@ pub fn run() {
             ytm::set_audio_quality,
             channels::update_check,
             channels::update_install,
+            memory::hardware_acceleration_get,
+            memory::hardware_acceleration_set,
             spotify::spotify_match,
             spotify::spotify_create_playlist,
             lastfm::lastfm_status,
@@ -271,6 +276,7 @@ pub fn run() {
         })
         // Ohne Hauptfenster läuft keine Musik: Schließen beendet Wavely ganz (auch den Mini-Player)
         .on_window_event(|window, event| {
+            memory::on_window_event(window, event);
             if window.label() == "main" {
                 if let tauri::WindowEvent::CloseRequested { .. } = event {
                     window.app_handle().exit(0);
@@ -288,6 +294,9 @@ pub fn run() {
             if start_minimized {
                 config.visible = false;
             }
+            let browser_args = memory::browser_args(app.handle());
+            config.additional_browser_args = Some(browser_args.clone());
+            app.manage(memory::BrowserArgs(browser_args));
             let main = tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?
                 .on_permission_request(|webview, kind| {
                     let own = webview.url().map(|u| u.host_str() == Some("tauri.localhost") || u.host_str() == Some("localhost")).unwrap_or(false);

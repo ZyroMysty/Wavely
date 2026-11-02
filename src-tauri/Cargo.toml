@@ -1,6 +1,6 @@
 [package]
 name = "wavely"
-version = "0.15.0"
+version = "0.16.0-test.1"
 edition = "2021"
 
 [lib]
@@ -35,6 +35,8 @@ notify-debouncer-mini = "0.7.0"
 tauri-plugin-deep-link = "2.6.2"
 tauri-plugin-clipboard-manager = "2.5.0"
 semver = "1.0.28"
+# Verkleinerte Cover lokaler Dateien (statt Originalbilder mit mehreren MB im Speicher)
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 
 # Kleine Release-Binary
 [profile.release]
@@ -65,3 +67,6 @@ windows = { version = "0.62", features = [
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ] }
+# WebView2-Schnittstellen (Speicher-Ziel für minimierte Fenster), gleiche Version wie Tauri
+webview2-com = "0.39"
+

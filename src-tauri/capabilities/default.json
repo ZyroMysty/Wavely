@@ -22,6 +22,8 @@
     "allow-set-audio-quality",
     "allow-update-check",
     "allow-update-install",
+    "allow-hardware-acceleration-get",
+    "allow-hardware-acceleration-set",
     "allow-spotify-match",
     "allow-spotify-create-playlist",
     "allow-lastfm-status",

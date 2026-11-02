@@ -2115,6 +2115,8 @@ dependencies = [
  "num-traits",
  "png 0.18.1",
  "tiff",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]
@@ -5687,10 +5689,11 @@ dependencies = [
 
 [[package]]
 name = "wavely"
-version = "0.15.0"
+version = "0.16.0-test.1"
 dependencies = [
  "base64 0.22.1",
  "discord-rich-presence",
+ "image",
  "lofty",
  "md-5",
  "notify-debouncer-mini",
@@ -5715,6 +5718,7 @@ dependencies = [
  "tauri-plugin-updater",
  "tokio",
  "walkdir",
+ "webview2-com",
  "windows 0.62.2",
 ]
 

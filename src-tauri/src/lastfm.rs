@@ -197,6 +197,8 @@ pub async fn lastfm_login(app: AppHandle) -> Result<(), String> {
     let handle = app.clone();
     WebviewWindowBuilder::new(&app, LOGIN_WINDOW, WebviewUrl::External(url))
         .title("Mit Last.fm verbinden")
+        // gleicher WebView2-Ordner wie das Hauptfenster → gleiche Browser-Argumente
+        .additional_browser_args(&app.state::<crate::memory::BrowserArgs>().0)
         .inner_size(520.0, 760.0)
         .on_navigation(move |target| {
             if !target.as_str().starts_with(CALLBACK) {

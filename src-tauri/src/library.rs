@@ -121,24 +121,40 @@ pub fn scan(folders: &[String]) -> Vec<LocalTrack> {
     tracks
 }
 
-/// Liefert das Cover als data-URL: eingebettetes Bild oder cover.jpg & Co. im selben Ordner.
-pub fn cover(path: &str) -> Option<String> {
+/// Cover einer lokalen Datei (eingebettet oder cover.jpg im Ordner) als Data-URL,
+/// verkleinert auf höchstens `size` Pixel – eingebettete Bilder haben oft mehrere MB.
+pub fn cover(path: &str, size: u32) -> Option<String> {
     let path = Path::new(path);
 
-    if let Ok(tagged) = lofty::read_from_path(path) {
-        let tag = tagged.primary_tag().or_else(|| tagged.first_tag());
-        if let Some(picture) = tag.and_then(|t| t.pictures().first()) {
-            let mime = picture.mime_type().map(|m| m.as_str()).unwrap_or("image/jpeg");
-            return Some(format!("data:{mime};base64,{}", STANDARD.encode(picture.data())));
-        }
-    }
+    let embedded = lofty::read_from_path(path).ok().and_then(|tagged| {
+        let tag = tagged.primary_tag().or_else(|| tagged.first_tag())?;
+        let picture = tag.pictures().first()?;
+        let mime = picture.mime_type().map(|m| m.as_str().to_string()).unwrap_or("image/jpeg".into());
+        Some((picture.data().to_vec(), mime))
+    });
+    let (data, mime) = embedded.or_else(|| {
+        let dir = path.parent()?;
+        FOLDER_COVERS.iter().find_map(|name| {
+            let data = fs::read(dir.join(name)).ok()?;
+            let mime = if name.ends_with(".png") { "image/png" } else { "image/jpeg" };
+            Some((data, mime.to_string()))
+        })
+    })?;
 
-    let dir = path.parent()?;
-    FOLDER_COVERS.iter().find_map(|name| {
-        let data = fs::read(dir.join(name)).ok()?;
-        let mime = if name.ends_with(".png") { "image/png" } else { "image/jpeg" };
-        Some(format!("data:{mime};base64,{}", STANDARD.encode(data)))
-    })
+    Some(thumbnail(&data, size).unwrap_or_else(|| format!("data:{mime};base64,{}", STANDARD.encode(&data))))
+}
+
+/// Verkleinert ein Bild auf höchstens `size` × `size` (JPEG); None, wenn es schon klein genug ist
+/// oder sich nicht lesen lässt (dann bleibt das Original).
+fn thumbnail(data: &[u8], size: u32) -> Option<String> {
+    let image = image::load_from_memory(data).ok()?;
+    if image.width() <= size && image.height() <= size {
+        return None;
+    }
+    let mut out = Vec::new();
+    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 85);
+    image.thumbnail(size, size).to_rgb8().write_with_encoder(encoder).ok()?;
+    Some(format!("data:image/jpeg;base64,{}", STANDARD.encode(out)))
 }
 
 // --- Ordner beobachten -------------------------------------------------------
