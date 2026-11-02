@@ -33,6 +33,7 @@
   import { ui, showToast } from "./lib/ui.svelte.js";
   import { account, initAccount } from "./lib/account.svelte.js";
   import FeedbackDialog from "./components/FeedbackDialog.svelte";
+  import DiagnosticsDialog from "./components/DiagnosticsDialog.svelte";
   import { joinRoom, codeFromLink } from "./lib/together.svelte.js";
   import { onOpenUrl, getCurrent as getCurrentLinks } from "@tauri-apps/plugin-deep-link";
   import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -128,6 +129,7 @@
 <TransferDialog />
 <ShortcutsDialog />
 <FeedbackDialog />
+{#if account.admin}<DiagnosticsDialog />{/if}
 
 <style>
   .app {

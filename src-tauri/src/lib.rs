@@ -1,9 +1,12 @@
 mod artwork;
 mod channels;
+mod diagnostics;
 mod lastfm;
 mod library;
 mod lyrics;
 mod memory;
+#[cfg(windows)]
+mod mini;
 mod offline;
 mod presence;
 mod soundcloud;
@@ -79,32 +82,6 @@ async fn get_cover(path: String, size: Option<u32>) -> Result<Option<String>, St
         .map_err(|e| e.to_string())
 }
 
-/// Öffnet den Mini-Player (eigenes kleines Fenster ohne Rahmen) oder holt ihn nach vorn.
-#[tauri::command]
-async fn mini_player_open(app: AppHandle, pinned: bool, width: Option<f64>, height: Option<f64>) -> Result<(), String> {
-    if let Some(window) = app.get_webview_window("mini") {
-        let _ = window.unminimize();
-        return window.set_focus().map_err(|e| e.to_string());
-    }
-    tauri::WebviewWindowBuilder::new(&app, "mini", tauri::WebviewUrl::App("mini.html".into()))
-        .title("Wavely Mini")
-        .inner_size(width.unwrap_or(360.0), height.unwrap_or(104.0))
-        // Klein als Leiste, groß als Player mit großem Cover (siehe MiniPlayer.svelte)
-        .resizable(true)
-        .min_inner_size(220.0, 72.0)
-        .max_inner_size(640.0, 800.0)
-        .maximizable(false)
-        .decorations(false)
-        .always_on_top(pinned)
-        .additional_browser_args(&app.state::<memory::BrowserArgs>().0)
-        .build()
-        .map(|_window| {
-            #[cfg(windows)]
-            taskbar::set_big_icon(&_window);
-        })
-        .map_err(|e| e.to_string())
-}
-
 /// Merkt sich, ob Wavely beim automatischen Start mit Windows minimiert starten soll
 /// (Datei statt Einstellung, weil das Fenster entsteht, bevor die Oberfläche geladen ist).
 #[tauri::command]
@@ -116,15 +93,6 @@ fn set_start_minimized(app: AppHandle, minimized: bool) -> Result<(), String> {
         let _ = std::fs::remove_file(path);
         Ok(())
     }
-}
-
-/// Hauptfenster wieder anzeigen (z. B. aus dem Mini-Player).
-#[tauri::command]
-async fn show_main_window(app: AppHandle) -> Result<(), String> {
-    let window = app.get_webview_window("main").ok_or("Hauptfenster fehlt")?;
-    let _ = window.unminimize();
-    let _ = window.show();
-    window.set_focus().map_err(|e| e.to_string())
 }
 
 pub fn run() {
@@ -208,6 +176,8 @@ pub fn run() {
             channels::update_install,
             memory::hardware_acceleration_get,
             memory::hardware_acceleration_set,
+            diagnostics::diagnostics_snapshot,
+            diagnostics::diagnostics_folders,
             spotify::spotify_match,
             spotify::spotify_create_playlist,
             lastfm::lastfm_status,
@@ -220,8 +190,14 @@ pub fn run() {
             store::playlists_save,
             store::stats_append,
             store::stats_load,
-            mini_player_open,
-            show_main_window,
+            #[cfg(windows)]
+            mini::mini_player_open,
+            #[cfg(windows)]
+            mini::mini_update,
+            #[cfg(windows)]
+            mini::mini_theme,
+            #[cfg(windows)]
+            mini::mini_cover,
             #[cfg(windows)]
             taskbar::taskbar_update,
             #[cfg(windows)]

@@ -124,24 +124,27 @@ pub fn scan(folders: &[String]) -> Vec<LocalTrack> {
 /// Cover einer lokalen Datei (eingebettet oder cover.jpg im Ordner) als Data-URL,
 /// verkleinert auf höchstens `size` Pixel – eingebettete Bilder haben oft mehrere MB.
 pub fn cover(path: &str, size: u32) -> Option<String> {
-    let path = Path::new(path);
+    let (data, mime) = cover_bytes(path)?;
+    Some(thumbnail(&data, size).unwrap_or_else(|| format!("data:{mime};base64,{}", STANDARD.encode(&data))))
+}
 
+/// Rohdaten des Covers (Bild + MIME-Typ): eingebettetes Bild oder cover.jpg & Co. im selben Ordner
+pub fn cover_bytes(path: &str) -> Option<(Vec<u8>, String)> {
+    let path = Path::new(path);
     let embedded = lofty::read_from_path(path).ok().and_then(|tagged| {
         let tag = tagged.primary_tag().or_else(|| tagged.first_tag())?;
         let picture = tag.pictures().first()?;
         let mime = picture.mime_type().map(|m| m.as_str().to_string()).unwrap_or("image/jpeg".into());
         Some((picture.data().to_vec(), mime))
     });
-    let (data, mime) = embedded.or_else(|| {
+    embedded.or_else(|| {
         let dir = path.parent()?;
         FOLDER_COVERS.iter().find_map(|name| {
             let data = fs::read(dir.join(name)).ok()?;
             let mime = if name.ends_with(".png") { "image/png" } else { "image/jpeg" };
             Some((data, mime.to_string()))
         })
-    })?;
-
-    Some(thumbnail(&data, size).unwrap_or_else(|| format!("data:{mime};base64,{}", STANDARD.encode(&data))))
+    })
 }
 
 /// Verkleinert ein Bild auf höchstens `size` × `size` (JPEG); None, wenn es schon klein genug ist

@@ -823,6 +823,13 @@
               checkForUpdates(false);
             }, "Testversionen erhalten")}
           </div>
+          <div class="row">
+            <div class="label">
+              <strong>Diagnose <span class="badge">Admin</span></strong>
+              <small>Arbeitsspeicher und CPU jedes Wavely-Prozesses live, dazu WebView2-Infos und Ordnergrößen</small>
+            </div>
+            <button class="secondary" onclick={() => (ui.diagnostics = true)}><Icon name="speed" size={18} /> Öffnen</button>
+          </div>
         {/if}
         <div class="row">
           <div class="label">

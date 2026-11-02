@@ -5,10 +5,13 @@ use std::path::PathBuf;
 
 use tauri::{AppHandle, Manager, Window, WindowEvent};
 
-/// Standard-Argumente von wry (Mini-Menü und SmartScreen aus) – gehen verloren, sobald man eigene setzt
-const DEFAULT_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection";
+/// Standard-Argumente von wry (Mini-Menü und SmartScreen aus) – gehen verloren, sobald man eigene setzt.
+/// Dazu: Grafik und Audio laufen im WebView2-Hauptprozess statt als eigene Prozesse (spart ~20 MB).
+/// Chromium wertet nur ein `--disable-features` aus, deshalb alles in einer Liste.
+const BASE_ARGS: &str =
+    "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,AudioServiceOutOfProcess --in-process-gpu";
 /// Ohne Grafikkarte zeichnet Chromium in Software. Bei Wavelys schlichter Oberfläche ist das nicht
-/// spürbar (gleiche CPU-Last beim Abspielen), spart aber den GPU-Prozess mit rund 70 MB.
+/// spürbar (gleiche CPU-Last beim Abspielen), spart aber rund 70 MB.
 const NO_GPU_ARGS: &str = " --disable-gpu --disable-software-rasterizer";
 
 /// Browser-Argumente beim Start – alle Fenster brauchen dieselben (gemeinsamer WebView2-Ordner)
@@ -21,9 +24,9 @@ fn gpu_marker(app: &AppHandle) -> Result<PathBuf, String> {
 
 pub fn browser_args(app: &AppHandle) -> String {
     if gpu_marker(app).is_ok_and(|p| p.exists()) {
-        DEFAULT_ARGS.into()
+        BASE_ARGS.into()
     } else {
-        format!("{DEFAULT_ARGS}{NO_GPU_ARGS}")
+        format!("{BASE_ARGS}{NO_GPU_ARGS}")
     }
 }
 

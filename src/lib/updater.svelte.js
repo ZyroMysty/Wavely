@@ -72,8 +72,18 @@ export async function installUpdate() {
 
 /** Beim Start und danach alle paar Stunden prüfen (abschaltbar in den Einstellungen). */
 export function initUpdater() {
-  const auto = () => settings.autoUpdateCheck && checkForUpdates(true);
-  // Etwas warten, damit das Wavely-Konto (Admin oder nicht) schon bekannt ist
-  setTimeout(auto, 8000);
+  const auto = async () => {
+    if (!settings.autoUpdateCheck) return;
+    await accountKnown();
+    checkForUpdates(true);
+  };
+  setTimeout(auto, 3000);
   setInterval(auto, CHECK_INTERVAL);
+}
+
+/** Warten, bis feststeht, ob ein Admin angemeldet ist (höchstens 30 Sekunden) */
+async function accountKnown() {
+  for (let i = 0; i < 60 && !account.adminChecked; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
 }

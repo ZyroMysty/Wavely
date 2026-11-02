@@ -24,3 +24,6 @@ export function coverFor(track, size = 512) {
   cache.set(key, cover);
   return cover;
 }
+
+/** Anzahl der lokalen Cover im Speicher (für die Diagnose) */
+export const coverCacheSize = () => cache.size;

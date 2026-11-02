@@ -68,7 +68,7 @@ impl Artwork {
         let _ = self.load(url).await;
     }
 
-    async fn load(&self, url: &str) -> Result<Vec<u8>, String> {
+    pub async fn load(&self, url: &str) -> Result<Vec<u8>, String> {
         let parsed = reqwest::Url::parse(url).map_err(|e| e.to_string())?;
         let host = parsed.host_str().unwrap_or("");
         let allowed = parsed.scheme() == "https"

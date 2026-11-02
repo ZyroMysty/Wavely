@@ -4,6 +4,11 @@ Neue Punkte kommen zuerst unter „Unveröffentlicht“. Beim Veröffentlichen w
 
 ## Unveröffentlicht
 
+## 0.16.0-test.2 – 2026-11-02
+- Neuer Mini-Player ohne Browser-Technik: sieht aus wie vorher, braucht aber statt rund 30 MB nur wenige MB – Lautstärke jetzt auch mit dem Mausrad
+- Noch weniger Arbeitsspeicher: Grafik und Ton laufen nicht mehr als eigene Hintergrundprozesse
+- Diagnose für Admins (Einstellungen → Über Wavely): Arbeitsspeicher und CPU jedes Wavely-Prozesses live, mit Verlauf und zum Kopieren
+
 ## 0.16.0-test.1 – 2026-11-02
 - Wavely braucht deutlich weniger Arbeitsspeicher: Die Oberfläche wird ohne Grafikkarte gezeichnet (rund 70 MB weniger) – bei Problemen unter Einstellungen → Windows → Hardwarebeschleunigung wieder einschalten
 - Minimiert gibt Wavely Speicher frei, die Musik läuft normal weiter

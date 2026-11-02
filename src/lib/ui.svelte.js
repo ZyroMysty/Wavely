@@ -5,7 +5,13 @@ import { settings } from "./settings.svelte.js";
 
 /** Mini-Player öffnen; standardmäßig verschwindet das Hauptfenster dabei in die Taskleiste */
 export async function openMiniPlayer() {
-  await invoke("mini_player_open", { pinned: settings.miniPinned, width: settings.miniWidth, height: settings.miniHeight });
+  await invoke("mini_player_open", {
+    pinned: settings.miniPinned,
+    width: settings.miniWidth,
+    height: settings.miniHeight,
+    restoreMain: settings.miniMinimizesMain,
+  });
+  ui.miniOpen = true;
   if (settings.miniMinimizesMain) await getCurrentWindow().minimize().catch(() => {});
 }
 
@@ -29,6 +35,10 @@ export const ui = $state({
   sidebarCollapsed: stored("sidebarCollapsed", false),
   /** Wird erhöht, wenn YouTube Music zur Startseite zurück soll */
   ytmHome: 0,
+  /** Mini-Player geöffnet (nur dann bekommt er Zustand und Cover) */
+  miniOpen: false,
+  /** Diagnose-Fenster (nur für Admins) */
+  diagnostics: false,
   /** Seite, die YouTube Music öffnen soll: { type: "artist", id } oder { type: "collection", kind, id, title } */
   ytmNav: null,
   /** Dasselbe für Spotify */

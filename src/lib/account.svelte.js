@@ -23,6 +23,9 @@ export const account = $state({
   user: null,
   /** Admin (Firestore admins/{uid}, nur in der Firebase-Konsole anlegbar): darf Testversionen bekommen */
   admin: false,
+  /** Ob die Admin-Abfrage schon beantwortet ist (vorher keine Update-Prüfung, sonst würde
+   *  einem Admin mit Testversion die stabile Version als „Update“ angeboten) */
+  adminChecked: false,
 });
 
 export function initAccount() {
@@ -33,11 +36,13 @@ export function initAccount() {
       startSync(user.uid);
       getDoc(doc(db, "admins", user.uid))
         .then((snap) => (account.admin = snap.exists()))
-        .catch(() => (account.admin = false));
+        .catch(() => (account.admin = false))
+        .finally(() => (account.adminChecked = true));
     } else {
       account.user = null;
       account.status = "loggedOut";
       account.admin = false;
+      account.adminChecked = true;
       stopSync();
     }
   });

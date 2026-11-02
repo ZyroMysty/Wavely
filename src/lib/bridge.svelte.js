@@ -1,10 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
-import { emitTo, listen } from "@tauri-apps/api/event";
+import { listen } from "@tauri-apps/api/event";
 import { player, currentTrack, togglePlay, next, previous, seek, setVolume, toggleMute } from "./player.svelte.js";
 import { ytm, isLiked, toggleLike } from "./ytm.svelte.js";
-import { coverFor } from "./covers.js";
 import { hiResArtwork } from "./artwork.js";
-import { showToast } from "./ui.svelte.js";
+import { ui, showToast } from "./ui.svelte.js";
+import { settings, updateSetting } from "./settings.svelte.js";
 
 /**
  * Verbindet den Player im Hauptfenster mit den Taskleisten-Buttons und dem Mini-Player.
@@ -34,6 +34,12 @@ function runCommand(command) {
   else if (action === "seek") seek(command.position);
   else if (action === "volume") setVolume(command.value);
   else if (action === "mute") toggleMute();
+  // Vom Mini-Player: Einstellungen merken
+  else if (action === "miniPinned") updateSetting("miniPinned", command.value);
+  else if (action === "miniSize") {
+    updateSetting("miniWidth", command.width);
+    updateSetting("miniHeight", command.height);
+  }
 }
 
 function miniState() {
@@ -53,21 +59,53 @@ function miniState() {
   };
 }
 
-async function sendCover() {
+/** Cover für den Mini-Player: Rust lädt es selbst (Bild-Cache bzw. lokale Datei) */
+function sendCover() {
   const track = currentTrack();
   const key = track ? `${track.source}:${track.id}:${track.qid}` : null;
-  // Für den großen Mini-Player die hochaufgelöste Version
-  const src = track ? await coverFor({ ...track, artworkUrl: hiResArtwork(track.artworkUrl) }) : null;
-  emitTo("mini", "player-cover", { key, src }).catch(() => {});
+  invoke("mini_cover", {
+    key,
+    // Für den großen Mini-Player die hochaufgelöste Version
+    url: track?.artworkUrl ? hiResArtwork(track.artworkUrl) : null,
+    path: track && !track.artworkUrl ? (track.path ?? null) : null,
+  }).catch(() => {});
+}
+
+/** CSS-Farbe → [r, g, b, a] (0–1); der Canvas wandelt jede Schreibweise in #rrggbb oder rgba() um */
+const canvas = document.createElement("canvas").getContext("2d");
+function rgba(value) {
+  canvas.fillStyle = "#000";
+  canvas.fillStyle = value.trim();
+  const c = canvas.fillStyle;
+  if (c.startsWith("#")) return [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16) / 255).concat(1);
+  const [r, g, b, a = 1] = c.match(/[\d.]+/g).map(Number);
+  return [r / 255, g / 255, b / 255, a];
+}
+
+/** Farben des aktuellen Designs an den Mini-Player (er zeichnet selbst, ohne CSS) */
+function sendTheme() {
+  // Erst nach applyAppearance lesen (läuft im selben Durchgang)
+  setTimeout(() => {
+    const css = getComputedStyle(document.documentElement);
+    const v = (name) => rgba(css.getPropertyValue(name));
+    const theme = {
+      bg: v("--bg"),
+      surface: v("--surface"),
+      hover: v("--hover"),
+      border: v("--border"),
+      text: v("--text"),
+      textDim: v("--text-dim"),
+      accent: v("--accent"),
+    };
+    invoke("mini_theme", { theme }).catch(() => {});
+  });
 }
 
 export async function initBridge() {
   await listen("taskbar-action", (e) => runCommand(e.payload));
   await listen("player-command", (e) => runCommand(e.payload));
-  await listen("mini-ready", () => {
-    emitTo("mini", "player-state", miniState()).catch(() => {});
-    sendCover();
-  });
+  await listen("mini-closed", () => (ui.miniOpen = false));
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => ui.miniOpen && sendTheme());
 
   $effect.root(() => {
     // Taskleisten-Buttons: nur bei Änderungen von Song, Play/Pause oder Like
@@ -95,15 +133,24 @@ export async function initBridge() {
       invoke("media_update", { info }).catch(() => {});
     });
 
-    // Mini-Player: Zustand inkl. Position
+    // Mini-Player: Zustand inkl. Position, nur solange er offen ist
     $effect(() => {
-      emitTo("mini", "player-state", miniState()).catch(() => {});
+      if (!ui.miniOpen) return;
+      invoke("mini_update", { state: miniState() }).catch(() => {});
     });
 
-    // Cover nur beim Songwechsel schicken (kann ein großes Bild sein)
+    // Cover nur beim Songwechsel schicken
     $effect(() => {
+      if (!ui.miniOpen) return;
       currentTrack()?.qid;
       sendCover();
+    });
+
+    $effect(() => {
+      if (!ui.miniOpen) return;
+      settings.theme;
+      settings.accent;
+      sendTheme();
     });
   });
 }

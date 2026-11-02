@@ -122,12 +122,3 @@ export function applyAppearance() {
 systemDark.addEventListener("change", () => {
   if (settings.theme === "system") applyAppearance();
 });
-
-// Änderungen aus dem anderen Fenster (Hauptfenster ↔ Mini-Player) übernehmen
-window.addEventListener("storage", (e) => {
-  if (e.key !== KEY) return;
-  try {
-    Object.assign(settings, JSON.parse(e.newValue ?? "{}"));
-    applyAppearance();
-  } catch {}
-});
