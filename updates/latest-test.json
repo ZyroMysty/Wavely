@@ -1,11 +1,11 @@
 {
-  "version": "0.16.0-test.2",
-  "notes": "- Neuer Mini-Player ohne Browser-Technik: sieht aus wie vorher, braucht aber statt rund 30 MB nur wenige MB – Lautstärke jetzt auch mit dem Mausrad\n- Noch weniger Arbeitsspeicher: Grafik und Ton laufen nicht mehr als eigene Hintergrundprozesse\n- Diagnose für Admins (Einstellungen → Über Wavely): Arbeitsspeicher und CPU jedes Wavely-Prozesses live, mit Verlauf und zum Kopieren",
-  "pub_date": "2026-11-02T21:44:39.158Z",
+  "version": "0.16.0-test.3",
+  "notes": "- Bilder werden in der Größe geladen, in der sie angezeigt werden – vorher oft das Zehnfache (z. B. 544 px für ein 40-px-Cover)\n- Lange Songlisten (ab 150 Songs, z. B. „Gefällt mir“) bauen nur die sichtbaren Zeilen auf: bei 400 Songs rund 15 MB weniger, bei Tausenden entsprechend mehr\n- Minimiert gibt Wavely noch mehr Speicher frei, die Musik läuft weiter\n- Diagnose zeigt zusätzlich den tatsächlich belegten Speicher des Rust-Teils und wie viele Likes, Verlaufs- und Playlist-Einträge geladen sind",
+  "pub_date": "2026-11-03T13:46:37.256Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUbTAyc0pRaXl0NFptaWovd3VUbVk0VjJRUmZvY2Y5b1ZKeGlETzBhVVc3Y3ZoZnVUd3BXSUdCZFU5cHhNZzZ5VHFWazZVSU8wUHJNY2ZqbVl5eUErdXRtUDU0MWUzelFNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNjU1ODI0CWZpbGU6V2F2ZWx5XzAuMTYuMC10ZXN0LjJfeDY0LXNldHVwLmV4ZQl2ZXJzaW9uOjAuMTYuMC10ZXN0LjIKaDNFbTlqRkVVMFZmWXd1OTVQT0VsdjB1RWRKUVlqNmhxZCtBYXUrcmpmQVlIeE1VSDNrdFVpek1vcGtLaWk3Sm5rMGVOcS9xeE1NMDdueGpFbzVBQVE9PQo=",
-      "url": "https://github.com/ZyroMysty/Wavely/releases/download/v0.16.0-test.2/Wavely_0.16.0-test.2_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUbTAyc0pRaXl0NFQ2UEY0NWU0Zmo1T3F2NUc4a2FHQTU5NXlPTmNhRlY1R2RnbXZvcmZYQlpuK3VnVkZYUTFodGJVcW1QRW9xbmh4VmVPV21abWNRTmNBRjU5dUZ1N3djPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNjU3NzUxCWZpbGU6V2F2ZWx5XzAuMTYuMC10ZXN0LjNfeDY0LXNldHVwLmV4ZQl2ZXJzaW9uOjAuMTYuMC10ZXN0LjMKaTUrRTVBc0VaZGFHaUd6ZE11Rm9kSjBKc3M5NUJxenQ0dFZjTWpUa3hjS1haT3BDbWlQUmdWd2Nhd2dKNlhNYkVCRFZFMkI5UGJOYTFXMVJiM3lBQWc9PQo=",
+      "url": "https://github.com/ZyroMysty/Wavely/releases/download/v0.16.0-test.3/Wavely_0.16.0-test.3_x64-setup.exe"
     }
   }
 }
