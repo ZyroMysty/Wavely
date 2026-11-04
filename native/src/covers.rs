@@ -70,6 +70,17 @@ pub fn cover_url(track: &crate::player::Track) -> Option<String> {
 
 const LOCAL_PREFIX: &str = "localcover:";
 
+impl Covers {
+    /// Rohdaten eines Bildes (für den Mini-Player, der selbst zuschneidet)
+    pub async fn raw(&self, url: &str) -> Option<Vec<u8>> {
+        if let Some(path) = url.strip_prefix(LOCAL_PREFIX) {
+            let path = path.to_string();
+            return tokio::task::spawn_blocking(move || crate::services::library::cover_bytes(&path).map(|(d, _)| d)).await.ok()?;
+        }
+        Some(self.http.get(url).send().await.ok()?.bytes().await.ok()?.to_vec())
+    }
+}
+
 async fn fetch(http: &reqwest::Client, url: &str, size: u32) -> Option<SharedPixelBuffer<Rgba8Pixel>> {
     let bytes = if let Some(path) = url.strip_prefix(LOCAL_PREFIX) {
         let path = path.to_string();

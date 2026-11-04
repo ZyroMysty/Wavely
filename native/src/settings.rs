@@ -161,6 +161,8 @@ pub fn page(app: &Arc<App>) -> PageData {
         &s.stream_quality,
     );
 
+    p.toggle("miniMinimizesMain", "Mini-Player minimiert das Hauptfenster", "Beim Öffnen des Mini-Players (Strg + M)", s.mini_minimizes_main);
+
     // Klang
     p.heading("Klang");
     p.toggle("normalize", "Lautstärke angleichen", "Leise und laute Songs gleich laut abspielen", s.normalize);
@@ -191,6 +193,13 @@ pub fn page(app: &Arc<App>) -> PageData {
         .chain(crate::audio::device_names().into_iter().map(|n| (n.clone(), n)))
         .collect();
     p.select("outputDevice", "Ausgabegerät", "Lautsprecher oder Kopfhörer für Wavely", &devices, &s.output_device);
+
+    // Tastenkürzel
+    p.heading("Tastenkürzel");
+    p.toggle("globalShortcuts", "Systemweite Tastenkürzel", "Strg + Alt + Leertaste / ← / → / ↑ / ↓ – auch wenn Wavely im Hintergrund ist", s.global_shortcuts);
+    for (keys, what) in crate::keys::SHORTCUT_LIST {
+        p.info(keys, what);
+    }
 
     // Discord
     p.heading("Discord");
@@ -287,6 +296,8 @@ impl App {
                 ("discordEnabled", None) => s.discord_enabled = !s.discord_enabled,
                 ("lastfmScrobble", None) => s.lastfm_scrobble = !s.lastfm_scrobble,
                 ("normalize", None) => s.normalize = !s.normalize,
+                ("globalShortcuts", None) => s.global_shortcuts = !s.global_shortcuts,
+                ("miniMinimizesMain", None) => s.mini_minimizes_main = !s.mini_minimizes_main,
                 ("playbackRate", Some(v)) => s.playback_rate = v.parse().unwrap_or(1.0),
                 ("outputDevice", Some(v)) => s.output_device = v,
                 ("eqPreset", Some(v)) => {
@@ -309,6 +320,9 @@ impl App {
         }
         self.save_settings();
         self.apply_sound();
+        if key == "globalShortcuts" {
+            self.apply_global_shortcuts();
+        }
         self.send_presence();
         self.apply_appearance();
         self.apply_quality();

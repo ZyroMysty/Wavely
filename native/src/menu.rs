@@ -155,6 +155,11 @@ impl App {
             "play" if !playing => self.toggle_play(),
             "pause" if playing => self.toggle_play(),
             "toggle" => self.toggle_play(),
+            "volume-up" | "volume-down" => {
+                let volume = self.state.lock().unwrap().volume;
+                self.set_volume((volume + if action == "volume-up" { 0.05 } else { -0.05 }).clamp(0.0, 1.0));
+                self.sync_player();
+            }
             "next" => self.next(),
             "previous" => self.previous(),
             "like" => {
@@ -172,6 +177,10 @@ impl App {
     }
 
     pub fn menu_pick(self: &Arc<Self>, id: &str) {
+        if let Some(arg) = id.strip_prefix("sleep:") {
+            self.sleep_action(arg);
+            return;
+        }
         // Auswahl einer Einstellung (Menü einer Auswahl-Zeile)
         if let Some(action) = id.strip_prefix("set:") {
             self.close_menu();

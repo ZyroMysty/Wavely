@@ -1,7 +1,9 @@
 //! Windows-Anbindung: Medientasten/Overlay (media.rs) und Taskleisten-Buttons (taskbar.rs).
 //! Alles läuft im UI-Thread; Tastendrücke und Klicks kommen über `action` zurück.
 
+pub mod hotkeys;
 pub mod media;
+pub mod mini;
 pub mod taskbar;
 
 use std::sync::OnceLock;

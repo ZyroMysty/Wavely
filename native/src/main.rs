@@ -6,8 +6,11 @@ mod audio;
 mod covers;
 mod host;
 mod icon;
+mod keys;
 mod local;
 mod menu;
+#[cfg(windows)]
+mod mini_ui;
 mod nav;
 mod playlists;
 mod resolve;
@@ -76,6 +79,12 @@ pub struct App {
     pub soundcloud: Arc<services::soundcloud::SoundCloud>,
     pub spotify: Arc<services::spotify::Spotify>,
     pub lastfm: Arc<services::lastfm::LastFm>,
+    /// Schlaf-Timer: Ende, „am Ende des Songs“, Zähler (ältere Timer verfallen)
+    pub sleep_until: Mutex<Option<std::time::Instant>>,
+    /// Song, dessen Cover der Mini-Player gerade hat
+    pub mini_cover_key: Mutex<Option<String>>,
+    pub sleep_end_of_track: AtomicBool,
+    pub sleep_token: AtomicU64,
     /// Gemessene Lautheit je Song (für die Angleichung)
     pub loudness: Mutex<std::collections::HashMap<String, f32>>,
     /// Zuordnungen Spotify/SoundCloud → YouTube
@@ -202,6 +211,7 @@ impl App {
                     artwork_url: art_url.clone().filter(|u| u.starts_with("http")),
                 });
                 win::taskbar::update(win::taskbar::TaskbarState { has_track, playing, liked: can_like.then_some(liked) });
+                app.sync_mini();
             }
             p.set_can_like(can_like);
             p.set_liked(liked);
@@ -484,7 +494,10 @@ impl App {
                 if self.last_resume_save.lock().unwrap().elapsed().as_secs() >= 5 {
                     self.save_resume();
                 }
+                let app = self.clone();
                 self.ui(move |ui| {
+                    #[cfg(windows)]
+                    app.sync_mini();
                     let p = ui.global::<Player>();
                     p.set_position(position as f32);
                     p.set_position_text(format_time(position.min(duration.max(position))).into());
@@ -503,6 +516,11 @@ impl App {
                     }
                     s.repeat == Repeat::One
                 };
+                if self.consume_end_of_track() {
+                    self.state.lock().unwrap().playing = false;
+                    self.sync_player();
+                    return;
+                }
                 if repeat_one {
                     let i = self.state.lock().unwrap().index.unwrap_or(0);
                     self.load(i, 0.0);
@@ -623,10 +641,13 @@ impl App {
             _ => true,
         };
         let color = parse_hex(&accent).unwrap_or(slint::Color::from_rgb_u8(0xff, 0x4f, 0x7b));
+        let app = self.clone();
         self.ui(move |ui| {
             let t = ui.global::<Theme>();
             t.set_dark(dark);
             t.set_accent(color);
+            #[cfg(windows)]
+            app.sync_mini_theme();
         });
     }
 
@@ -798,6 +819,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         soundcloud: Arc::new(services::soundcloud::SoundCloud::new(&paths)?),
         spotify: Arc::new(services::spotify::Spotify::new(&paths)?),
         lastfm: Arc::new(services::lastfm::LastFm::new(&paths)?),
+        sleep_until: Mutex::new(None),
+        mini_cover_key: Mutex::new(None),
+        sleep_end_of_track: AtomicBool::new(false),
+        sleep_token: AtomicU64::new(0),
         loudness: Mutex::new(store.loudness()),
         matches: resolve::Matches::new(&paths),
         presence: Default::default(),
@@ -931,6 +956,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let a = app.clone();
     n.on_toggle_panel(move |panel| a.toggle_panel(&panel));
     let a = app.clone();
+    n.on_sleep_menu(move |x, y| a.open_sleep_menu(x, y));
+    let a = app.clone();
+    n.on_mini_player(move || {
+        #[cfg(windows)]
+        a.open_mini_player();
+    });
+    let a = app.clone();
+    n.on_key(move |key, ctrl, shift| a.key_pressed(&key, ctrl, shift));
+    let a = app.clone();
     n.on_select(move |view| a.show_view(&view));
     let a = app.clone();
     n.on_open_playlist(move |id| a.open(nav::PageKind::Playlist(id.to_string())));
@@ -962,6 +996,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     app.playlists_changed_local();
     app.apply_sound();
+    app.apply_global_shortcuts();
     app.local_scan();
     app.apply_quality();
     app.start_sync();
@@ -1005,6 +1040,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
     slint::run_event_loop()?;
+    #[cfg(windows)]
+    win::mini::close_player();
     app.stats_flush();
     app.save_resume();
     {
@@ -1060,6 +1097,10 @@ fn run_test_steps(app: Arc<App>, steps: String) {
                 }
             }
             "confirm" => app.dialog_confirm(arg.to_string()),
+            #[cfg(windows)]
+            "mini" => app.open_mini_player(),
+            #[cfg(windows)]
+            "mini-close" => win::mini::close_player(),
             // Fenstergröße (für Bilder langer Seiten)
             "size" if nums.len() == 2 => {
                 if let Some(ui) = app.ui.upgrade() {

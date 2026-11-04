@@ -6593,6 +6593,7 @@ dependencies = [
  "url",
  "walkdir",
  "windows 0.62.2",
+ "windows-numerics",
  "winresource",
 ]
 

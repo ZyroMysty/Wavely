@@ -34,6 +34,12 @@ pub struct Settings {
     pub lastfm_scrobble: bool,
     pub test_channel: bool,
     pub output_device: String,
+    pub global_shortcuts: bool,
+    pub mini_pinned: bool,
+    pub mini_width: f64,
+    pub mini_height: f64,
+    /// Beim Öffnen des Mini-Players das Hauptfenster minimieren
+    pub mini_minimizes_main: bool,
 }
 
 impl Default for Settings {
@@ -58,6 +64,11 @@ impl Default for Settings {
             lastfm_scrobble: true,
             test_channel: false,
             output_device: String::new(),
+            global_shortcuts: false,
+            mini_pinned: true,
+            mini_width: 360.0,
+            mini_height: 104.0,
+            mini_minimizes_main: true,
         }
     }
 }
