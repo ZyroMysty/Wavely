@@ -12,6 +12,7 @@ pub enum PageKind {
     /// Wavely-Playlist
     Playlist(String),
     Home,
+    Settings,
     /// Noch nicht nachgebaute Ansicht
     Placeholder(&'static str),
 }
@@ -26,6 +27,7 @@ fn root_of(view: &str) -> PageKind {
         "soundcloud" => PageKind::Placeholder("SoundCloud"),
         "offline" => PageKind::Placeholder("Offline"),
         "recap" => PageKind::Placeholder("Rückblick"),
+        "settings" => PageKind::Settings,
         _ => PageKind::Placeholder("Wavely"),
     }
 }
@@ -153,6 +155,10 @@ impl App {
                 let data = wavely::home_page(self);
                 self.set_page(data, back, false);
             }
+            PageKind::Settings => {
+                let data = crate::settings::page(self);
+                self.set_page(data, back, false);
+            }
             PageKind::Placeholder(title) => {
                 let mut data = pages::PageData::default();
                 data.title(title);
@@ -210,6 +216,9 @@ impl App {
     }
 
     pub fn page_action(self: &Arc<Self>, action: &str) {
+        if self.setting_action(action) {
+            return;
+        }
         let tracks = self.page.lock().unwrap().tracks.clone();
         match action {
             "play" | "shuffle" if !tracks.is_empty() => {

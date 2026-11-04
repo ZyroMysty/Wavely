@@ -36,6 +36,19 @@ fn host_hour() -> u32 {
     }
 }
 
+/// Uhrzeit „HH:MM“ in Ortszeit
+pub fn clock_time() -> String {
+    #[cfg(windows)]
+    {
+        let time = unsafe { windows::Win32::System::SystemInformation::GetLocalTime() };
+        format!("{:02}:{:02}", time.wHour, time.wMinute)
+    }
+    #[cfg(not(windows))]
+    {
+        String::new()
+    }
+}
+
 fn key_of(t: &Track) -> String {
     format!("{}:{}", t.source, t.id)
 }
@@ -231,11 +244,25 @@ pub fn playlist_page(app: &Arc<App>, id: &str) -> PageData {
 }
 
 impl App {
-    /// Geänderte Playlists ins Wavely-Konto laden (kommt mit dem Konto-Abgleich)
-    pub fn sync_push_playlists(self: &Arc<Self>) {}
-
-    /// Playlists in der Seitenleiste anzeigen und speichern
+    /// Playlists geändert: speichern, anzeigen und ins Wavely-Konto laden
     pub fn playlists_changed(self: &Arc<Self>) {
+        self.playlists_changed_local();
+        let Some(session) = self.account.logged_in() else { return };
+        let app = self.clone();
+        self.rt.spawn(async move {
+            let (list, deleted) = {
+                let mut p = app.playlists.lock().unwrap();
+                (p.list.clone(), std::mem::take(&mut p.deleted))
+            };
+            if app.account.push_playlists(&session.uid, &list, &deleted).await.is_err() {
+                // Beim nächsten Abgleich nochmal versuchen
+                app.playlists.lock().unwrap().deleted.extend(deleted);
+            }
+        });
+    }
+
+    /// Playlists in der Seitenleiste anzeigen und speichern (ohne Hochladen)
+    pub fn playlists_changed_local(self: &Arc<Self>) {
         let (items, counts): (Vec<NavItem>, Vec<i32>) = {
             let playlists = self.playlists.lock().unwrap();
             playlists.save(&self.store);
@@ -250,7 +277,6 @@ impl App {
             nav.set_playlists(ModelRc::from(std::rc::Rc::new(VecModel::from(items))));
             nav.set_playlist_counts(ModelRc::from(std::rc::Rc::new(VecModel::from(counts))));
         });
-        self.sync_push_playlists();
     }
 
     pub fn playlist_create(self: &Arc<Self>, name: &str, tracks: Vec<Track>) -> String {

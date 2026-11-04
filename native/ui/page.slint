@@ -251,11 +251,49 @@ export global Page {
     callback card(int, int);
     callback action(string);
     callback track-menu(int, length, length);
+    // Wavely-Konto: Name, E-Mail, Passwort, "login" | "register"
+    callback login(string, string, string, string);
+    callback reset-password(string);
+}
+
+// Eingabefeld (Anmeldung)
+component LoginField inherits Rectangle {
+    in property <string> placeholder;
+    in property <bool> password;
+    in-out property <string> text;
+    callback accepted();
+    height: 40px;
+    border-radius: 8px;
+    background: Theme.surface-2;
+    border-width: 1px;
+    border-color: input.has-focus ? Theme.accent : Theme.border;
+    if input.text == "": Text {
+        x: 12px;
+        text: root.placeholder;
+        color: Theme.text-dim;
+        vertical-alignment: center;
+        height: parent.height;
+    }
+    input := TextInput {
+        x: 12px;
+        width: parent.width - 24px;
+        text <=> root.text;
+        color: Theme.text;
+        vertical-alignment: center;
+        single-line: true;
+        input-type: root.password ? InputType.password : InputType.text;
+        accepted => { root.accepted(); }
+    }
 }
 
 export component PageView inherits Rectangle {
     // Kopfzeile der Ansicht (Suche, Anmelden …) kommt von außen
     in property <length> side-padding: 32px;
+    // Eingaben im Anmeldeformular (bleiben beim Neuaufbau der Zeilen erhalten)
+    property <string> login-name;
+    property <string> login-email;
+    property <string> login-password;
+    property <string> login-mode: "login";
 
     ListView {
         for row[ri] in Page.rows: Rectangle {
@@ -267,6 +305,8 @@ export component PageView inherits Rectangle {
                 : row.kind == "buttons" ? 56px
                 : row.kind == "spacer" ? 16px
                 : row.kind == "text" ? text.preferred-height + 16px
+                : row.kind == "setting" ? (row.subtext != "" ? 72px : 58px)
+                : row.kind == "login" ? (login-mode == "register" ? 300px : 250px) + (row.subtext != "" ? 30px : 0px)
                 : 40px;
 
             if row.kind == "hero": HorizontalLayout {
@@ -330,6 +370,172 @@ export component PageView inherits Rectangle {
                     font-weight: 700;
                     color: Theme.text;
                     vertical-alignment: center;
+                }
+            }
+
+
+            // Einstellung: Titel + Beschreibung links, Bedienelement rechts
+            if row.kind == "setting": HorizontalLayout {
+                padding-left: root.side-padding;
+                padding-right: root.side-padding;
+                padding-bottom: 6px;
+                Rectangle {
+                    background: Theme.surface;
+                    border-radius: Theme.radius;
+                    HorizontalLayout {
+                        padding-left: 18px;
+                        padding-right: 18px;
+                        spacing: 16px;
+                        VerticalLayout {
+                            alignment: center;
+                            horizontal-stretch: 1;
+                            spacing: 2px;
+                            Text {
+                                text: row.text;
+                                color: Theme.text;
+                                font-weight: 600;
+                                overflow: elide;
+                            }
+                            if row.subtext != "": Text {
+                                text: row.subtext;
+                                color: Theme.text-dim;
+                                font-size: 13px;
+                                overflow: elide;
+                            }
+                        }
+                        // Schalter
+                        if row.label == "toggle": Rectangle {
+                            y: (parent.height - self.height) / 2;
+                            width: 44px;
+                            height: 24px;
+                            border-radius: 12px;
+                            background: row.number == 1 ? Theme.accent : Theme.hover;
+                            Rectangle {
+                                x: row.number == 1 ? parent.width - self.width - 3px : 3px;
+                                width: 18px;
+                                height: 18px;
+                                border-radius: 9px;
+                                background: #fff;
+                                animate x { duration: 120ms; }
+                            }
+                            TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { Page.action(row.cards[0].id); }
+                            }
+                        }
+                        // Auswahl als Segmente
+                        if row.label == "choice": Rectangle {
+                            y: (parent.height - self.height) / 2;
+                            height: 34px;
+                            border-radius: 17px;
+                            background: Theme.surface-2;
+                            HorizontalLayout {
+                                padding: 3px;
+                                spacing: 2px;
+                                for opt[oi] in row.cards: Rectangle {
+                                    border-radius: 14px;
+                                    background: oi == row.number ? Theme.accent : otouch.has-hover ? Theme.hover : transparent;
+                                    min-width: otext.preferred-width + 24px;
+                                    otext := Text {
+                                        text: opt.title;
+                                        color: oi == row.number ? #fff : Theme.text;
+                                        font-size: 13px;
+                                        vertical-alignment: center;
+                                        horizontal-alignment: center;
+                                    }
+                                    otouch := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => { Page.action(opt.id); }
+                                    }
+                                }
+                            }
+                        }
+                        // Farbauswahl
+                        if row.label == "swatches": HorizontalLayout {
+                            alignment: end;
+                            spacing: 8px;
+                            for sw[si] in row.cards: Rectangle {
+                                y: (parent.height - self.height) / 2;
+                                width: 26px;
+                                height: 26px;
+                                border-radius: 13px;
+                                background: Theme.accents[si];
+                                border-width: si == row.number ? 3px : 0px;
+                                border-color: Theme.text;
+                                TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { Page.action(sw.id); }
+                                }
+                            }
+                        }
+                        if row.label == "button": PillButton {
+                            y: (parent.height - self.height) / 2;
+                            primary: false;
+                            text: row.cards[0].title;
+                            clicked => { Page.action(row.cards[0].id); }
+                        }
+                    }
+                }
+            }
+
+            // Anmeldung beim Wavely-Konto
+            if row.kind == "login": HorizontalLayout {
+                padding-left: root.side-padding;
+                padding-right: root.side-padding;
+                padding-bottom: 6px;
+                Rectangle {
+                    background: Theme.surface;
+                    border-radius: Theme.radius;
+                    VerticalLayout {
+                        padding: 18px;
+                        spacing: 10px;
+                        Text {
+                            text: login-mode == "register" ? "Neues Wavely-Konto" : row.text;
+                            color: Theme.text-dim;
+                            wrap: word-wrap;
+                        }
+                        if login-mode == "register": LoginField {
+                            placeholder: "Name (optional)";
+                            text <=> login-name;
+                        }
+                        LoginField {
+                            placeholder: "E-Mail";
+                            text <=> login-email;
+                        }
+                        LoginField {
+                            placeholder: "Passwort";
+                            password: true;
+                            text <=> login-password;
+                            accepted => { Page.login(login-name, login-email, login-password, login-mode); }
+                        }
+                        if row.subtext != "": Text {
+                            text: row.subtext;
+                            color: Theme.accent;
+                            wrap: word-wrap;
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            alignment: start;
+                            PillButton {
+                                text: row.number == 1 ? "Bitte warten…" : login-mode == "register" ? "Konto erstellen" : "Anmelden";
+                                clicked => {
+                                    if (row.number != 1) {
+                                        Page.login(login-name, login-email, login-password, login-mode);
+                                    }
+                                }
+                            }
+                            PillButton {
+                                primary: false;
+                                text: login-mode == "register" ? "Ich habe schon ein Konto" : "Registrieren";
+                                clicked => { login-mode = login-mode == "register" ? "login" : "register"; }
+                            }
+                            if login-mode != "register": PillButton {
+                                primary: false;
+                                text: "Passwort vergessen";
+                                clicked => { Page.reset-password(login-email); }
+                            }
+                        }
+                    }
                 }
             }
 

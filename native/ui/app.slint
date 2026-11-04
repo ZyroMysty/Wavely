@@ -593,8 +593,7 @@ export component AppWindow inherits Window {
             Rectangle {
                 horizontal-stretch: 1;
                 if Nav.view == "youtube": YouTubeView { }
-                if Nav.view == "settings": Placeholder { title: "Einstellungen"; }
-                if Nav.view != "youtube" && Nav.view != "settings": GenericView { }
+                if Nav.view != "youtube": GenericView { }
             }
             if Nav.panel == "queue": QueuePanel { }
         }

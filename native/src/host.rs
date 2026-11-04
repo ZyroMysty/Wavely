@@ -54,6 +54,33 @@ fn copy_dir(from: &Path, to: &Path) {
     }
 }
 
+/// Privater Arbeitsspeicher dieses Prozesses (Bytes)
+pub fn private_bytes() -> u64 {
+    #[cfg(windows)]
+    {
+        use windows::Win32::System::{
+            ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS, PROCESS_MEMORY_COUNTERS_EX},
+            Threading::GetCurrentProcess,
+        };
+        let mut counters = PROCESS_MEMORY_COUNTERS_EX::default();
+        let ok = unsafe {
+            GetProcessMemoryInfo(
+                GetCurrentProcess(),
+                &mut counters as *mut _ as *mut PROCESS_MEMORY_COUNTERS,
+                std::mem::size_of::<PROCESS_MEMORY_COUNTERS_EX>() as u32,
+            )
+        };
+        if ok.is_ok() {
+            return counters.PrivateUsage as u64;
+        }
+        0
+    }
+    #[cfg(not(windows))]
+    {
+        0
+    }
+}
+
 /// Windows im dunklen Modus? (Einstellungen → Personalisierung → Farben)
 pub fn system_dark() -> bool {
     #[cfg(windows)]

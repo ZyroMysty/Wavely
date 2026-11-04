@@ -1,6 +1,7 @@
 // Kein Konsolenfenster in der fertigen App
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod account;
 mod audio;
 mod covers;
 mod host;
@@ -11,6 +12,7 @@ mod playlists;
 mod pages;
 mod player;
 mod services;
+mod settings;
 mod store;
 mod wavely;
 mod youtube;
@@ -60,6 +62,14 @@ pub struct App {
     pub dialog_target: Mutex<Option<String>>,
     pub dialog_tracks: Mutex<Vec<Track>>,
     pub store: store::Store,
+    pub account: account::Account,
+    /// Zählt Anmeldungen: ein alter Abgleich hört auf, wenn sich jemand neu anmeldet
+    pub sync_generation: AtomicU64,
+    pub sync_status: Mutex<String>,
+    pub account_busy: Mutex<bool>,
+    pub account_error: Mutex<Option<String>>,
+    /// Neue Hör-Einträge, die noch ins Konto müssen
+    pub plays_to_upload: Mutex<Vec<serde_json::Value>>,
     pub settings: Mutex<store::Settings>,
     pub history: Mutex<Vec<store::HistoryEntry>>,
     /// Laufender Song für die Hörstatistik
@@ -349,6 +359,9 @@ impl App {
 
     /// Nach dem Ende der Warteschlange passende Songs anhängen (YouTube-Radio)
     fn extend_with_autoplay(self: &Arc<Self>) {
+        if !self.settings.lock().unwrap().autoplay {
+            return;
+        }
         let seed = {
             let s = self.state.lock().unwrap();
             let near_end = s.index.is_some_and(|i| i + 2 >= s.queue.len());
@@ -549,7 +562,10 @@ impl App {
             "album": l.track.album,
             "art": l.track.artwork_url,
         });
-        self.store.append_plays(&[entry]);
+        self.store.append_plays(&[entry.clone()]);
+        if self.account.logged_in().is_some() {
+            self.plays_to_upload.lock().unwrap().push(entry);
+        }
     }
 
     fn stats_progress(self: &Arc<Self>, position: f64) {
@@ -566,6 +582,14 @@ impl App {
     fn started_playing(self: &Arc<Self>) {
         let Some(track) = self.state.lock().unwrap().current().cloned() else { return };
         self.stats_flush();
+        // Echte YouTube-Music-Songs auch im YouTube-Verlauf speichern
+        if track.source == "youtube" && self.yt_logged_in.load(Ordering::Relaxed) && self.settings.lock().unwrap().sync_you_tube_history {
+            let app = self.clone();
+            let id = track.id.clone();
+            self.rt.spawn(async move {
+                let _ = services::ytm::ytm_report_play(&app.ytm, id).await;
+            });
+        }
         let now = store::now_ms();
         *self.listening.lock().unwrap() = Some(Listening { track: track.clone(), started_at: now, listened: 0.0, last_pos: 0.0 });
         let history = {
@@ -625,6 +649,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         yt_logged_in: AtomicBool::new(false),
         history: Mutex::new(load_history(&store)),
         settings: Mutex::new(settings.clone()),
+        account: account::Account::new(&paths),
+        sync_generation: AtomicU64::new(0),
+        sync_status: Mutex::new(String::new()),
+        account_busy: Mutex::new(false),
+        account_error: Mutex::new(None),
+        plays_to_upload: Mutex::new(Vec::new()),
         store,
         listening: Mutex::new(None),
         last_resume_save: Mutex::new(std::time::Instant::now()),
@@ -741,7 +771,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    app.playlists_changed();
+    let a = app.clone();
+    pg.on_login(move |name, email, password, mode| {
+        let name = (mode == "register").then(|| name.to_string());
+        a.account_login(email.to_string(), password.to_string(), name);
+    });
+    let a = app.clone();
+    pg.on_reset_password(move |email| a.account_reset(email.to_string()));
+
+    app.playlists_changed_local();
+    app.apply_quality();
+    app.start_sync();
     let start_view = app.settings.lock().unwrap().start_view.clone();
     app.show_view(if start_view.is_empty() { "home" } else { &start_view });
     app.yt_init();
