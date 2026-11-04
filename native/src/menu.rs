@@ -177,6 +177,10 @@ impl App {
     }
 
     pub fn menu_pick(self: &Arc<Self>, id: &str) {
+        if let Some(arg) = id.strip_prefix("together:") {
+            self.together_action(arg);
+            return;
+        }
         if let Some(arg) = id.strip_prefix("sleep:") {
             self.sleep_action(arg);
             return;

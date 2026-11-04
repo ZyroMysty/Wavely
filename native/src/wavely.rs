@@ -335,6 +335,7 @@ impl App {
     pub fn dialog_confirm(self: &Arc<Self>, value: String) {
         self.ui(|ui| ui.global::<Dialog>().set_open(false));
         match self.dialog_target.lock().unwrap().take() {
+            Some(target) if target == "together" => self.together_join(value),
             Some(id) => {
                 self.playlists.lock().unwrap().rename(&id, &value);
                 self.playlists_changed();

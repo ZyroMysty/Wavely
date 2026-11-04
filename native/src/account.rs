@@ -235,6 +235,78 @@ impl Account {
         found
     }
 
+
+    // --- Allgemeine Dokumente (Zusammen hören, Feedback) ------------------------------
+
+    /// Dokument schreiben; `merge` = nur die angegebenen Felder ändern
+    pub async fn set_doc(&self, path: &str, data: &Value, merge: bool) -> Result<(), String> {
+        let mut write = json!({ "update": { "name": doc_name(path), "fields": to_fields(data) } });
+        if merge {
+            let fields: Vec<String> = data.as_object().map(|o| o.keys().cloned().collect()).unwrap_or_default();
+            write["updateMask"] = json!({ "fieldPaths": fields });
+        }
+        self.commit(vec![write]).await
+    }
+
+    /// Dokument lesen (`None`, wenn es das nicht gibt)
+    pub async fn get_doc(&self, path: &str) -> Result<Option<Value>, String> {
+        let value = self.get(&Self::docs_url(path)).await?;
+        Ok((!value.is_null()).then(|| from_fields(&value["fields"])))
+    }
+
+    /// Alle Dokumente einer Sammlung (Inhalte)
+    pub async fn list_docs(&self, path: &str) -> Result<Vec<Value>, String> {
+        let value = self.get(&format!("{}?pageSize=300", Self::docs_url(path))).await?;
+        Ok(value["documents"].as_array().cloned().unwrap_or_default().iter().map(|d| from_fields(&d["fields"])).collect())
+    }
+
+    /// Alle Dokument-IDs einer Sammlung
+    pub async fn list_names(&self, path: &str) -> Result<Vec<String>, String> {
+        let value = self.get(&format!("{}?pageSize=300", Self::docs_url(path))).await?;
+        Ok(value["documents"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|d| d["name"].as_str().and_then(|n| n.rsplit('/').next()).map(str::to_string))
+            .collect())
+    }
+
+    pub async fn delete_doc(&self, path: &str) -> Result<(), String> {
+        let token = self.id_token().await?;
+        self.http.delete(Self::docs_url(path)).bearer_auth(token).send().await.map_err(err)?;
+        Ok(())
+    }
+
+    /// Feedback schicken (geht auch ohne Konto; lesen kann es nur die Projekt-Inhaberin)
+    pub async fn send_feedback(&self, kind: &str, text: &str, contact: &str, with_info: bool) -> Result<(), String> {
+        let mut data = json!({
+            "kind": kind,
+            "text": text.trim().chars().take(5000).collect::<String>(),
+            "contact": if contact.trim().is_empty() { Value::Null } else { json!(contact.trim().chars().take(200).collect::<String>()) },
+            "uid": self.logged_in().map(|s| json!(s.uid)).unwrap_or(Value::Null),
+        });
+        if with_info {
+            data["version"] = json!(concat!(env!("CARGO_PKG_VERSION"), " (nativ)"));
+            data["system"] = json!("Windows");
+        }
+        let mut request = self
+            .http
+            .post(format!("{}?key={API_KEY}", Self::docs_url("feedback")))
+            .json(&json!({ "fields": { "kind": to_value(&data["kind"]), "text": to_value(&data["text"]), "contact": to_value(&data["contact"]), "uid": to_value(&data["uid"]), "version": to_value(&data["version"]), "system": to_value(&data["system"]), "createdAt": { "timestampValue": format_timestamp(now_ms() / 1000) } } }));
+        if self.logged_in().is_some() {
+            if let Ok(token) = self.id_token().await {
+                request = request.bearer_auth(token);
+            }
+        }
+        let response = request.send().await.map_err(|_| "Keine Verbindung – bist du online?".to_string())?;
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            Err(format!("Feedback konnte nicht gesendet werden ({})", response.status()))
+        }
+    }
+
     /// Alle Playlists des Kontos: (Playlist, gelöscht)
     pub async fn fetch_playlists(&self, uid: &str) -> Result<Vec<(Playlist, bool)>, String> {
         let mut out = Vec::new();

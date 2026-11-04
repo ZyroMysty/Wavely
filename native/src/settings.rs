@@ -194,6 +194,17 @@ pub fn page(app: &Arc<App>) -> PageData {
         .collect();
     p.select("outputDevice", "Ausgabegerät", "Lautsprecher oder Kopfhörer für Wavely", &devices, &s.output_device);
 
+    // Windows
+    #[cfg(windows)]
+    {
+        p.heading("Windows");
+        let autostart = crate::instance::autostart_enabled();
+        p.toggle("autostart", "Mit Windows starten", "Wavely startet automatisch nach der Anmeldung", autostart);
+        if autostart {
+            p.toggle("startMinimized", "Minimiert starten", "Beim automatischen Start nur in der Taskleiste", s.start_minimized);
+        }
+    }
+
     // Tastenkürzel
     p.heading("Tastenkürzel");
     p.toggle("globalShortcuts", "Systemweite Tastenkürzel", "Strg + Alt + Leertaste / ← / → / ↑ / ↓ – auch wenn Wavely im Hintergrund ist", s.global_shortcuts);
@@ -283,6 +294,12 @@ impl App {
             self.account_logout();
             return true;
         }
+        #[cfg(windows)]
+        if action == "toggle:autostart" {
+            crate::instance::set_autostart(!crate::instance::autostart_enabled());
+            self.settings_changed();
+            return true;
+        }
         let (key, value) = match (action.strip_prefix("toggle:"), action.split_once('=')) {
             (Some(key), _) => (key.to_string(), None),
             (None, Some((k, v))) => (k.to_string(), Some(v.to_string())),
@@ -298,6 +315,7 @@ impl App {
                 ("normalize", None) => s.normalize = !s.normalize,
                 ("globalShortcuts", None) => s.global_shortcuts = !s.global_shortcuts,
                 ("miniMinimizesMain", None) => s.mini_minimizes_main = !s.mini_minimizes_main,
+                ("startMinimized", None) => s.start_minimized = !s.start_minimized,
                 ("playbackRate", Some(v)) => s.playback_rate = v.parse().unwrap_or(1.0),
                 ("outputDevice", Some(v)) => s.output_device = v,
                 ("eqPreset", Some(v)) => {

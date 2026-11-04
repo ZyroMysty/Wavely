@@ -40,6 +40,8 @@ pub struct Settings {
     pub mini_height: f64,
     /// Beim Öffnen des Mini-Players das Hauptfenster minimieren
     pub mini_minimizes_main: bool,
+    /// Beim automatischen Start mit Windows minimiert starten
+    pub start_minimized: bool,
 }
 
 impl Default for Settings {
@@ -69,6 +71,7 @@ impl Default for Settings {
             mini_width: 360.0,
             mini_height: 104.0,
             mini_minimizes_main: true,
+            start_minimized: true,
         }
     }
 }

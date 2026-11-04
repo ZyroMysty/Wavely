@@ -24,6 +24,8 @@ mod settings;
 mod soundcloud_view;
 mod spotify_view;
 mod store;
+mod together;
+mod instance;
 mod wavely;
 mod youtube;
 #[cfg(windows)]
@@ -84,6 +86,11 @@ pub struct App {
     pub sleep_until: Mutex<Option<std::time::Instant>>,
     /// Zeitraum im Rückblick
     pub recap_range: Mutex<String>,
+    /// Zusammen hören
+    pub room: Mutex<Option<together::Room>>,
+    pub room_generation: AtomicU64,
+    /// Beim Mithören bestimmt der Gastgeber, was als Nächstes kommt
+    pub autoplay_blocked: AtomicBool,
     /// Song, dessen Cover der Mini-Player gerade hat
     pub mini_cover_key: Mutex<Option<String>>,
     pub sleep_end_of_track: AtomicBool,
@@ -418,7 +425,7 @@ impl App {
 
     /// Nach dem Ende der Warteschlange passende Songs anhängen (YouTube-Radio)
     fn extend_with_autoplay(self: &Arc<Self>) {
-        if !self.settings.lock().unwrap().autoplay {
+        if !self.settings.lock().unwrap().autoplay || self.autoplay_blocked.load(Ordering::Relaxed) {
             return;
         }
         let seed = {
@@ -774,6 +781,11 @@ impl App {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let testing = std::env::var_os("WAVELY_TEST_STEPS").is_some() || std::env::var_os("WAVELY_TEST_PLAY").is_some();
+    // Zweiter Start: an die laufende Wavely weitergeben (z. B. Einladungslink) und beenden
+    if !testing && instance::forward_to_running() {
+        return Ok(());
+    }
     let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build()?;
     let paths = host::Paths::init()?;
     let ytdlp = YtDlp::init(&paths)?;
@@ -824,6 +836,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         lastfm: Arc::new(services::lastfm::LastFm::new(&paths)?),
         sleep_until: Mutex::new(None),
         recap_range: Mutex::new("month".into()),
+        room: Mutex::new(None),
+        room_generation: AtomicU64::new(0),
+        autoplay_blocked: AtomicBool::new(false),
         mini_cover_key: Mutex::new(None),
         sleep_end_of_track: AtomicBool::new(false),
         sleep_token: AtomicU64::new(0),
@@ -956,7 +971,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let a = app.clone();
     side.on_lyric_clicked(move |line| a.lyrics_seek(line as usize));
 
+    let fb = ui.global::<Feedback>();
+    let a = app.clone();
+    fb.on_send(move |kind, text, contact, info| a.send_feedback(kind.to_string(), text.to_string(), contact.to_string(), info));
+
     let n = ui.global::<Nav>();
+    let a = app.clone();
+    n.on_together_menu(move |x, y| a.open_together_menu(x, y));
     let a = app.clone();
     n.on_toggle_panel(move |panel| a.toggle_panel(&panel));
     let a = app.clone();
@@ -1027,6 +1048,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Windows-Anbindung, sobald das Fenster existiert
     ui.show()?;
+    // Zweite Starts: Fenster nach vorn, Einladungslink übernehmen
+    if !testing {
+        let a = app.clone();
+        instance::listen(move |args| {
+            let a = a.clone();
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(ui) = a.ui.upgrade() {
+                    ui.window().set_minimized(false);
+                    let _ = ui.show();
+                }
+                if let Some(code) = args.iter().find_map(|arg| instance::code_from_link(arg)) {
+                    a.together_join(code);
+                }
+            });
+        });
+    }
+    if let Some(code) = std::env::args().find_map(|arg| instance::code_from_link(&arg)) {
+        let a = app.clone();
+        slint::Timer::single_shot(std::time::Duration::from_secs(2), move || a.together_join(code));
+    }
+    // Automatischer Start mit Windows: minimiert, wenn so eingestellt
+    let autostarted = std::env::args().any(|a| a == "--autostart");
+    if autostarted && app.settings.lock().unwrap().start_minimized {
+        let weak = ui.as_weak();
+        slint::Timer::single_shot(std::time::Duration::from_millis(100), move || {
+            if let Some(ui) = weak.upgrade() {
+                ui.window().set_minimized(true);
+            }
+        });
+    }
+
     // Das Fenster entsteht erst, wenn die Ereignisschleife läuft
     #[cfg(windows)]
     {
@@ -1048,6 +1100,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     win::mini::close_player();
     app.stats_flush();
     app.save_resume();
+    // Raum verlassen (Gäste informieren)
+    if app.room.lock().unwrap().is_some() {
+        let a = app.clone();
+        let _ = rt.block_on(async move { tokio::time::timeout(std::time::Duration::from_secs(3), a.together_leave_async()).await });
+    }
     {
         let mut settings = app.settings.lock().unwrap();
         settings.sidebar_collapsed = ui.global::<Nav>().get_collapsed();
@@ -1101,6 +1158,12 @@ fn run_test_steps(app: Arc<App>, steps: String) {
                 }
             }
             "confirm" => app.dialog_confirm(arg.to_string()),
+            "feedback" => {
+                if let Some(ui) = app.ui.upgrade() {
+                    ui.global::<Feedback>().set_open(true);
+                }
+            }
+            "together" => app.open_together_menu(900.0, 560.0),
             #[cfg(windows)]
             "mini" => app.open_mini_player(),
             #[cfg(windows)]

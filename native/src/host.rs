@@ -125,6 +125,13 @@ pub fn civil_from_days(days: i64) -> (i64, i64, i64) {
     (if m <= 2 { yoe + era * 400 + 1 } else { yoe + era * 400 }, m, d)
 }
 
+/// Text in die Zwischenablage
+pub fn copy_text(text: &str) {
+    if let Ok(mut clipboard) = arboard::Clipboard::new() {
+        let _ = clipboard.set_text(text.to_string());
+    }
+}
+
 /// Windows im dunklen Modus? (Einstellungen → Personalisierung → Farben)
 pub fn system_dark() -> bool {
     #[cfg(windows)]

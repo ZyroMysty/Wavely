@@ -6568,6 +6568,7 @@ dependencies = [
 name = "wavely-native"
 version = "0.17.0-native.1"
 dependencies = [
+ "arboard",
  "base64 0.22.1",
  "cpal",
  "discord-rich-presence",

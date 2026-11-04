@@ -70,6 +70,8 @@ export global Nav {
     in property <bool> sleep-active;
     callback sleep-menu(length, length);
     callback mini-player();
+    in property <bool> together-active;
+    callback together-menu(length, length);
     // Taste im Fenster: Name, Strg, Umschalt → behandelt?
     callback key(string, bool, bool) -> bool;
     callback open-playlist(string);
@@ -134,6 +136,17 @@ export global Side {
     callback play(int);
     callback menu(int, length, length);
     callback lyric-clicked(int);
+}
+
+
+// Feedback-Dialog
+export global Feedback {
+    in-out property <bool> open;
+    in-out property <string> kind: "bug";
+    in-out property <string> text;
+    in-out property <string> contact;
+    in-out property <bool> with-info: true;
+    callback send(string, string, string, bool);
 }
 
 // Kurze Meldung unten in der Mitte
@@ -283,7 +296,7 @@ component Sidebar inherits Rectangle {
 
         VerticalLayout {
             spacing: 2px;
-            for item in [{ id: "settings", label: "Einstellungen", icon: Icons.settings }]: Rectangle {
+            for item in [{ id: "feedback", label: "Feedback", icon: Icons.feedback }, { id: "settings", label: "Einstellungen", icon: Icons.settings }]: Rectangle {
                 height: 38px;
                 border-radius: 8px;
                 property <bool> active: Nav.view == item.id;
@@ -308,7 +321,11 @@ component Sidebar inherits Rectangle {
                 touch2 := TouchArea {
                     mouse-cursor: pointer;
                     clicked => {
-                        Nav.select(item.id);
+                        if (item.id == "feedback") {
+                            Feedback.open = true;
+                        } else {
+                            Nav.select(item.id);
+                        }
                     }
                 }
             }
@@ -655,6 +672,12 @@ component PlayerBar inherits Rectangle {
             spacing: 4px;
             IconButton {
                 y: (parent.height - self.height) / 2;
+                icon: Icons.group;
+                on: Nav.together-active;
+                clicked => { Nav.together-menu(self.absolute-position.x - 220px, self.absolute-position.y - 160px); }
+            }
+            IconButton {
+                y: (parent.height - self.height) / 2;
                 icon: Icons.bedtime;
                 on: Nav.sleep-active;
                 clicked => { Nav.sleep-menu(self.absolute-position.x - 200px, self.absolute-position.y - 380px); }
@@ -865,6 +888,104 @@ export component AppWindow inherits Window {
                         text: Dialog.confirm-text;
                         clicked => { Dialog.confirm(Dialog.value); }
                     }
+                }
+            }
+        }
+    }
+
+
+    // Feedback
+    if Feedback.open: Rectangle {
+        background: #00000080;
+        TouchArea { clicked => { Feedback.open = false; } }
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 480px;
+            height: flayout.preferred-height;
+            background: Theme.surface;
+            border-radius: 14px;
+            border-width: 1px;
+            border-color: Theme.border;
+            TouchArea { }
+            flayout := VerticalLayout {
+                padding: 22px;
+                spacing: 14px;
+                Text { text: "Feedback"; font-size: 18px; font-weight: 700; color: Theme.text; }
+                HorizontalLayout {
+                    spacing: 6px;
+                    alignment: start;
+                    for k in [{ id: "bug", label: "Fehler melden" }, { id: "idea", label: "Idee / Wunsch" }, { id: "other", label: "Sonstiges" }]: PillButton {
+                        primary: Feedback.kind == k.id;
+                        text: k.label;
+                        clicked => { Feedback.kind = k.id; }
+                    }
+                }
+                Rectangle {
+                    height: 140px;
+                    border-radius: 8px;
+                    background: Theme.surface-2;
+                    border-width: 1px;
+                    border-color: ftext.has-focus ? Theme.accent : Theme.border;
+                    if ftext.text == "": Text {
+                        x: 12px; y: 10px;
+                        text: "Was ist passiert oder was wünschst du dir?";
+                        color: Theme.text-dim;
+                    }
+                    ftext := TextInput {
+                        x: 12px; y: 10px;
+                        width: parent.width - 24px;
+                        height: parent.height - 20px;
+                        text <=> Feedback.text;
+                        color: Theme.text;
+                        wrap: word-wrap;
+                        single-line: false;
+                    }
+                }
+                Rectangle {
+                    height: 40px;
+                    border-radius: 8px;
+                    background: Theme.surface-2;
+                    border-width: 1px;
+                    border-color: fcontact.has-focus ? Theme.accent : Theme.border;
+                    if fcontact.text == "": Text {
+                        x: 12px;
+                        height: parent.height;
+                        vertical-alignment: center;
+                        text: "E-Mail für Rückfragen (optional)";
+                        color: Theme.text-dim;
+                    }
+                    fcontact := TextInput {
+                        x: 12px;
+                        width: parent.width - 24px;
+                        height: parent.height;
+                        vertical-alignment: center;
+                        text <=> Feedback.contact;
+                        color: Theme.text;
+                        single-line: true;
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 10px;
+                    Rectangle {
+                        width: 20px;
+                        height: 20px;
+                        y: 0;
+                        border-radius: 4px;
+                        background: Feedback.with-info ? Theme.accent : Theme.hover;
+                        TouchArea { clicked => { Feedback.with-info = !Feedback.with-info; } }
+                    }
+                    Text {
+                        text: "Wavely-Version mitschicken";
+                        color: Theme.text-dim;
+                        vertical-alignment: center;
+                    }
+                }
+                HorizontalLayout {
+                    alignment: end;
+                    spacing: 8px;
+                    PillButton { primary: false; text: "Abbrechen"; clicked => { Feedback.open = false; } }
+                    PillButton { text: "Senden"; clicked => { Feedback.send(Feedback.kind, Feedback.text, Feedback.contact, Feedback.with-info); } }
                 }
             }
         }
