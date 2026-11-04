@@ -1,0 +1,38 @@
+[package]
+name = "wavely-native"
+version = "0.17.0-native.1"
+edition = "2021"
+
+[[bin]]
+name = "wavely"
+path = "src/main.rs"
+
+[build-dependencies]
+slint-build = "1.18"
+
+[dependencies]
+# Oberfläche ohne Browser: Software-Renderer (kein Grafiktreiber-Speicher)
+slint = { version = "1.18", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-software", "accessibility"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1.54", features = ["rt-multi-thread", "macros", "process", "sync", "time", "fs"] }
+reqwest = "0.12"
+rustypipe = { path = "../src-tauri/vendor/rustypipe", features = ["userdata"] }
+rand = "0.9"
+sha1 = "0.10"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+sha2 = "0.10"
+# Audio: Dekodieren und Ausgabe
+symphonia = { version = "0.6", default-features = false, features = ["aac", "isomp4", "mp3", "flac", "mkv", "ogg", "vorbis", "wav", "pcm", "opt-simd"] }
+symphonia-adapter-opus-rs = "0.1"
+cpal = "0.18"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_UI_Shell", "Win32_System_Com"] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

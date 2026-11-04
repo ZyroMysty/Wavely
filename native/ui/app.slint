@@ -1,0 +1,544 @@
+// Hauptfenster: Seitenleiste | Inhalt | (Seitenfeld) und unten die Player-Leiste
+
+import { Theme } from "theme.slint";
+import { Icon, Icons } from "icons.slint";
+import { IconButton, SquareButton, PillButton, Slider, SearchField } from "controls.slint";
+import { ListView } from "std-widgets.slint";
+
+export { Theme }
+
+export struct TrackRow {
+    id: string,
+    title: string,
+    artist: string,
+    album: string,
+    duration: string,
+    cover: image,
+    has-cover: bool,
+}
+
+export struct NavItem {
+    id: string,
+    label: string,
+    icon: string,
+}
+
+export global Player {
+    in property <string> title;
+    in property <string> artist;
+    in property <image> cover;
+    in property <bool> has-cover;
+    in property <bool> has-track;
+    in property <bool> playing;
+    in property <bool> loading;
+    in property <string> error;
+    in property <float> position;
+    in property <float> duration;
+    in property <string> position-text: "0:00";
+    in property <string> duration-text: "0:00";
+    in-out property <float> volume: 0.6;
+    in property <bool> muted;
+    in property <bool> shuffle;
+    // "off" | "all" | "one"
+    in property <string> repeat: "off";
+    // Index des laufenden Songs in der Warteschlange
+    in property <int> queue-index: -1;
+
+    callback toggle-play();
+    callback next();
+    callback previous();
+    callback seek(float);
+    callback set-volume(float);
+    callback toggle-mute();
+    callback toggle-shuffle();
+    callback cycle-repeat();
+}
+
+export global Nav {
+    in-out property <string> view: "youtube";
+    in property <[NavItem]> items: [
+        { id: "home", label: "Startseite", icon: Icons.home },
+        { id: "local", label: "Lokale Musik", icon: Icons.folder },
+        { id: "youtube", label: "YouTube Music", icon: Icons.youtube },
+        { id: "spotify", label: "Spotify", icon: Icons.spotify },
+        { id: "soundcloud", label: "SoundCloud", icon: Icons.soundcloud },
+        { id: "offline", label: "Offline", icon: Icons.download },
+        { id: "recap", label: "Rückblick", icon: Icons.insights },
+    ];
+    in-out property <bool> collapsed;
+    in-out property <string> panel;
+}
+
+export global YouTube {
+    in-out property <string> query;
+    in property <[TrackRow]> results;
+    in property <bool> searching;
+    in property <string> message: "Suche nach Songs, Alben und Künstlern";
+    callback search(string);
+    callback play(int);
+}
+
+export global Queue {
+    in property <[TrackRow]> tracks;
+    callback jump(int);
+}
+
+component Sidebar inherits Rectangle {
+    width: Nav.collapsed ? 64px : 240px;
+    background: Theme.surface;
+
+    Rectangle {
+        x: parent.width - 1px;
+        width: 1px;
+        background: Theme.border;
+    }
+
+    VerticalLayout {
+        padding-top: 20px;
+        padding-bottom: 20px;
+        padding-left: Nav.collapsed ? 10px : 12px;
+        padding-right: Nav.collapsed ? 10px : 12px;
+        spacing: 24px;
+
+        HorizontalLayout {
+            padding-left: Nav.collapsed ? 0 : 8px;
+            spacing: 10px;
+            alignment: Nav.collapsed ? center : stretch;
+            if !Nav.collapsed: Text {
+                text: "Wavely";
+                font-size: 18px;
+                font-weight: 700;
+                color: Theme.text;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+            SquareButton {
+                size: 32px;
+                icon-size: 18px;
+                icon: Nav.collapsed ? Icons.expand : Icons.collapse;
+                clicked => {
+                    Nav.collapsed = !Nav.collapsed;
+                }
+            }
+        }
+
+        VerticalLayout {
+            spacing: 2px;
+            for item in Nav.items: Rectangle {
+                height: 38px;
+                border-radius: 8px;
+                property <bool> active: Nav.view == item.id;
+                background: active ? Theme.accent-soft : touch.has-hover ? Theme.hover : transparent;
+                HorizontalLayout {
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    spacing: 12px;
+                    alignment: Nav.collapsed ? center : start;
+                    Icon {
+                        y: (parent.height - self.height) / 2;
+                        path: item.icon;
+                        size: 18px;
+                        color: active ? Theme.accent : touch.has-hover ? Theme.text : Theme.text-dim;
+                    }
+                    if !Nav.collapsed: Text {
+                        text: item.label;
+                        vertical-alignment: center;
+                        color: active ? Theme.accent : touch.has-hover ? Theme.text : Theme.text-dim;
+                    }
+                }
+                touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        Nav.view = item.id;
+                    }
+                }
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        VerticalLayout {
+            spacing: 2px;
+            for item in [{ id: "settings", label: "Einstellungen", icon: Icons.settings }]: Rectangle {
+                height: 38px;
+                border-radius: 8px;
+                property <bool> active: Nav.view == item.id;
+                background: active ? Theme.accent-soft : touch2.has-hover ? Theme.hover : transparent;
+                HorizontalLayout {
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    spacing: 12px;
+                    alignment: Nav.collapsed ? center : start;
+                    Icon {
+                        y: (parent.height - self.height) / 2;
+                        path: item.icon;
+                        size: 18px;
+                        color: active ? Theme.accent : touch2.has-hover ? Theme.text : Theme.text-dim;
+                    }
+                    if !Nav.collapsed: Text {
+                        text: item.label;
+                        vertical-alignment: center;
+                        color: active ? Theme.accent : touch2.has-hover ? Theme.text : Theme.text-dim;
+                    }
+                }
+                touch2 := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        Nav.view = item.id;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Kleines Cover mit Platzhalter
+component Cover inherits Rectangle {
+    in property <image> source;
+    in property <bool> has-image;
+    in property <length> size: 40px;
+    width: size;
+    height: size;
+    border-radius: 6px;
+    background: Theme.surface-2;
+    clip: true;
+    if has-image: Image {
+        width: parent.width;
+        height: parent.height;
+        source: root.source;
+        image-fit: cover;
+    }
+    if !has-image: Icon {
+        path: Icons.music;
+        size: root.size * 0.45;
+        color: Theme.text-dim;
+    }
+}
+
+// Songliste: nur sichtbare Zeilen werden gebaut (ListView)
+component TrackList inherits Rectangle {
+    in property <[TrackRow]> tracks;
+    in property <int> current: -1;
+    callback play(int);
+
+    ListView {
+        for track[i] in root.tracks: Rectangle {
+            height: 56px;
+            border-radius: 8px;
+            background: row-touch.has-hover ? Theme.surface-2 : transparent;
+            row-touch := TouchArea {
+                double-clicked => {
+                    root.play(i);
+                }
+            }
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                spacing: 14px;
+                Text {
+                    width: 24px;
+                    text: i + 1;
+                    color: i == root.current ? Theme.accent : Theme.text-dim;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                    font-size: 13px;
+                }
+                Cover {
+                    y: (parent.height - self.height) / 2;
+                    source: track.cover;
+                    has-image: track.has-cover;
+                }
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 2;
+                    Text {
+                        text: track.title;
+                        color: i == root.current ? Theme.accent : Theme.text;
+                        overflow: elide;
+                        font-weight: 500;
+                    }
+                    Text {
+                        text: track.artist;
+                        color: Theme.text-dim;
+                        overflow: elide;
+                        font-size: 13px;
+                    }
+                }
+                Text {
+                    horizontal-stretch: 1;
+                    text: track.album;
+                    color: Theme.text-dim;
+                    overflow: elide;
+                    vertical-alignment: center;
+                    font-size: 13px;
+                }
+                Text {
+                    width: 48px;
+                    text: track.duration;
+                    color: Theme.text-dim;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                    font-size: 13px;
+                }
+            }
+        }
+    }
+}
+
+component YouTubeView inherits Rectangle {
+    VerticalLayout {
+        padding: 28px;
+        spacing: 20px;
+        HorizontalLayout {
+            spacing: 16px;
+            Text {
+                text: "YouTube Music";
+                font-size: 28px;
+                font-weight: 700;
+                color: Theme.text;
+                vertical-alignment: center;
+            }
+            Rectangle { horizontal-stretch: 1; }
+            SearchField {
+                width: 280px;
+                text <=> YouTube.query;
+                placeholder: "Songs suchen";
+                accepted(q) => {
+                    YouTube.search(q);
+                }
+            }
+        }
+        if YouTube.searching || YouTube.results.length == 0: Text {
+            text: YouTube.searching ? "Suche läuft…" : YouTube.message;
+            color: Theme.text-dim;
+        }
+        TrackList {
+            vertical-stretch: 1;
+            tracks: YouTube.results;
+            play(i) => {
+                YouTube.play(i);
+            }
+        }
+    }
+}
+
+component Placeholder inherits Rectangle {
+    in property <string> title;
+    VerticalLayout {
+        padding: 28px;
+        spacing: 12px;
+        alignment: start;
+        Text {
+            text: root.title;
+            font-size: 28px;
+            font-weight: 700;
+            color: Theme.text;
+        }
+        Text {
+            text: "Kommt in einer der nächsten nativen Testversionen.";
+            color: Theme.text-dim;
+        }
+    }
+}
+
+component QueuePanel inherits Rectangle {
+    width: 340px;
+    background: Theme.surface;
+    Rectangle {
+        x: 0;
+        width: 1px;
+        background: Theme.border;
+    }
+    VerticalLayout {
+        padding: 20px;
+        spacing: 12px;
+        Text {
+            text: "Warteschlange";
+            font-size: 18px;
+            font-weight: 700;
+            color: Theme.text;
+        }
+        TrackList {
+            vertical-stretch: 1;
+            tracks: Queue.tracks;
+            current: Player.queue-index;
+            play(i) => {
+                Queue.jump(i);
+            }
+        }
+    }
+}
+
+component PlayerBar inherits Rectangle {
+    height: 88px;
+    background: Theme.surface;
+    Rectangle {
+        y: 0;
+        height: 1px;
+        background: Theme.border;
+    }
+
+    HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 16px;
+
+        // Links: Cover und Titel
+        HorizontalLayout {
+            horizontal-stretch: 1;
+            min-width: 140px;
+            spacing: 14px;
+            if Player.has-track: Cover {
+                y: (parent.height - self.height) / 2;
+                size: 56px;
+                source: Player.cover;
+                has-image: Player.has-cover;
+            }
+            VerticalLayout {
+                alignment: center;
+                Text {
+                    text: Player.title;
+                    color: Theme.text;
+                    font-weight: 600;
+                    overflow: elide;
+                }
+                Text {
+                    text: Player.error != "" ? Player.error : Player.loading ? "Lädt…" : Player.artist;
+                    color: Player.error != "" ? Theme.accent : Theme.text-dim;
+                    font-size: 13px;
+                    overflow: elide;
+                }
+            }
+        }
+
+        // Mitte: Steuerung und Fortschritt
+        VerticalLayout {
+            horizontal-stretch: 1.5;
+            min-width: 240px;
+            alignment: center;
+            spacing: 6px;
+            HorizontalLayout {
+                alignment: center;
+                spacing: 14px;
+                IconButton {
+                    y: (parent.height - self.height) / 2;
+                    icon: Icons.shuffle;
+                    icon-size: 18px;
+                    on: Player.shuffle;
+                    clicked => { Player.toggle-shuffle(); }
+                }
+                IconButton {
+                    y: (parent.height - self.height) / 2;
+                    icon: Icons.previous;
+                    icon-size: 22px;
+                    enabled: Player.has-track;
+                    clicked => { Player.previous(); }
+                }
+                IconButton {
+                    icon: Player.playing ? Icons.pause : Icons.play;
+                    icon-size: 22px;
+                    size: 40px;
+                    filled: true;
+                    enabled: Player.has-track;
+                    clicked => { Player.toggle-play(); }
+                }
+                IconButton {
+                    y: (parent.height - self.height) / 2;
+                    icon: Icons.next;
+                    icon-size: 22px;
+                    enabled: Player.has-track;
+                    clicked => { Player.next(); }
+                }
+                IconButton {
+                    y: (parent.height - self.height) / 2;
+                    icon: Player.repeat == "one" ? Icons.repeat-one : Icons.repeat;
+                    icon-size: 18px;
+                    on: Player.repeat != "off";
+                    clicked => { Player.cycle-repeat(); }
+                }
+            }
+            HorizontalLayout {
+                spacing: 10px;
+                property <bool> dragging: seek.dragging;
+                Text {
+                    width: 40px;
+                    text: Player.position-text;
+                    color: Theme.text-dim;
+                    font-size: 12px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                seek := Slider {
+                    maximum: Player.duration;
+                    value: Player.position;
+                    enabled: Player.has-track;
+                    released(v) => { Player.seek(v); }
+                }
+                Text {
+                    width: 40px;
+                    text: Player.duration-text;
+                    color: Theme.text-dim;
+                    font-size: 12px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        // Rechts: Seitenfelder und Lautstärke
+        HorizontalLayout {
+            alignment: end;
+            spacing: 4px;
+            IconButton {
+                y: (parent.height - self.height) / 2;
+                icon: Icons.queue;
+                on: Nav.panel == "queue";
+                clicked => { Nav.panel = Nav.panel == "queue" ? "" : "queue"; }
+            }
+            IconButton {
+                y: (parent.height - self.height) / 2;
+                icon: Player.muted || Player.volume == 0 ? Icons.mute : Icons.volume;
+                clicked => { Player.toggle-mute(); }
+            }
+            Slider {
+                y: (parent.height - self.height) / 2;
+                width: 96px;
+                maximum: 1;
+                value: Player.muted ? 0 : Player.volume;
+                changed(v) => { Player.set-volume(v); }
+            }
+        }
+    }
+}
+
+export component AppWindow inherits Window {
+    title: "Wavely";
+    icon: @image-url("../../src-tauri/icons/128x128.png");
+    preferred-width: 1280px;
+    preferred-height: 800px;
+    min-width: 800px;
+    min-height: 560px;
+    background: Theme.bg;
+    default-font-family: "Segoe UI Variable Text";
+    default-font-size: 14px;
+
+    VerticalLayout {
+        HorizontalLayout {
+            vertical-stretch: 1;
+            Sidebar { }
+            Rectangle {
+                horizontal-stretch: 1;
+                if Nav.view == "youtube": YouTubeView { }
+                if Nav.view == "home": Placeholder { title: "Startseite"; }
+                if Nav.view == "local": Placeholder { title: "Lokale Musik"; }
+                if Nav.view == "spotify": Placeholder { title: "Spotify"; }
+                if Nav.view == "soundcloud": Placeholder { title: "SoundCloud"; }
+                if Nav.view == "offline": Placeholder { title: "Offline"; }
+                if Nav.view == "recap": Placeholder { title: "Rückblick"; }
+                if Nav.view == "settings": Placeholder { title: "Einstellungen"; }
+            }
+            if Nav.panel == "queue": QueuePanel { }
+        }
+        PlayerBar { }
+    }
+}

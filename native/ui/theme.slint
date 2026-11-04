@@ -1,0 +1,18 @@
+// Design-Tokens wie in der bisherigen Wavely (app.css)
+
+export global Theme {
+    in-out property <bool> dark: true;
+    in-out property <color> accent: #ff4f7b;
+
+    out property <color> bg: dark ? #0e0e11 : #f4f4f7;
+    out property <color> surface: dark ? #16161b : #ffffff;
+    out property <color> surface-2: dark ? #1e1e25 : #ececf1;
+    out property <color> hover: dark ? #26262f : #e0e0e8;
+    out property <color> border: dark ? #2a2a34 : #e1e1e8;
+    out property <color> text: dark ? #f3f3f6 : #16161c;
+    out property <color> text-dim: dark ? #9b9ba8 : #66667a;
+    out property <color> accent-soft: accent.with-alpha(0.14);
+
+    out property <length> radius: 10px;
+    out property <length> font-size: 14px;
+}

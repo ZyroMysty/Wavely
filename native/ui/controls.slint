@@ -1,0 +1,191 @@
+// Gemeinsame Bedienelemente (wie .primary, .secondary, .ghost, Schieberegler in app.css)
+
+import { Theme } from "theme.slint";
+import { Icon, Icons } from "icons.slint";
+
+// Runder Symbol-Knopf (z. B. in der Player-Leiste)
+export component IconButton inherits Rectangle {
+    in property <string> icon;
+    in property <length> icon-size: 20px;
+    in property <length> size: 32px;
+    in property <bool> on;
+    in property <bool> enabled: true;
+    in property <string> tooltip;
+    in property <bool> filled;
+    callback clicked;
+
+    width: size;
+    height: size;
+    border-radius: size / 2;
+    background: filled ? Theme.text : transparent;
+    opacity: enabled ? 1 : 0.4;
+
+    Icon {
+        path: icon;
+        size: icon-size;
+        color: filled ? Theme.bg : on ? Theme.accent : touch.has-hover && enabled ? Theme.text : Theme.text-dim;
+    }
+
+    touch := TouchArea {
+        mouse-cursor: enabled ? pointer : default;
+        clicked => {
+            if (enabled) {
+                root.clicked();
+            }
+        }
+    }
+}
+
+// Rechteckiger Symbol-Knopf mit Hover-Fläche (Seitenleiste)
+export component SquareButton inherits Rectangle {
+    in property <string> icon;
+    in property <length> icon-size: 16px;
+    in property <length> size: 26px;
+    callback clicked;
+    width: size;
+    height: size;
+    border-radius: 6px;
+    background: touch.has-hover ? Theme.hover : transparent;
+    Icon {
+        path: icon;
+        size: icon-size;
+        color: touch.has-hover ? Theme.text : Theme.text-dim;
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component PillButton inherits Rectangle {
+    in property <string> text;
+    in property <string> icon;
+    in property <bool> primary: true;
+    callback clicked;
+    height: 38px;
+    border-radius: 19px;
+    background: primary ? (touch.has-hover ? Theme.accent.brighter(0.1) : Theme.accent) : (touch.has-hover ? Theme.hover : Theme.surface-2);
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 6px;
+        alignment: center;
+        if icon != "": Icon {
+            y: (parent.height - self.height) / 2;
+            path: icon;
+            size: 18px;
+            color: primary ? #fff : Theme.text;
+        }
+        Text {
+            text: root.text;
+            vertical-alignment: center;
+            color: primary ? #fff : Theme.text;
+            font-weight: primary ? 600 : 400;
+        }
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// Dünner Schieberegler (Fortschritt & Lautstärke)
+export component Slider inherits Rectangle {
+    in property <float> maximum: 1;
+    in-out property <float> value;
+    in property <bool> enabled: true;
+    // Während des Ziehens (für die Zeitanzeige)
+    out property <bool> dragging: touch.pressed;
+    callback changed(float);
+    callback released(float);
+
+    height: 16px;
+    property <float> shown: touch.pressed ? drag-value : value;
+    property <float> drag-value;
+    property <float> ratio: maximum > 0 ? max(0, min(1, shown / maximum)) : 0;
+
+    Rectangle {
+        y: (parent.height - self.height) / 2;
+        height: 4px;
+        border-radius: 2px;
+        background: Theme.hover;
+        Rectangle {
+            x: 0;
+            width: parent.width * ratio;
+            height: parent.height;
+            border-radius: 2px;
+            background: touch.has-hover || touch.pressed ? Theme.accent : Theme.text;
+        }
+    }
+    if (touch.has-hover || touch.pressed) && enabled: Rectangle {
+        x: parent.width * ratio - 6px;
+        y: (parent.height - 12px) / 2;
+        width: 12px;
+        height: 12px;
+        border-radius: 6px;
+        background: Theme.text;
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) {
+                root.drag-value = max(0, min(1, self.mouse-x / self.width)) * maximum;
+                root.changed(root.drag-value);
+            }
+            if (e.kind == PointerEventKind.up) {
+                root.value = root.drag-value;
+                root.released(root.drag-value);
+            }
+        }
+        moved => {
+            if (self.pressed) {
+                root.drag-value = max(0, min(1, self.mouse-x / self.width)) * maximum;
+                root.changed(root.drag-value);
+            }
+        }
+    }
+}
+
+// Suchfeld wie .search
+export component SearchField inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder: "Suchen";
+    callback accepted(string);
+    height: 38px;
+    border-radius: 19px;
+    background: Theme.surface-2;
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 8px;
+        Icon {
+            y: (parent.height - self.height) / 2;
+            path: Icons.search;
+            size: 18px;
+            color: Theme.text-dim;
+        }
+        Rectangle {
+            if input.text == "": Text {
+                x: 0;
+                text: root.placeholder;
+                color: Theme.text-dim;
+                vertical-alignment: center;
+                height: parent.height;
+            }
+            input := TextInput {
+                text <=> root.text;
+                color: Theme.text;
+                vertical-alignment: center;
+                single-line: true;
+                accepted => {
+                    root.accepted(self.text);
+                }
+            }
+        }
+    }
+}
