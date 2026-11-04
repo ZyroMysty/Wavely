@@ -102,6 +102,8 @@ pub struct State {
     pub original: Vec<Track>,
     /// Fehler hintereinander
     pub error_streak: u32,
+    /// Ab hier stehen Autoplay-Vorschläge in der Warteschlange
+    pub auto_from: Option<usize>,
 }
 
 impl State {

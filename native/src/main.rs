@@ -5,10 +5,14 @@ mod audio;
 mod covers;
 mod host;
 mod icon;
+mod menu;
+mod nav;
+mod playlists;
 mod pages;
 mod player;
 mod services;
 mod store;
+mod wavely;
 mod youtube;
 
 use std::{
@@ -19,7 +23,7 @@ use std::{
     },
 };
 
-use slint::{ComponentHandle, ModelRc, SharedString, VecModel, Weak};
+use slint::{ComponentHandle, ModelRc, VecModel, Weak};
 
 use audio::{Command, Engine, Event};
 use player::{Repeat, State, Track};
@@ -35,13 +39,26 @@ pub struct App {
     pub ytm: Arc<Ytm>,
     pub state: Mutex<State>,
     pub covers: covers::Covers,
-    /// Seitenverlauf in YouTube Music (letzte = aktuelle Seite)
-    pub yt_stack: Mutex<Vec<youtube::YtPage>>,
+    /// Gewählte Ansicht der Seitenleiste
+    pub view: Mutex<String>,
+    /// Seitenverlauf je Ansicht (letzte = aktuelle Seite)
+    pub stacks: Mutex<std::collections::HashMap<String, Vec<nav::PageKind>>>,
     /// Gerade angezeigte Seite (für Klicks)
     pub page: Mutex<pages::PageData>,
     /// Zählt Seitenwechsel: verspätete Ergebnisse alter Seiten werden verworfen
     pub page_token: AtomicU64,
     pub yt_logged_in: AtomicBool,
+    /// Gelikte YouTube-Songs (Video-IDs)
+    pub liked: Mutex<std::collections::HashSet<String>>,
+    pub playlists: Mutex<playlists::Playlists>,
+    /// Charts für die Startseite
+    pub charts: Mutex<Option<services::ytm::YtHome>>,
+    pub charts_loading: AtomicBool,
+    pub menu: Mutex<Option<menu::MenuContext>>,
+    pub toast_token: AtomicU64,
+    /// Namensdialog: umzubenennende Playlist (None = neue) und Songs für eine neue Playlist
+    pub dialog_target: Mutex<Option<String>>,
+    pub dialog_tracks: Mutex<Vec<Track>>,
     pub store: store::Store,
     pub settings: Mutex<store::Settings>,
     pub history: Mutex<Vec<store::HistoryEntry>>,
@@ -102,6 +119,15 @@ impl App {
                 t.and_then(|t| t.artwork_url.clone()),
             )
         };
+        let (can_like, liked) = {
+            let s = self.state.lock().unwrap();
+            match s.current() {
+                Some(t) if t.source == "youtube" && self.yt_logged_in.load(Ordering::Relaxed) => {
+                    (true, self.liked.lock().unwrap().contains(&t.id))
+                }
+                _ => (false, false),
+            }
+        };
         let app = self.clone();
         self.ui(move |ui| {
             let p = ui.global::<Player>();
@@ -123,6 +149,8 @@ impl App {
             }
             .into());
             p.set_queue_index(index);
+            p.set_can_like(can_like);
+            p.set_liked(liked);
             match art {
                 Some(url) => {
                     let weak = app.ui.clone();
@@ -154,6 +182,7 @@ impl App {
         {
             let mut s = self.state.lock().unwrap();
             s.original = tracks.clone();
+            s.auto_from = None;
             if s.shuffle {
                 let first = tracks[index].clone();
                 let rest: Vec<Track> = tracks.into_iter().enumerate().filter(|(i, _)| *i != index).map(|(_, t)| t).collect();
@@ -340,6 +369,9 @@ impl App {
                 let fresh: Vec<Track> = radio.into_iter().map(Track::from).filter(|t| !known.contains(&t.id)).take(20).collect();
                 if fresh.is_empty() {
                     return;
+                }
+                if s.auto_from.is_none() {
+                    s.auto_from = Some(s.queue.len());
                 }
                 s.queue.extend(fresh);
             }
@@ -549,174 +581,6 @@ impl App {
         self.store.save_history(&history);
     }
 
-    // --- Seiten ------------------------------------------------------------
-
-    /// Neue Seite in YouTube Music öffnen (mit „Zurück“)
-    pub fn yt_open(self: &Arc<Self>, page: youtube::YtPage, replace_all: bool) {
-        {
-            let mut stack = self.yt_stack.lock().unwrap();
-            if replace_all {
-                stack.clear();
-            }
-            stack.push(page);
-        }
-        self.yt_render();
-    }
-
-    pub fn yt_back(self: &Arc<Self>) {
-        {
-            let mut stack = self.yt_stack.lock().unwrap();
-            if stack.len() > 1 {
-                stack.pop();
-            }
-        }
-        self.yt_render();
-    }
-
-    /// Aktuelle Seite laden und anzeigen
-    pub fn yt_render(self: &Arc<Self>) {
-        let (page, depth) = {
-            let stack = self.yt_stack.lock().unwrap();
-            (stack.last().cloned().unwrap_or(youtube::YtPage::Library), stack.len())
-        };
-        let token = self.page_token.fetch_add(1, Ordering::SeqCst) + 1;
-        self.set_page(youtube::loading(&page), depth > 1, true);
-        let app = self.clone();
-        self.rt.spawn(async move {
-            let logged_in = app.yt_logged_in.load(Ordering::Relaxed);
-            let data = youtube::build(&app, &page, logged_in).await;
-            if app.page_token.load(Ordering::SeqCst) == token {
-                app.set_page(data, depth > 1, false);
-            }
-        });
-    }
-
-    fn set_page(self: &Arc<Self>, data: pages::PageData, can_go_back: bool, loading: bool) {
-        *self.page.lock().unwrap() = data.clone();
-        let app = self.clone();
-        self.ui(move |ui| {
-            let page = ui.global::<Page>();
-            page.set_can_go_back(can_go_back);
-            page.set_loading(loading);
-            pages::show(&app, ui, &data);
-        });
-    }
-
-    fn page_play(self: &Arc<Self>, row: usize) {
-        let (tracks, index) = self.page.lock().unwrap().section_tracks(row);
-        if !tracks.is_empty() {
-            self.play_list(tracks, index);
-        }
-    }
-
-    fn page_card(self: &Arc<Self>, row: usize, card: usize) {
-        let target = {
-            let page = self.page.lock().unwrap();
-            page.rows.get(row).and_then(|r| r.cards.get(card)).map(|c| c.target.clone())
-        };
-        match target {
-            Some(pages::Target::Collection { kind, id, title, art }) => {
-                self.yt_open(youtube::YtPage::Collection { kind, id, title, art }, false)
-            }
-            Some(pages::Target::Artist { id, name }) => self.yt_open(youtube::YtPage::Artist { id, name }, false),
-            Some(pages::Target::Action(id)) => self.page_action(&id),
-            None => {}
-        }
-    }
-
-    fn page_action(self: &Arc<Self>, action: &str) {
-        let tracks = self.page.lock().unwrap().tracks.clone();
-        match action {
-            "play" | "shuffle" if !tracks.is_empty() => {
-                let shuffle = action == "shuffle";
-                if self.state.lock().unwrap().shuffle != shuffle {
-                    self.toggle_shuffle();
-                }
-                let start = if shuffle { rand::random_range(0..tracks.len()) } else { 0 };
-                self.play_list(tracks, start);
-            }
-            "all-songs" => {
-                let current = self.yt_stack.lock().unwrap().last().cloned();
-                if let Some(youtube::YtPage::Artist { id, .. }) = current {
-                    let app = self.clone();
-                    self.rt.spawn(async move {
-                        if let Some(page) = youtube::all_songs_target(&app, &id).await {
-                            let _ = slint::invoke_from_event_loop(move || app.yt_open(page, false));
-                        }
-                    });
-                }
-            }
-            _ => {}
-        }
-    }
-
-    /// Rechtsklick auf einen Song: vorerst „als Nächstes spielen“
-    fn page_track_menu(self: &Arc<Self>, row: usize) {
-        let track = {
-            let page = self.page.lock().unwrap();
-            page.rows.get(row).and_then(|r| r.track).and_then(|t| page.tracks.get(t).cloned())
-        };
-        if let Some(track) = track {
-            self.play_next(track);
-        }
-    }
-
-    pub fn play_next(self: &Arc<Self>, track: Track) {
-        let empty = {
-            let mut s = self.state.lock().unwrap();
-            match s.index {
-                Some(i) => {
-                    s.queue.insert(i + 1, track.clone());
-                    s.original.push(track.clone());
-                    false
-                }
-                None => true,
-            }
-        };
-        if empty {
-            self.play_list(vec![track], 0);
-        } else {
-            self.sync_queue();
-        }
-    }
-
-    fn remove_from_queue(self: &Arc<Self>, index: usize) {
-        {
-            let mut s = self.state.lock().unwrap();
-            if Some(index) == s.index || index >= s.queue.len() {
-                return;
-            }
-            s.queue.remove(index);
-            if let Some(i) = s.index {
-                if index < i {
-                    s.index = Some(i - 1);
-                }
-            }
-        }
-        self.sync_queue();
-        self.sync_player();
-    }
-
-    fn yt_init(self: &Arc<Self>) {
-        let app = self.clone();
-        self.rt.spawn(async move {
-            let logged_in = services::ytm::ytm_status(&app.ytm).await.unwrap_or(false);
-            app.yt_logged_in.store(logged_in, Ordering::Relaxed);
-            app.ui(move |ui| ui.global::<YouTube>().set_status(if logged_in { "loggedIn" } else { "loggedOut" }.into()));
-            let a = app.clone();
-            let _ = slint::invoke_from_event_loop(move || {
-                if a.yt_stack.lock().unwrap().is_empty() {
-                    a.yt_open(youtube::YtPage::Library, true);
-                }
-            });
-            if logged_in {
-                if let Ok(account) = services::ytm::ytm_account(&app.ytm).await {
-                    let name = account.name.unwrap_or_default();
-                    app.ui(move |ui| ui.global::<YouTube>().set_account_name(name.into()));
-                }
-            }
-        });
-    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -746,11 +610,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ytm,
         state: Mutex::new(State { volume: settings.volume, ..Default::default() }),
         covers: covers::Covers::default(),
-        yt_stack: Mutex::new(Vec::new()),
+        view: Mutex::new("home".into()),
+        stacks: Mutex::new(Default::default()),
+        liked: Mutex::new(Default::default()),
+        playlists: Mutex::new(playlists::Playlists::load(&store)),
+        charts: Mutex::new(None),
+        charts_loading: AtomicBool::new(false),
+        menu: Mutex::new(None),
+        toast_token: AtomicU64::new(0),
+        dialog_target: Mutex::new(None),
+        dialog_tracks: Mutex::new(Vec::new()),
         page: Mutex::new(Default::default()),
         page_token: AtomicU64::new(0),
         yt_logged_in: AtomicBool::new(false),
-        history: Mutex::new(store.history()),
+        history: Mutex::new(load_history(&store)),
         settings: Mutex::new(settings.clone()),
         store,
         listening: Mutex::new(None),
@@ -760,10 +633,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     app.engine.set_gain(player::gain(settings.volume, false));
     app.apply_appearance();
     app.restore_resume();
-    // Tests laufen stumm
-    if std::env::var("WAVELY_TEST_PLAY").is_ok() {
+    // Tests laufen stumm und außerhalb des sichtbaren Bildschirms (stören niemanden)
+    if std::env::var("WAVELY_TEST_PLAY").is_ok() || std::env::var("WAVELY_TEST_STEPS").is_ok() {
         app.state.lock().unwrap().muted = true;
         app.engine.set_gain(0.0);
+        ui.window().set_position(slint::PhysicalPosition::new(-20000, 0));
+        let weak = ui.as_weak();
+        slint::Timer::single_shot(std::time::Duration::from_millis(1), move || {
+            if let Some(ui) = weak.upgrade() {
+                ui.window().set_position(slint::PhysicalPosition::new(-20000, 0));
+            }
+        });
     }
 
     let p = ui.global::<Player>();
@@ -792,16 +672,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             return;
         }
         // Neue Suche ersetzt eine angezeigte Suche
-        let on_search = matches!(a.yt_stack.lock().unwrap().last(), Some(youtube::YtPage::Search(_)));
-        if on_search {
-            a.yt_stack.lock().unwrap().pop();
+        let page = nav::PageKind::Yt(youtube::YtPage::Search(q));
+        if matches!(a.current_page(), Some(nav::PageKind::Yt(youtube::YtPage::Search(_)))) {
+            a.replace_top(page);
+        } else {
+            a.open(page);
         }
-        a.yt_open(youtube::YtPage::Search(q), false);
     });
 
     let pg = ui.global::<Page>();
     let a = app.clone();
-    pg.on_back(move || a.yt_back());
+    pg.on_back(move || a.back());
     let a = app.clone();
     pg.on_play(move |row| a.page_play(row as usize));
     let a = app.clone();
@@ -809,13 +690,60 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let a = app.clone();
     pg.on_action(move |id| a.page_action(&id));
     let a = app.clone();
-    pg.on_track_menu(move |row| a.page_track_menu(row as usize));
+    pg.on_track_menu(move |row, x, y| {
+        let Some((track, index)) = a.page_track(row as usize) else { return };
+        let playlist = match a.current_page() {
+            Some(nav::PageKind::Playlist(id)) => Some((id, index)),
+            _ => None,
+        };
+        a.open_track_menu(menu::MenuContext { track, queue_index: None, playlist }, x, y);
+    });
 
     let q = ui.global::<Queue>();
     let a = app.clone();
     q.on_jump(move |i| a.load(i as usize, 0.0));
     let a = app.clone();
-    q.on_remove(move |i| a.remove_from_queue(i as usize));
+    q.on_menu(move |i, x, y| {
+        let track = a.state.lock().unwrap().queue.get(i as usize).cloned();
+        if let Some(track) = track {
+            a.open_track_menu(menu::MenuContext { track, queue_index: Some(i as usize), playlist: None }, x, y);
+        }
+    });
+
+    let m = ui.global::<Menu>();
+    let a = app.clone();
+    m.on_pick(move |id| a.menu_pick(&id));
+    let a = app.clone();
+    m.on_close(move || a.close_menu());
+
+    let d = ui.global::<Dialog>();
+    let a = app.clone();
+    d.on_confirm(move |value| a.dialog_confirm(value.to_string()));
+    let a = app.clone();
+    d.on_cancel(move || a.ui(|ui| ui.global::<Dialog>().set_open(false)));
+
+    let n = ui.global::<Nav>();
+    let a = app.clone();
+    n.on_select(move |view| a.show_view(&view));
+    let a = app.clone();
+    n.on_open_playlist(move |id| a.open(nav::PageKind::Playlist(id.to_string())));
+    let a = app.clone();
+    n.on_new_playlist(move || {
+        a.dialog_tracks.lock().unwrap().clear();
+        a.ask_playlist_name(None);
+    });
+
+    let a = app.clone();
+    p.on_toggle_like(move || {
+        let track = a.state.lock().unwrap().current().cloned();
+        if let Some(track) = track {
+            a.toggle_like(track);
+        }
+    });
+
+    app.playlists_changed();
+    let start_view = app.settings.lock().unwrap().start_view.clone();
+    app.show_view(if start_view.is_empty() { "home" } else { &start_view });
     app.yt_init();
 
 
@@ -825,7 +753,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if let Ok(query) = std::env::var("WAVELY_TEST_PLAY") {
         ui.global::<YouTube>().set_query(query.clone().into());
-        app.yt_open(youtube::YtPage::Search(query), false);
+        app.yt_open(youtube::YtPage::Search(query));
     }
 
     if let Ok(steps) = std::env::var("WAVELY_TEST_STEPS") {
@@ -866,12 +794,27 @@ fn run_test_steps(app: Arc<App>, steps: String) {
             "card" if nums.len() == 2 => app.page_card(nums[0], nums[1]),
             "play" if !nums.is_empty() => app.page_play(nums[0]),
             "action" => app.page_action(arg),
-            "back" => app.yt_back(),
-            "view" => {
-                if let Some(ui) = app.ui.upgrade() {
-                    ui.global::<Nav>().set_view(arg.into());
+            "back" => app.back(),
+            "view" => app.show_view(arg),
+            "menu" if !nums.is_empty() => {
+                if let Some((track, _)) = app.page_track(nums[0]) {
+                    app.open_track_menu(menu::MenuContext { track, queue_index: None, playlist: None }, 600.0, 300.0);
                 }
             }
+            "pick" => app.menu_pick(arg),
+            // Bild der Oberfläche speichern (geht auch, wenn das Fenster außerhalb des Bildschirms liegt)
+            "shot" => {
+                if let Some(ui) = app.ui.upgrade() {
+                    match ui.window().take_snapshot() {
+                        Ok(pixels) => {
+                            let _ = image::RgbaImage::from_raw(pixels.width(), pixels.height(), pixels.as_bytes().to_vec())
+                                .map(|img| img.save(arg));
+                        }
+                        Err(e) => eprintln!("[test] Bild fehlgeschlagen: {e}"),
+                    }
+                }
+            }
+            "confirm" => app.dialog_confirm(arg.to_string()),
             "panel" => {
                 if let Some(ui) = app.ui.upgrade() {
                     ui.global::<Nav>().set_panel(arg.into());
@@ -898,4 +841,33 @@ pub fn parse_hex(hex: &str) -> Option<slint::Color> {
     }
     let n = u32::from_str_radix(hex, 16).ok()?;
     Some(slint::Color::from_rgb_u8((n >> 16) as u8, (n >> 8) as u8, n as u8))
+}
+
+/// Verlauf laden; beim ersten Start aus der Hörstatistik der bisherigen Wavely aufbauen
+fn load_history(store: &store::Store) -> Vec<store::HistoryEntry> {
+    let history = store.history();
+    if !history.is_empty() {
+        return history;
+    }
+    let mut plays = store.load_plays(0);
+    plays.sort_by_key(|p| std::cmp::Reverse(p["t"].as_u64().unwrap_or(0)));
+    let history: Vec<store::HistoryEntry> = plays
+        .into_iter()
+        .take(store::MAX_HISTORY)
+        .map(|p| store::HistoryEntry {
+            played_at: p["t"].as_u64().unwrap_or(0),
+            track: Track {
+                source: p["src"].as_str().unwrap_or("youtube").into(),
+                id: p["id"].as_str().map(str::to_string).unwrap_or_else(|| p["id"].to_string()),
+                title: p["title"].as_str().unwrap_or("").into(),
+                artist: p["artist"].as_str().map(str::to_string),
+                album: p["album"].as_str().map(str::to_string),
+                artwork_url: p["art"].as_str().map(str::to_string),
+                duration: p["d"].as_f64().unwrap_or(0.0),
+                ..Default::default()
+            },
+        })
+        .collect();
+    store.save_history(&history);
+    history
 }

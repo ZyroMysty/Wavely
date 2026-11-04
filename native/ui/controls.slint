@@ -12,6 +12,7 @@ export component IconButton inherits Rectangle {
     in property <bool> enabled: true;
     in property <string> tooltip;
     in property <bool> filled;
+    out property <bool> has-hover: touch.has-hover;
     callback clicked;
 
     width: size;

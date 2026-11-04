@@ -49,7 +49,8 @@ export component TrackLine inherits Rectangle {
     in property <bool> current;
     in property <bool> show-album: true;
     callback play();
-    callback menu();
+    // Position (im Fenster) für das Menü
+    callback menu(length, length);
     height: 56px;
     border-radius: 8px;
     background: touch.has-hover ? Theme.surface-2 : transparent;
@@ -59,7 +60,7 @@ export component TrackLine inherits Rectangle {
         }
         pointer-event(e) => {
             if (e.kind == PointerEventKind.down && e.button == PointerEventButton.right) {
-                root.menu();
+                root.menu(self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
             }
         }
     }
@@ -158,11 +159,11 @@ export component TrackLine inherits Rectangle {
         }
         IconButton {
             y: (parent.height - self.height) / 2;
-            opacity: touch.has-hover ? 1 : 0;
-            icon: Icons.queue;
+            opacity: touch.has-hover || self.has-hover ? 1 : 0;
+            icon: "M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z";
             icon-size: 18px;
             clicked => {
-                root.menu();
+                root.menu(self.absolute-position.x, self.absolute-position.y + self.height);
             }
         }
     }
@@ -249,7 +250,7 @@ export global Page {
     callback play(int);
     callback card(int, int);
     callback action(string);
-    callback track-menu(int);
+    callback track-menu(int, length, length);
 }
 
 export component PageView inherits Rectangle {
@@ -380,8 +381,8 @@ export component PageView inherits Rectangle {
                     play => {
                         Page.play(ri);
                     }
-                    menu => {
-                        Page.track-menu(ri);
+                    menu(x, y) => {
+                        Page.track-menu(ri, x, y);
                     }
                 }
             }

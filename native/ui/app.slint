@@ -34,6 +34,9 @@ export global Player {
     in property <string> repeat: "off";
     // Index des laufenden Songs in der Warteschlange
     in property <int> queue-index: -1;
+    in property <bool> can-like;
+    in property <bool> liked;
+    callback toggle-like();
 
     callback toggle-play();
     callback next();
@@ -46,7 +49,7 @@ export global Player {
 }
 
 export global Nav {
-    in-out property <string> view: "youtube";
+    in-out property <string> view: "home";
     in property <[NavItem]> items: [
         { id: "home", label: "Startseite", icon: Icons.home },
         { id: "local", label: "Lokale Musik", icon: Icons.folder },
@@ -58,6 +61,23 @@ export global Nav {
     ];
     in-out property <bool> collapsed;
     in-out property <string> panel;
+    // Wavely-Playlists in der Seitenleiste (id, Name) und ihre Songanzahl
+    in property <[NavItem]> playlists;
+    in property <[int]> playlist-counts;
+    in property <string> current-playlist;
+    callback select(string);
+    callback open-playlist(string);
+    callback new-playlist();
+}
+
+// Eingabedialog (Playlist-Name)
+export global Dialog {
+    in property <bool> open;
+    in property <string> title;
+    in-out property <string> value;
+    in property <string> confirm-text: "OK";
+    callback confirm(string);
+    callback cancel();
 }
 
 export global YouTube {
@@ -72,8 +92,36 @@ export global YouTube {
 export global Queue {
     in property <[TrackRow]> tracks;
     callback jump(int);
-    callback remove(int);
+    callback menu(int, length, length);
 }
+
+export struct MenuItem {
+    id: string,
+    label: string,
+    icon: string,
+    // Trennlinie davor
+    separator: bool,
+    // Führt zu einem Untermenü
+    chevron: bool,
+}
+
+// Kontextmenü (über allem, Klick daneben schließt)
+export global Menu {
+    in property <bool> open;
+    in property <length> x;
+    in property <length> y;
+    in property <[MenuItem]> items;
+    callback pick(string);
+    callback close();
+}
+
+// Kurze Meldung unten in der Mitte
+export global Toast {
+    in property <string> text;
+    in property <bool> error;
+    in property <bool> visible;
+}
+
 
 component Sidebar inherits Rectangle {
     width: Nav.collapsed ? 64px : 240px;
@@ -141,13 +189,76 @@ component Sidebar inherits Rectangle {
                 touch := TouchArea {
                     mouse-cursor: pointer;
                     clicked => {
-                        Nav.view = item.id;
+                        Nav.select(item.id);
                     }
                 }
             }
         }
 
-        Rectangle { vertical-stretch: 1; }
+        if !Nav.collapsed: VerticalLayout {
+            vertical-stretch: 1;
+            spacing: 2px;
+            HorizontalLayout {
+                padding-left: 10px;
+                padding-right: 8px;
+                padding-bottom: 6px;
+                Text {
+                    text: "PLAYLISTS";
+                    font-size: 12px;
+                    font-weight: 600;
+                    letter-spacing: 0.7px;
+                    color: Theme.text-dim;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                SquareButton {
+                    icon: Icons.plus;
+                    clicked => { Nav.new-playlist(); }
+                }
+            }
+            if Nav.playlists.length == 0: Text {
+                x: 10px;
+                text: "Songs aus allen Quellen mischen";
+                color: Theme.text-dim;
+                wrap: word-wrap;
+            }
+            Flickable {
+                vertical-stretch: 1;
+                viewport-height: plist.preferred-height;
+                plist := VerticalLayout {
+                    alignment: start;
+                    for playlist[i] in Nav.playlists: Rectangle {
+                        height: 34px;
+                        border-radius: 8px;
+                        property <bool> active: Nav.view == "playlist" && Nav.current-playlist == playlist.id;
+                        background: active ? Theme.accent-soft : ptouch.has-hover ? Theme.hover : transparent;
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            padding-right: 8px;
+                            spacing: 8px;
+                            Text {
+                                horizontal-stretch: 1;
+                                text: playlist.label;
+                                color: active ? Theme.accent : Theme.text;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                            Text {
+                                text: Nav.playlist-counts[i];
+                                color: Theme.text-dim;
+                                font-size: 12px;
+                                vertical-alignment: center;
+                            }
+                        }
+                        ptouch := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { Nav.open-playlist(playlist.id); }
+                        }
+                    }
+                }
+            }
+        }
+        if Nav.collapsed: Rectangle { vertical-stretch: 1; }
 
         VerticalLayout {
             spacing: 2px;
@@ -176,7 +287,7 @@ component Sidebar inherits Rectangle {
                 touch2 := TouchArea {
                     mouse-cursor: pointer;
                     clicked => {
-                        Nav.view = item.id;
+                        Nav.select(item.id);
                     }
                 }
             }
@@ -245,6 +356,27 @@ component YouTubeView inherits Rectangle {
     }
 }
 
+component GenericView inherits Rectangle {
+    VerticalLayout {
+        HorizontalLayout {
+            padding-left: 32px;
+            padding-right: 32px;
+            padding-top: 20px;
+            height: Page.can-go-back ? 70px : 20px;
+            if Page.can-go-back: IconButton {
+                y: (parent.height - self.height) / 2;
+                size: 38px;
+                icon: Icons.previous;
+                icon-size: 18px;
+                clicked => { Page.back(); }
+            }
+        }
+        PageView {
+            vertical-stretch: 1;
+        }
+    }
+}
+
 component Placeholder inherits Rectangle {
     in property <string> title;
     VerticalLayout {
@@ -289,7 +421,7 @@ component QueuePanel inherits Rectangle {
                 current: i == Player.queue-index;
                 show-album: false;
                 play => { Queue.jump(i); }
-                menu => { Queue.remove(i); }
+                menu(x, y) => { Queue.menu(i, x, y); }
             }
         }
     }
@@ -334,6 +466,12 @@ component PlayerBar inherits Rectangle {
                     font-size: 13px;
                     overflow: elide;
                 }
+            }
+            if Player.can-like: IconButton {
+                y: (parent.height - self.height) / 2;
+                icon: Player.liked ? Icons.heart : Icons.heart-outline;
+                on: Player.liked;
+                clicked => { Player.toggle-like(); }
             }
         }
 
@@ -455,16 +593,163 @@ export component AppWindow inherits Window {
             Rectangle {
                 horizontal-stretch: 1;
                 if Nav.view == "youtube": YouTubeView { }
-                if Nav.view == "home": Placeholder { title: "Startseite"; }
-                if Nav.view == "local": Placeholder { title: "Lokale Musik"; }
-                if Nav.view == "spotify": Placeholder { title: "Spotify"; }
-                if Nav.view == "soundcloud": Placeholder { title: "SoundCloud"; }
-                if Nav.view == "offline": Placeholder { title: "Offline"; }
-                if Nav.view == "recap": Placeholder { title: "Rückblick"; }
                 if Nav.view == "settings": Placeholder { title: "Einstellungen"; }
+                if Nav.view != "youtube" && Nav.view != "settings": GenericView { }
             }
             if Nav.panel == "queue": QueuePanel { }
         }
         PlayerBar { }
+    }
+
+    // Menü-Ebene
+    if Menu.open: Rectangle {
+        TouchArea {
+            clicked => { Menu.close(); }
+            pointer-event(e) => {
+                if (e.kind == PointerEventKind.down && e.button == PointerEventButton.right) {
+                    Menu.close();
+                }
+            }
+        }
+        Rectangle {
+            property <length> w: 260px;
+            x: max(8px, min(Menu.x, root.width - w - 8px));
+            y: max(8px, min(Menu.y, root.height - self.height - 8px));
+            width: w;
+            height: list.preferred-height;
+            background: Theme.surface-2;
+            border-radius: 10px;
+            border-width: 1px;
+            border-color: Theme.border;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: #00000080;
+            list := VerticalLayout {
+                padding: 6px;
+                for item in Menu.items: VerticalLayout {
+                    if item.separator: Rectangle {
+                        height: 9px;
+                        Rectangle {
+                            height: 1px;
+                            background: Theme.border;
+                        }
+                    }
+                    Rectangle {
+                        height: 36px;
+                        border-radius: 6px;
+                        background: item-touch.has-hover ? Theme.hover : transparent;
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            padding-right: 10px;
+                            spacing: 12px;
+                            Icon {
+                                y: (parent.height - self.height) / 2;
+                                path: item.icon;
+                                size: 18px;
+                                color: Theme.text-dim;
+                            }
+                            Text {
+                                horizontal-stretch: 1;
+                                text: item.label;
+                                color: Theme.text;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                            if item.chevron: Icon {
+                                y: (parent.height - self.height) / 2;
+                                path: Icons.chevron;
+                                size: 18px;
+                                color: Theme.text-dim;
+                            }
+                        }
+                        item-touch := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { Menu.pick(item.id); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+
+    // Eingabedialog
+    if Dialog.open: Rectangle {
+        background: #00000080;
+        TouchArea {
+            clicked => { Dialog.cancel(); }
+        }
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 400px;
+            height: dlayout.preferred-height;
+            background: Theme.surface;
+            border-radius: 14px;
+            border-width: 1px;
+            border-color: Theme.border;
+            TouchArea { }
+            dlayout := VerticalLayout {
+                padding: 22px;
+                spacing: 16px;
+                Text {
+                    text: Dialog.title;
+                    font-size: 18px;
+                    font-weight: 700;
+                    color: Theme.text;
+                }
+                Rectangle {
+                    height: 40px;
+                    border-radius: 8px;
+                    background: Theme.surface-2;
+                    border-width: 1px;
+                    border-color: field.has-focus ? Theme.accent : Theme.border;
+                    field := TextInput {
+                        x: 12px;
+                        width: parent.width - 24px;
+                        text <=> Dialog.value;
+                        color: Theme.text;
+                        vertical-alignment: center;
+                        single-line: true;
+                        accepted => { Dialog.confirm(self.text); }
+                        init => { self.focus(); self.select-all(); }
+                    }
+                }
+                HorizontalLayout {
+                    alignment: end;
+                    spacing: 8px;
+                    PillButton {
+                        primary: false;
+                        text: "Abbrechen";
+                        clicked => { Dialog.cancel(); }
+                    }
+                    PillButton {
+                        text: Dialog.confirm-text;
+                        clicked => { Dialog.confirm(Dialog.value); }
+                    }
+                }
+            }
+        }
+    }
+
+    // Meldung
+    if Toast.visible: Rectangle {
+        x: (root.width - self.width) / 2;
+        y: root.height - 88px - self.height - 16px;
+        width: min(toast-text.preferred-width + 36px, root.width - 40px);
+        height: toast-text.preferred-height + 20px;
+        border-radius: 10px;
+        background: Toast.error ? #b4233c : Theme.surface-2;
+        border-width: 1px;
+        border-color: Theme.border;
+        drop-shadow-blur: 20px;
+        drop-shadow-color: #00000070;
+        toast-text := Text {
+            x: 18px;
+            width: parent.width - 36px;
+            text: Toast.text;
+            color: Toast.error ? #fff : Theme.text;
+            wrap: word-wrap;
+            vertical-alignment: center;
+        }
     }
 }

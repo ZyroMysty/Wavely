@@ -12,6 +12,10 @@ use crate::{covers, player::Track, App, Card, Page, PageRow, TrackRow};
 pub enum Target {
     Collection { kind: String, id: String, title: String, art: Option<String> },
     Artist { id: String, name: String },
+    /// Wavely-Playlist
+    Playlist(String),
+    /// Song der Seite abspielen (Index in `PageData::tracks`)
+    Track(usize),
     /// Knopf mit Kennung (siehe `App::page_action`)
     Action(String),
 }
@@ -166,7 +170,8 @@ pub fn show(app: &Arc<App>, ui: &crate::AppWindow, page: &PageData) {
                 .map(|c| Card {
                     id: match &c.target {
                         Target::Action(id) => id.clone().into(),
-                        Target::Collection { id, .. } | Target::Artist { id, .. } => id.clone().into(),
+                        Target::Collection { id, .. } | Target::Artist { id, .. } | Target::Playlist(id) => id.clone().into(),
+                        Target::Track(i) => format!("track:{i}").into(),
                     },
                     title: c.title.clone().into(),
                     subtitle: c.subtitle.clone().into(),
