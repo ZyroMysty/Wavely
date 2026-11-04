@@ -74,6 +74,16 @@ impl App {
                         false,
                     ));
                 }
+                if matches!(track.source.as_str(), "youtube" | "spotify" | "soundcloud") {
+                    let saved = self.offline.path_of(&track.id).is_some();
+                    items.push(item(
+                        if saved { "offline-remove" } else { "offline-save" },
+                        if saved { "Offline entfernen" } else { "Offline speichern" },
+                        if saved { icon::TRASH } else { icon::DOWNLOAD },
+                        true,
+                        false,
+                    ));
+                }
                 let artist = track.artists.iter().find(|a| a.id.is_some());
                 let mut first_nav = true;
                 if track.source == "youtube" {
@@ -101,6 +111,40 @@ impl App {
                 m.set_y(y);
             }
             m.set_open(true);
+        });
+    }
+
+    /// Discord-Status zum laufenden Song (Verbindung im Hintergrund, Discord kann fehlen)
+    pub fn send_presence(self: &Arc<Self>) {
+        // Automatische Tests sollen keinen Discord-Status setzen
+        if std::env::var_os("WAVELY_TEST_STEPS").is_some() || std::env::var_os("WAVELY_TEST_PLAY").is_some() {
+            return;
+        }
+        let (enabled, display) = {
+            let s = self.settings.lock().unwrap();
+            (s.discord_enabled, s.discord_display.clone())
+        };
+        let track = {
+            let s = self.state.lock().unwrap();
+            s.current().cloned().map(|t| (t, s.position, s.duration, !s.playing))
+        };
+        let presence = self.presence.clone();
+        self.rt.spawn_blocking(move || {
+            let mut presence = presence.lock().unwrap();
+            match track {
+                Some((t, position, duration, paused)) if enabled => presence.set(&crate::services::presence::Track {
+                    title: t.title,
+                    artist: t.artist.unwrap_or_else(|| "Unbekannter Künstler".into()),
+                    album: t.album,
+                    artwork: t.artwork_url,
+                    url: t.url,
+                    position,
+                    duration,
+                    paused,
+                    display: Some(display),
+                }),
+                _ => presence.clear(),
+            }
         });
     }
 
@@ -155,6 +199,12 @@ impl App {
                         art: track.artwork_url.clone(),
                     });
                 }
+            }
+            "offline-save" => self.offline_save(vec![track], None),
+            "offline-remove" => {
+                self.offline.remove(None, Some(&track.id));
+                self.toast("Offline entfernt", false);
+                self.refresh_if_showing(|p| matches!(p, crate::nav::PageKind::Offline | crate::nav::PageKind::OfflineCollection(_)));
             }
             "remove-queue" => {
                 if let Some(i) = context.queue_index {

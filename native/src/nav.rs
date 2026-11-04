@@ -9,11 +9,15 @@ use crate::{pages, player::Track, wavely, youtube, App, Nav, Page};
 #[derive(Clone, Debug)]
 pub enum PageKind {
     Yt(youtube::YtPage),
+    Sc(crate::soundcloud_view::ScPage),
+    Sp(crate::spotify_view::SpPage),
     /// Wavely-Playlist
     Playlist(String),
     Home,
     Settings,
     Local,
+    Offline,
+    OfflineCollection(String),
     /// Noch nicht nachgebaute Ansicht
     Placeholder(&'static str),
 }
@@ -24,9 +28,9 @@ fn root_of(view: &str) -> PageKind {
         "youtube" => PageKind::Yt(youtube::YtPage::Library),
         "home" => PageKind::Home,
         "local" => PageKind::Local,
-        "spotify" => PageKind::Placeholder("Spotify"),
-        "soundcloud" => PageKind::Placeholder("SoundCloud"),
-        "offline" => PageKind::Placeholder("Offline"),
+        "spotify" => PageKind::Sp(crate::spotify_view::SpPage::Library),
+        "soundcloud" => PageKind::Sc(crate::soundcloud_view::ScPage::Library),
+        "offline" => PageKind::Offline,
         "recap" => PageKind::Placeholder("Rückblick"),
         "settings" => PageKind::Settings,
         _ => PageKind::Placeholder("Wavely"),
@@ -73,6 +77,18 @@ impl App {
         let view = self.current_view();
         // YouTube-Seiten immer in der YouTube-Ansicht
         let view = match (&page, view.as_str()) {
+            (PageKind::Sp(_), "spotify") => view,
+            (PageKind::Sp(_), _) => {
+                *self.view.lock().unwrap() = "spotify".into();
+                self.ui(|ui| ui.global::<Nav>().set_view("spotify".into()));
+                "spotify".to_string()
+            }
+            (PageKind::Sc(_), "soundcloud") => view,
+            (PageKind::Sc(_), _) => {
+                *self.view.lock().unwrap() = "soundcloud".into();
+                self.ui(|ui| ui.global::<Nav>().set_view("soundcloud".into()));
+                "soundcloud".to_string()
+            }
             (PageKind::Yt(_), "youtube") => view,
             (PageKind::Yt(_), _) => {
                 *self.view.lock().unwrap() = "youtube".into();
@@ -148,12 +164,40 @@ impl App {
                     }
                 });
             }
+            PageKind::Sc(sc) => {
+                self.set_page(crate::soundcloud_view::loading(&sc), back, true);
+                let app = self.clone();
+                self.rt.spawn(async move {
+                    let data = crate::soundcloud_view::build(&app, &sc).await;
+                    if app.page_token.load(Ordering::SeqCst) == token {
+                        app.set_page(data, back, false);
+                    }
+                });
+            }
+            PageKind::Sp(sp) => {
+                self.set_page(crate::spotify_view::loading(&sp), back, true);
+                let app = self.clone();
+                self.rt.spawn(async move {
+                    let data = crate::spotify_view::build(&app, &sp).await;
+                    if app.page_token.load(Ordering::SeqCst) == token {
+                        app.set_page(data, back, false);
+                    }
+                });
+            }
             PageKind::Playlist(id) => {
                 let data = wavely::playlist_page(self, &id);
                 self.set_page(data, back, false);
             }
             PageKind::Home => {
                 let data = wavely::home_page(self);
+                self.set_page(data, back, false);
+            }
+            PageKind::Offline => {
+                let data = crate::offline::page(self);
+                self.set_page(data, back, false);
+            }
+            PageKind::OfflineCollection(id) => {
+                let data = crate::offline::collection_page(self, &id);
                 self.set_page(data, back, false);
             }
             PageKind::Local => {
@@ -209,6 +253,7 @@ impl App {
             }
             Some(pages::Target::Artist { id, name }) => self.yt_open(youtube::YtPage::Artist { id, name }),
             Some(pages::Target::Playlist(id)) => self.open(PageKind::Playlist(id)),
+            Some(pages::Target::Open(page)) => self.open(*page),
             Some(pages::Target::Track(index)) => {
                 let tracks = self.page.lock().unwrap().tracks.clone();
                 if index < tracks.len() {
@@ -221,7 +266,7 @@ impl App {
     }
 
     pub fn page_action(self: &Arc<Self>, action: &str) {
-        if self.setting_action(action) || self.local_action(action) {
+        if self.setting_action(action) || self.local_action(action) || self.offline_action(action) || self.service_action(action) {
             return;
         }
         let tracks = self.page.lock().unwrap().tracks.clone();
@@ -242,6 +287,12 @@ impl App {
                             let _ = slint::invoke_from_event_loop(move || app.yt_open(page));
                         }
                     });
+                }
+            }
+            "offline-save" => {
+                if let Some(PageKind::Yt(youtube::YtPage::Collection { kind, id, title, art })) = self.current_page() {
+                    self.offline_toggle_collection(&id, &kind, &title, art, tracks);
+                    self.render();
                 }
             }
             "delete-playlist" => {

@@ -118,7 +118,12 @@ pub async fn build(app: &Arc<App>, page: &YtPage, logged_in: bool) -> PageData {
                     };
                     let title = if title.is_empty() { detail.info.title.clone() } else { title.clone() };
                     p.hero(label, &title, &subtitle, art.clone().or(detail.info.artwork_url.clone()), false);
-                    p.buttons(&[("play", "Abspielen", crate::icon::PLAY), ("shuffle", "Zufall", crate::icon::SHUFFLE)]);
+                    let saved = app.offline.is_saved_collection(id);
+                    p.buttons(&[
+                        ("play", "Abspielen", crate::icon::PLAY),
+                        ("shuffle", "Zufall", crate::icon::SHUFFLE),
+                        ("offline-save", if saved { "Offline gespeichert" } else { "Offline speichern" }, if saved { crate::icon::DOWNLOADED } else { crate::icon::DOWNLOAD }),
+                    ]);
                     p.tracks(detail.tracks.into_iter().map(Track::from));
                 }
                 Err(e) => {

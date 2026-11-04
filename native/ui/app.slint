@@ -352,15 +352,15 @@ component YouTubeView inherits Rectangle {
             SearchField {
                 width: 320px;
                 text <=> YouTube.query;
-                placeholder: "Songs, Alben, Playlists suchen";
+                placeholder: Nav.view == "spotify" ? "Auf Spotify suchen" : Nav.view == "soundcloud" ? "Auf SoundCloud suchen" : "Songs, Alben, Playlists suchen";
                 accepted(q) => { YouTube.search(q); }
             }
             Rectangle { horizontal-stretch: 1; }
-            if YouTube.status == "loggedOut": PillButton {
+            if Nav.view == "youtube" && YouTube.status == "loggedOut": PillButton {
                 text: "Anmelden";
                 clicked => { YouTube.login(); }
             }
-            if YouTube.status == "loggedIn" && YouTube.account-name != "": Text {
+            if Nav.view == "youtube" && YouTube.status == "loggedIn" && YouTube.account-name != "": Text {
                 text: YouTube.account-name;
                 color: Theme.text-dim;
                 vertical-alignment: center;
@@ -699,8 +699,8 @@ export component AppWindow inherits Window {
             Sidebar { }
             Rectangle {
                 horizontal-stretch: 1;
-                if Nav.view == "youtube": YouTubeView { }
-                if Nav.view != "youtube": GenericView { }
+                if Nav.view == "youtube" || Nav.view == "soundcloud" || Nav.view == "spotify": YouTubeView { }
+                if Nav.view != "youtube" && Nav.view != "soundcloud" && Nav.view != "spotify": GenericView { }
             }
             if Nav.panel == "queue": QueuePanel { }
             if Nav.panel == "history" || Nav.panel == "lyrics": SidePanel { }

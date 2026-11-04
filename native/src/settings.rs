@@ -132,6 +132,17 @@ pub fn page(app: &Arc<App>) -> PageData {
         &s.stream_quality,
     );
 
+    // Discord
+    p.heading("Discord");
+    p.toggle("discordEnabled", "Im Discord-Status anzeigen", "Zeigt deinen Freunden, was du gerade hörst", s.discord_enabled);
+    p.choice(
+        "discordDisplay",
+        "Anzeige in der Mitgliederliste",
+        "Was hinter „Hört“ steht",
+        &[("details", "Songtitel"), ("state", "Künstler"), ("name", "Wavely")],
+        &s.discord_display,
+    );
+
     // YouTube Music
     p.heading("YouTube Music");
     if app.yt_logged_in.load(Ordering::Relaxed) {
@@ -140,6 +151,33 @@ pub fn page(app: &Arc<App>) -> PageData {
     } else {
         p.info("Nicht angemeldet", "Die Anmeldung bei Google kommt in einer der nächsten nativen Testversionen. Suchen geht auch ohne.");
     }
+
+    // Spotify & SoundCloud
+    p.heading("Spotify");
+    if app.spotify_logged_in() {
+        p.button("spotify-logout", "Angemeldet", "Gespielt wird über den passenden Song bei YouTube Music", "Abmelden");
+    } else {
+        p.button("spotify-login", "Nicht angemeldet", "Anmeldung im Browser", "Anmelden");
+    }
+    p.heading("SoundCloud");
+    if app.soundcloud_logged_in() {
+        p.button("soundcloud-logout", "Angemeldet", "Die Anmeldung wurde aus der bisherigen Wavely übernommen.", "Abmelden");
+    } else {
+        p.info("Nicht angemeldet", "Die SoundCloud-Anmeldung kommt in einer der nächsten nativen Testversionen. Suchen und Abspielen geht auch ohne.");
+    }
+
+    // Offline
+    p.heading("Offline");
+    p.choice(
+        "downloadQuality",
+        "Download-Qualität",
+        "Niedrig spart etwa die Hälfte an Speicherplatz",
+        &[("low", "Niedrig"), ("high", "Hoch"), ("premium", "Premium")],
+        &s.download_quality,
+    );
+    let (songs, bytes) = app.offline.stats();
+    p.button("offline-folder", "Gespeicherte Songs", &format!("{songs} Songs · {:.0} MB", bytes as f64 / 1_048_576.0), "Ordner öffnen");
+    p.button("offline-clear", "Alle Offline-Songs löschen", "Gespeicherte Playlists und Songs entfernen", "Löschen");
 
     // Über
     p.heading("Über Wavely");
@@ -172,14 +210,18 @@ impl App {
             match (key.as_str(), value) {
                 ("autoplay", None) => s.autoplay = !s.autoplay,
                 ("syncYouTubeHistory", None) => s.sync_you_tube_history = !s.sync_you_tube_history,
+                ("discordEnabled", None) => s.discord_enabled = !s.discord_enabled,
+                ("discordDisplay", Some(v)) => s.discord_display = v,
                 ("theme", Some(v)) => s.theme = v,
                 ("accent", Some(v)) => s.accent = v,
                 ("startView", Some(v)) => s.start_view = v,
                 ("streamQuality", Some(v)) => s.stream_quality = v,
+                ("downloadQuality", Some(v)) => s.download_quality = v,
                 _ => return false,
             }
         }
         self.save_settings();
+        self.send_presence();
         self.apply_appearance();
         self.apply_quality();
         self.settings_changed();

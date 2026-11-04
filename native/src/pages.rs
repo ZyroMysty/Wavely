@@ -14,6 +14,8 @@ pub enum Target {
     Artist { id: String, name: String },
     /// Wavely-Playlist
     Playlist(String),
+    /// Beliebige Seite öffnen
+    Open(Box<crate::nav::PageKind>),
     /// Song der Seite abspielen (Index in `PageData::tracks`)
     Track(usize),
     /// Knopf mit Kennung (siehe `App::page_action`)
@@ -172,6 +174,7 @@ pub fn show(app: &Arc<App>, ui: &crate::AppWindow, page: &PageData) {
                         Target::Action(id) => id.clone().into(),
                         Target::Collection { id, .. } | Target::Artist { id, .. } | Target::Playlist(id) => id.clone().into(),
                         Target::Track(i) => format!("track:{i}").into(),
+                        Target::Open(_) => c.title.clone().into(),
                     },
                     title: c.title.clone().into(),
                     subtitle: c.subtitle.clone().into(),

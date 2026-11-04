@@ -1,0 +1,972 @@
+//! Spotify: Anmeldung (OAuth mit PKCE, ohne Client Secret), Bibliothek, Suche, Künstler.
+//!
+//! Spotify liefert ohne Premium keinen Ton über die Web API. Zum Abspielen sucht Wavely denselben
+//! Song bei YouTube Music (`spotify_resolve`) und spielt ihn über den normalen Player ab.
+
+use std::{
+    collections::HashMap,
+    path::PathBuf,
+    sync::Mutex,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
+
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use sha2::{Digest, Sha256};
+use url::Url;
+
+use crate::resolve::normalize;
+
+/// Standard-Client-ID der Wavely-Spotify-App (öffentlich, kein Geheimnis). In den Einstellungen kann
+/// eine eigene ID eingetragen werden – nötig für Spotify Connect, weil seit Februar 2026 der Inhaber
+/// einer Entwickler-App selbst Premium haben muss und nur 5 Nutzer erlaubt sind.
+const DEFAULT_CLIENT_ID: &str = "5d9c0db17c284f5a959e0baa2294f80e";
+/// Muss genau so im Spotify-Dashboard als Redirect URI eingetragen sein
+const REDIRECT_URI: &str = "http://127.0.0.1:43827/callback";
+const SCOPES: &str = "user-read-private playlist-read-private playlist-read-collaborative user-library-read \
+                      user-read-recently-played user-follow-read \
+                      user-read-playback-state user-modify-playback-state user-read-currently-playing                       streaming user-read-email playlist-modify-private playlist-modify-public";
+const API: &str = "https://api.spotify.com/v1";
+/// Obergrenze beim Nachladen langer Listen
+const MAX_ITEMS: usize = 2000;
+
+fn err(e: impl std::fmt::Display) -> String {
+    e.to_string()
+}
+
+fn now() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct Token {
+    pub access_token: String,
+    pub refresh_token: String,
+    /// Unix-Zeit in Sekunden
+    pub expires_at: u64,
+}
+
+#[derive(Deserialize)]
+struct TokenResponse {
+    pub access_token: String,
+    pub refresh_token: Option<String>,
+    pub expires_in: u64,
+}
+
+pub struct Spotify {
+    pub http: reqwest::Client,
+    pub dir: PathBuf,
+    pub token: tokio::sync::Mutex<Option<Token>>,
+    /// Laufende Anmeldung: (code_verifier, state)
+    pub pending: Mutex<Option<(String, String)>>,
+    /// Zuordnung Spotify-Song → YouTube-Video, damit jeder Song nur einmal gesucht wird
+    pub matches: Mutex<HashMap<String, String>>,
+    /// Aktive Client ID (Standard oder eigene aus den Einstellungen)
+    pub client_id: Mutex<String>,
+}
+
+impl Spotify {
+    pub fn new(paths: &crate::host::Paths) -> Result<Self, String> {
+        let dir = paths.data.join("spotify");
+        std::fs::create_dir_all(&dir).map_err(err)?;
+        let token = std::fs::read_to_string(dir.join("token.json"))
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok());
+        let matches = std::fs::read_to_string(dir.join("matches.json"))
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
+        let client_id = std::fs::read_to_string(dir.join("client_id.txt"))
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| DEFAULT_CLIENT_ID.to_string());
+        Ok(Self {
+            http: reqwest::Client::new(),
+            dir,
+            token: tokio::sync::Mutex::new(token),
+            pending: Mutex::new(None),
+            matches: Mutex::new(matches),
+            client_id: Mutex::new(client_id),
+        })
+    }
+
+    fn save_token(&self, token: Option<&Token>) {
+        let path = self.dir.join("token.json");
+        match token {
+            Some(token) => {
+                if let Ok(json) = serde_json::to_string(token) {
+                    let _ = std::fs::write(path, json);
+                }
+            }
+            None => {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+    }
+
+    async fn request_token(&self, form: &[(&str, &str)]) -> Result<Token, String> {
+        let response = self
+            .http
+            .post("https://accounts.spotify.com/api/token")
+            .form(form)
+            .send()
+            .await
+            .map_err(err)?;
+        if !response.status().is_success() {
+            let text = response.text().await.unwrap_or_default();
+            return Err(format!("Spotify-Anmeldung fehlgeschlagen: {text}"));
+        }
+        let data: TokenResponse = response.json().await.map_err(err)?;
+        Ok(Token {
+            access_token: data.access_token,
+            refresh_token: data.refresh_token.unwrap_or_default(),
+            expires_at: now() + data.expires_in,
+        })
+    }
+
+    /// Gültiges Zugangstoken (wird bei Bedarf mit dem Refresh-Token erneuert)
+    async fn access_token(&self, force_refresh: bool) -> Result<String, String> {
+        let mut guard = self.token.lock().await;
+        let token = guard.as_ref().ok_or("Nicht bei Spotify angemeldet")?.clone();
+        if !force_refresh && token.expires_at > now() + 60 {
+            return Ok(token.access_token);
+        }
+        let mut fresh = self
+            .request_token(&[
+                ("grant_type", "refresh_token"),
+                ("refresh_token", &token.refresh_token),
+                ("client_id", &self.client_id()),
+            ])
+            .await?;
+        // Spotify schickt nicht immer ein neues Refresh-Token
+        if fresh.refresh_token.is_empty() {
+            fresh.refresh_token = token.refresh_token;
+        }
+        self.save_token(Some(&fresh));
+        let access = fresh.access_token.clone();
+        *guard = Some(fresh);
+        Ok(access)
+    }
+
+    fn client_id(&self) -> String {
+        self.client_id.lock().unwrap().clone()
+    }
+
+    /// Anfrage an die Player-API (PUT/POST/GET). Fehler kommen als Spotify-Code zurück,
+    /// z. B. „PREMIUM_REQUIRED“, „NO_ACTIVE_DEVICE“ oder „SCOPE“ (fehlende Rechte → neu anmelden).
+    async fn player_request(&self, method: reqwest::Method, path: &str, body: Option<Value>) -> Result<Option<Value>, String> {
+        let mut refreshed = false;
+        loop {
+            let token = self.access_token(false).await?;
+            let mut request = self.http.request(method.clone(), format!("{API}{path}")).bearer_auth(&token);
+            request = match &body {
+                Some(body) => request.json(body),
+                None => request.header("Content-Length", "0"),
+            };
+            let response = request.send().await.map_err(err)?;
+            let status = response.status();
+            if status == reqwest::StatusCode::NO_CONTENT || status == reqwest::StatusCode::ACCEPTED {
+                return Ok(None);
+            }
+            let text = response.text().await.unwrap_or_default();
+            if status.is_success() {
+                return Ok(serde_json::from_str(&text).ok());
+            }
+            if status == reqwest::StatusCode::UNAUTHORIZED && !refreshed && !text.contains("scope") {
+                refreshed = true;
+                self.access_token(true).await?;
+                continue;
+            }
+            let error: Value = serde_json::from_str(&text).unwrap_or_default();
+            let reason = error["error"]["reason"].as_str().unwrap_or_default();
+            let message = error["error"]["message"].as_str().unwrap_or(&text);
+            return Err(if !reason.is_empty() {
+                reason.to_string()
+            } else if message.to_lowercase().contains("scope") || message.to_lowercase().contains("permission") {
+                "SCOPE".to_string()
+            } else if status == reqwest::StatusCode::NOT_FOUND {
+                "NO_ACTIVE_DEVICE".to_string()
+            } else {
+                format!("Spotify antwortete mit {status}: {message}")
+            });
+        }
+    }
+
+    /// GET an die Web API (Pfad wie „/me“ oder volle URL aus „next“)
+    async fn get(&self, path: &str) -> Result<Value, String> {
+        let url = if path.starts_with("http") { path.to_string() } else { format!("{API}{path}") };
+        let mut refreshed = false;
+        let mut waited = false;
+        loop {
+            let token = self.access_token(false).await?;
+            let response = self.http.get(&url).bearer_auth(&token).send().await.map_err(err)?;
+            let status = response.status();
+            if status == reqwest::StatusCode::UNAUTHORIZED && !refreshed {
+                refreshed = true;
+                self.access_token(true).await?;
+                continue;
+            }
+            if status == reqwest::StatusCode::TOO_MANY_REQUESTS && !waited {
+                waited = true;
+                let wait = response
+                    .headers()
+                    .get("retry-after")
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .unwrap_or(2)
+                    .min(10);
+                tokio::time::sleep(Duration::from_secs(wait)).await;
+                continue;
+            }
+            if status == reqwest::StatusCode::FORBIDDEN {
+                return Err("Spotify verweigert den Zugriff. Ist deine Spotify-E-Mail im Developer Dashboard unter „User Management“ eingetragen?".into());
+            }
+            if !status.is_success() {
+                let text = response.text().await.unwrap_or_default();
+                return Err(format!("Spotify antwortete mit {status}: {text}"));
+            }
+            return response.json().await.map_err(err);
+        }
+    }
+
+    /// Lädt eine Seiten-Liste („items“ + „next“) bis `limit` Einträge.
+    async fn paginate(&self, path: &str, limit: usize) -> Result<Vec<Value>, String> {
+        let mut items = Vec::new();
+        let mut next = Some(path.to_string());
+        while let Some(url) = next {
+            let page = self.get(&url).await?;
+            if let Some(list) = page["items"].as_array() {
+                items.extend(list.iter().cloned());
+            }
+            next = page["next"].as_str().map(str::to_string);
+            if items.len() >= limit {
+                break;
+            }
+        }
+        items.truncate(limit);
+        Ok(items)
+    }
+}
+
+impl Spotify {
+    /// Songliste einer öffentlichen Playlist aus dem Spotify-Embed-Player (ohne Anmeldung, max. 100 Songs).
+    /// Album und Cover pro Song liefert der Embed nicht – dafür wird das Playlist-Cover genommen.
+    async fn embed_playlist(&self, id: &str, cover: Option<String>) -> Result<Vec<SpTrack>, String> {
+        let html = self
+            .http
+            .get(format!("https://open.spotify.com/embed/playlist/{id}"))
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36")
+            .send()
+            .await
+            .map_err(err)?
+            .text()
+            .await
+            .map_err(err)?;
+        const MARKER: &str = "<script id=\"__NEXT_DATA__\" type=\"application/json\">";
+        let start = html.find(MARKER).ok_or("Playlist ist nicht öffentlich")? + MARKER.len();
+        let end = html[start..].find("</script>").ok_or("Embed unvollständig")? + start;
+        let data: Value = serde_json::from_str(&html[start..end]).map_err(err)?;
+        let list = data["props"]["pageProps"]["state"]["data"]["entity"]["trackList"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        Ok(list
+            .iter()
+            .filter_map(|t| {
+                let id = t["uri"].as_str()?.strip_prefix("spotify:track:")?.to_string();
+                let artist = t["subtitle"].as_str().unwrap_or_default().to_string();
+                Some(SpTrack {
+                    url: Some(format!("https://open.spotify.com/track/{id}")),
+                    id,
+                    title: t["title"].as_str().unwrap_or_default().to_string(),
+                    artists: artist
+                        .split(", ")
+                        .filter(|a| !a.is_empty())
+                        .map(|a| SpArtistRef { id: None, name: a.to_string() })
+                        .collect(),
+                    artist: (!artist.is_empty()).then_some(artist),
+                    album: None,
+                    album_id: None,
+                    duration: t["duration"].as_f64().unwrap_or(0.0) / 1000.0,
+                    artwork_url: cover.clone(),
+                })
+            })
+            .collect())
+    }
+}
+
+// --- Umwandlung in die Formate der Oberfläche ----------------------------
+
+/// Kleinstes Bild ab 300 px (Spotify liefert meist 640, 300 und 64) – größer braucht Wavely nirgends,
+/// und jedes Cover belegt entpackt Breite × Höhe × 4 Byte im Speicher. Ohne Größenangabe: das größte.
+fn best_image(images: &Value) -> Option<String> {
+    let images = images.as_array()?;
+    let width = |i: &&Value| i["width"].as_u64().unwrap_or(0);
+    images
+        .iter()
+        .filter(|i| width(i) >= 300)
+        .min_by_key(width)
+        .or_else(|| images.iter().max_by_key(width))
+        .and_then(|i| i["url"].as_str())
+        .map(str::to_string)
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpArtistRef {
+    pub id: Option<String>,
+    pub name: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpTrack {
+    pub id: String,
+    pub title: String,
+    pub artist: Option<String>,
+    pub artists: Vec<SpArtistRef>,
+    pub album: Option<String>,
+    pub album_id: Option<String>,
+    pub duration: f64,
+    pub artwork_url: Option<String>,
+    pub url: Option<String>,
+}
+
+/// Song aus der Web API; `album` ersetzt fehlende Albumdaten (bei Album-Songlisten)
+fn to_track(t: &Value, album: Option<&Value>) -> Option<SpTrack> {
+    if t["type"].as_str() != Some("track") || t["id"].is_null() {
+        return None; // Podcast-Folgen, lokale Dateien u. Ä. überspringen
+    }
+    let album = if t["album"].is_object() { &t["album"] } else { album? };
+    let artists: Vec<SpArtistRef> = t["artists"]
+        .as_array()
+        .map(|list| {
+            list.iter()
+                .map(|a| SpArtistRef {
+                    id: a["id"].as_str().map(str::to_string),
+                    name: a["name"].as_str().unwrap_or_default().to_string(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let artist = artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+    Some(SpTrack {
+        id: t["id"].as_str()?.to_string(),
+        title: t["name"].as_str().unwrap_or_default().to_string(),
+        artist: (!artist.is_empty()).then_some(artist),
+        artists,
+        album: album["name"].as_str().map(str::to_string),
+        album_id: album["id"].as_str().map(str::to_string),
+        duration: t["duration_ms"].as_f64().unwrap_or(0.0) / 1000.0,
+        artwork_url: best_image(&album["images"]),
+        url: t["external_urls"]["spotify"].as_str().map(str::to_string),
+    })
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpCollection {
+    pub id: String,
+    pub kind: String,
+    pub title: String,
+    pub subtitle: Option<String>,
+    pub artwork_url: Option<String>,
+    pub editable: bool,
+}
+
+fn to_playlist(p: &Value) -> Option<SpCollection> {
+    Some(SpCollection {
+        id: p["id"].as_str()?.to_string(),
+        kind: "playlist".into(),
+        title: p["name"].as_str().unwrap_or_default().to_string(),
+        subtitle: p["owner"]["display_name"].as_str().map(str::to_string),
+        artwork_url: best_image(&p["images"]),
+        editable: false,
+    })
+}
+
+fn to_album(a: &Value) -> Option<SpCollection> {
+    let artist = a["artists"]
+        .as_array()
+        .map(|l| l.iter().filter_map(|x| x["name"].as_str()).collect::<Vec<_>>().join(", "))
+        .unwrap_or_default();
+    let year = a["release_date"].as_str().and_then(|d| d.get(..4));
+    Some(SpCollection {
+        id: a["id"].as_str()?.to_string(),
+        kind: "album".into(),
+        title: a["name"].as_str().unwrap_or_default().to_string(),
+        subtitle: match year {
+            Some(y) if !artist.is_empty() => Some(format!("{artist} · {y}")),
+            Some(y) => Some(y.to_string()),
+            None => (!artist.is_empty()).then_some(artist),
+        },
+        artwork_url: best_image(&a["images"]),
+        editable: false,
+    })
+}
+
+// --- Anmeldung -----------------------------------------------------------
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AuthEvent {
+    pub logged_in: bool,
+    pub error: Option<String>,
+}
+
+fn random_string(len: usize) -> String {
+    use rand::Rng;
+    const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    let mut rng = rand::rng();
+    (0..len).map(|_| ALPHABET[rng.random_range(0..ALPHABET.len())] as char).collect()
+}
+
+pub async fn spotify_status(spotify: &Spotify) -> Result<bool, String> {
+    Ok(spotify.token.lock().await.is_some())
+}
+
+/// Öffnet die Spotify-Anmeldung im Standardbrowser. Ein kleiner Server unter 127.0.0.1:43827
+/// nimmt die Weiterleitung entgegen (höchstens 10 Minuten).
+pub async fn spotify_login(spotify: &Spotify) -> Result<(), String> {
+    let verifier = random_string(64);
+    let state = random_string(16);
+    let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
+    *spotify.pending.lock().unwrap() = Some((verifier, state.clone()));
+
+    let mut url = Url::parse("https://accounts.spotify.com/authorize").map_err(err)?;
+    url.query_pairs_mut()
+        .append_pair("client_id", &spotify.client_id())
+        .append_pair("response_type", "code")
+        .append_pair("redirect_uri", REDIRECT_URI)
+        .append_pair("scope", SCOPES)
+        .append_pair("state", &state)
+        .append_pair("code_challenge_method", "S256")
+        .append_pair("code_challenge", &challenge);
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:43827").await.map_err(|e| format!("Anmeldung nicht möglich: {e}"))?;
+    let _ = std::process::Command::new("rundll32").args(["url.dll,FileProtocolHandler", url.as_str()]).spawn();
+
+    let wait = async {
+        loop {
+            let (mut socket, _) = listener.accept().await.map_err(err)?;
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let mut buf = vec![0u8; 8192];
+            let n = socket.read(&mut buf).await.map_err(err)?;
+            let request = String::from_utf8_lossy(&buf[..n]).to_string();
+            let path = request.split_whitespace().nth(1).unwrap_or("").to_string();
+            if !path.starts_with("/callback") {
+                let _ = socket.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n").await;
+                continue;
+            }
+            let full = Url::parse(&format!("http://127.0.0.1{path}")).map_err(err)?;
+            let params: HashMap<String, String> = full.query_pairs().into_owned().collect();
+            let result = finish_login(spotify, params).await;
+            let text = match &result {
+                Ok(()) => "Angemeldet – du kannst dieses Fenster schließen und zu Wavely zurückkehren.".to_string(),
+                Err(e) => format!("Anmeldung fehlgeschlagen: {e}"),
+            };
+            let body = format!("<!doctype html><meta charset=utf-8><title>Wavely</title><body style=\"font-family:Segoe UI;background:#0e0e11;color:#f3f3f6;display:grid;place-items:center;height:90vh\"><p>{text}</p>");
+            let response = format!("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\n\r\n{body}", body.len());
+            let _ = socket.write_all(response.as_bytes()).await;
+            return result;
+        }
+    };
+    tokio::time::timeout(Duration::from_secs(600), wait).await.map_err(|_| "Anmeldung abgelaufen".to_string())?
+}
+
+async fn finish_login(spotify: &Spotify, params: HashMap<String, String>) -> Result<(), String> {
+    if let Some(error) = params.get("error") {
+        return Err(if error == "access_denied" { "Anmeldung abgebrochen".into() } else { error.clone() });
+    }
+    let (verifier, state) = spotify.pending.lock().unwrap().take().ok_or("Keine laufende Anmeldung")?;
+    if params.get("state") != Some(&state) {
+        return Err("Ungültige Antwort von Spotify".into());
+    }
+    let code = params.get("code").ok_or("Kein Code von Spotify erhalten")?;
+    let token = spotify
+        .request_token(&[
+            ("grant_type", "authorization_code"),
+            ("code", code),
+            ("redirect_uri", REDIRECT_URI),
+            ("client_id", &spotify.client_id()),
+            ("code_verifier", &verifier),
+        ])
+        .await?;
+    spotify.save_token(Some(&token));
+    *spotify.token.lock().await = Some(token);
+    Ok(())
+}
+
+pub async fn spotify_logout(spotify: &Spotify) -> Result<(), String> {
+    *spotify.token.lock().await = None;
+    spotify.save_token(None);
+    Ok(())
+}
+
+// --- Daten ---------------------------------------------------------------
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpAccount {
+    pub id: Option<String>,
+    pub name: Option<String>,
+    pub photo_url: Option<String>,
+    pub product: Option<String>,
+}
+
+pub async fn spotify_account(spotify: &Spotify) -> Result<SpAccount, String> {
+    let me = spotify.get("/me").await?;
+    Ok(SpAccount {
+        id: me["id"].as_str().map(str::to_string),
+        name: me["display_name"].as_str().or(me["id"].as_str()).map(str::to_string),
+        photo_url: best_image(&me["images"]),
+        product: me["product"].as_str().map(str::to_string),
+    })
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SpLibrary {
+    pub playlists: Vec<SpCollection>,
+    pub albums: Vec<SpCollection>,
+}
+
+pub async fn spotify_library(spotify: &Spotify) -> Result<SpLibrary, String> {
+    let (playlists, albums) = tokio::join!(
+        spotify.paginate("/me/playlists?limit=50", 500),
+        spotify.paginate("/me/albums?limit=50", 500),
+    );
+    Ok(SpLibrary {
+        playlists: playlists?.iter().filter_map(to_playlist).collect(),
+        albums: albums?.iter().filter_map(|i| to_album(&i["album"])).collect(),
+    })
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpCollectionDetail {
+    #[serde(flatten)]
+    pub info: SpCollection,
+    pub tracks: Vec<SpTrack>,
+}
+
+/// Lieblingssongs (`id = "liked"`), Playlist oder Album mit allen Songs
+pub async fn spotify_collection(
+    spotify: &Spotify,
+    kind: String,
+    id: String,
+) -> Result<SpCollectionDetail, String> {
+    if id == "liked" {
+        let items = spotify.paginate("/me/tracks?limit=50", MAX_ITEMS).await?;
+        return Ok(SpCollectionDetail {
+            info: SpCollection {
+                id,
+                kind: "playlist".into(),
+                title: "Lieblingssongs".into(),
+                subtitle: Some("Spotify".into()),
+                artwork_url: None,
+                editable: false,
+            },
+            tracks: items.iter().filter_map(|i| to_track(item_of(i), None)).collect(),
+        });
+    }
+
+    if kind == "album" {
+        let album = spotify.get(&format!("/albums/{id}")).await?;
+        let list = if album["tracks"].is_object() { &album["tracks"] } else { &album["items"] };
+        let mut tracks: Vec<Value> = list["items"].as_array().cloned().unwrap_or_default();
+        if let Some(next) = list["next"].as_str() {
+            tracks.extend(spotify.paginate(next, MAX_ITEMS).await?);
+        }
+        return Ok(SpCollectionDetail {
+            info: to_album(&album).ok_or("Album nicht gefunden")?,
+            tracks: tracks.iter().filter_map(|t| to_track(t, Some(&album))).collect(),
+        });
+    }
+
+    let playlist = spotify.get(&format!("/playlists/{id}")).await?;
+    let info = to_playlist(&playlist).ok_or("Playlist nicht gefunden")?;
+
+    // Seit Februar 2026 gibt Spotify neuen Apps die Songs nur bei eigenen oder gemeinsamen Playlists.
+    let own = spotify
+        .paginate(&format!("/playlists/{id}/items?limit=50"), MAX_ITEMS)
+        .await
+        .map(|items| items.iter().filter_map(|i| to_track(item_of(i), None)).collect::<Vec<_>>())
+        .unwrap_or_default();
+    if !own.is_empty() {
+        return Ok(SpCollectionDetail { info, tracks: own });
+    }
+    // Fremde Playlists: Songliste aus dem öffentlichen Spotify-Embed-Player (max. 100 Songs)
+    let tracks = spotify.embed_playlist(&id, info.artwork_url.clone()).await?;
+    Ok(SpCollectionDetail { info, tracks })
+}
+
+/// Eintrag einer Playlist/Liste: neues Feld „item“, früher „track“
+fn item_of(entry: &Value) -> &Value {
+    if entry["item"].is_object() { &entry["item"] } else { &entry["track"] }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpArtistCard {
+    pub id: String,
+    pub name: String,
+    pub image_url: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SpSearch {
+    pub tracks: Vec<SpTrack>,
+    pub albums: Vec<SpCollection>,
+    pub playlists: Vec<SpCollection>,
+    pub artists: Vec<SpArtistCard>,
+}
+
+fn to_artist_card(a: &Value) -> Option<SpArtistCard> {
+    Some(SpArtistCard {
+        id: a["id"].as_str()?.to_string(),
+        name: a["name"].as_str().unwrap_or_default().to_string(),
+        image_url: best_image(&a["images"]),
+    })
+}
+
+pub async fn spotify_search(spotify: &Spotify, query: String) -> Result<SpSearch, String> {
+    let mut url = Url::parse(&format!("{API}/search")).map_err(err)?;
+    url.query_pairs_mut()
+        .append_pair("q", &query)
+        .append_pair("type", "track,album,playlist,artist")
+        .append_pair("limit", "10"); // Spotify erlaubt neuen Apps max. 10
+    let r = spotify.get(url.as_str()).await?;
+    let list = |key: &str| r[key]["items"].as_array().cloned().unwrap_or_default();
+    Ok(SpSearch {
+        tracks: list("tracks").iter().filter_map(|t| to_track(t, None)).collect(),
+        albums: list("albums").iter().filter_map(to_album).collect(),
+        playlists: list("playlists").iter().filter_map(to_playlist).collect(),
+        artists: list("artists").iter().filter_map(to_artist_card).collect(),
+    })
+}
+
+/// Künstlerseite im selben Format wie bei YouTube Music (für die gemeinsame Ansicht)
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpArtist {
+    pub id: String,
+    pub name: String,
+    pub image_url: Option<String>,
+    pub description: Option<String>,
+    pub subscribers: Option<u64>,
+    pub tracks: Vec<SpTrack>,
+    pub albums: Vec<SpCollection>,
+    pub singles: Vec<SpCollection>,
+    pub playlists: Vec<SpCollection>,
+    pub similar: Vec<SpArtistCard>,
+}
+
+pub async fn spotify_artist(spotify: &Spotify, id: String) -> Result<SpArtist, String> {
+    let artist_path = format!("/artists/{id}");
+    // Spotify erlaubt neuen Apps hier nur noch kleine Seiten
+    let albums_path = format!("/artists/{id}/albums?include_groups=album,single&limit=10");
+    let (artist, albums) = tokio::join!(spotify.get(&artist_path), spotify.paginate(&albums_path, 200));
+    let artist = artist?;
+    // „Top-Songs“ hat Spotify für neue Apps entfernt → beliebte Songs über die Suche nach dem Künstler
+    let name = artist["name"].as_str().unwrap_or_default().to_string();
+    let mut search = Url::parse(&format!("{API}/search")).map_err(err)?;
+    search
+        .query_pairs_mut()
+        .append_pair("q", &format!("artist:\"{name}\""))
+        .append_pair("type", "track")
+        .append_pair("limit", "10");
+    let top = spotify.get(search.as_str()).await;
+    // Zweite Seite für mehr Songs (Suche liefert max. 10 pro Anfrage)
+    search.query_pairs_mut().append_pair("offset", "10");
+    let top2 = spotify.get(search.as_str()).await;
+    let albums = albums.unwrap_or_default();
+    let group = |g: &str| -> Vec<SpCollection> {
+        albums
+            .iter()
+            .filter(|a| a["album_group"].as_str().or(a["album_type"].as_str()) == Some(g))
+            .filter_map(to_album)
+            .collect()
+    };
+    let genres = artist["genres"]
+        .as_array()
+        .map(|g| g.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join(", "))
+        .filter(|g| !g.is_empty());
+    Ok(SpArtist {
+        id: id.clone(),
+        name,
+        image_url: best_image(&artist["images"]),
+        description: genres.map(|g| format!("Genres: {g}")),
+        subscribers: artist["followers"]["total"].as_u64(),
+        tracks: [top, top2]
+            .into_iter()
+            .filter_map(|r| r.ok())
+            .flat_map(|t| t["tracks"]["items"].as_array().cloned().unwrap_or_default())
+            .collect::<Vec<_>>()
+            .iter()
+            .filter(|t| t["artists"].as_array().is_some_and(|a| a.iter().any(|x| x["id"].as_str() == Some(id.as_str()))))
+            .filter_map(|t| to_track(t, None))
+            .collect(),
+        albums: group("album"),
+        singles: group("single"),
+        playlists: Vec::new(),
+        // „Ähnliche Künstler“ bietet Spotify für neue Apps nicht mehr an
+        similar: Vec::new(),
+    })
+}
+
+/// Zuletzt gehört (Spotify-Verlauf)
+pub async fn spotify_recent(spotify: &Spotify) -> Result<Vec<SpTrack>, String> {
+    let r = spotify.get("/me/player/recently-played?limit=50").await?;
+    Ok(r["items"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|i| to_track(item_of(i), None))
+        .collect())
+}
+
+// --- Abspielen über YouTube Music ----------------------------------------
+
+/// Kleinbuchstaben, Klammerzusätze („(feat. …)“, „- Remastered 2011“) entfernt – für den Titelvergleich
+// --- Eigene Client ID ----------------------------------------------------
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpClientId {
+    pub client_id: String,
+    pub is_default: bool,
+}
+
+pub async fn spotify_get_client_id(spotify: &Spotify) -> Result<SpClientId, String> {
+    let client_id = spotify.client_id();
+    Ok(SpClientId { is_default: client_id == DEFAULT_CLIENT_ID, client_id })
+}
+
+/// Eigene Client ID setzen (oder mit `None`/leer zurück zum Standard). Meldet ab, weil das Login an die App gebunden ist.
+pub async fn spotify_set_client_id(spotify: &Spotify, client_id: Option<String>) -> Result<(), String> {
+    let id = client_id.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    if let Some(id) = &id {
+        if id.len() != 32 || !id.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err("Eine Spotify Client ID besteht aus 32 Zeichen (0–9, a–f)".into());
+        }
+    }
+    let path = spotify.dir.join("client_id.txt");
+    match &id {
+        Some(id) => std::fs::write(&path, id).map_err(err)?,
+        None => {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+    *spotify.client_id.lock().unwrap() = id.unwrap_or_else(|| DEFAULT_CLIENT_ID.to_string());
+    *spotify.token.lock().await = None;
+    spotify.save_token(None);
+    Ok(())
+}
+
+// --- Spotify Connect (Fernsteuerung, nur mit Premium) --------------------
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpDevice {
+    pub id: String,
+    pub name: String,
+    pub kind: String,
+    pub is_active: bool,
+    pub volume: Option<u64>,
+}
+
+pub async fn spotify_devices(spotify: &Spotify) -> Result<Vec<SpDevice>, String> {
+    let r = spotify.player_request(reqwest::Method::GET, "/me/player/devices", None).await?.unwrap_or_default();
+    Ok(r["devices"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .filter(|d| !d["is_restricted"].as_bool().unwrap_or(false))
+        .filter_map(|d| {
+            Some(SpDevice {
+                id: d["id"].as_str()?.to_string(),
+                name: d["name"].as_str().unwrap_or("Gerät").to_string(),
+                kind: d["type"].as_str().unwrap_or("Computer").to_string(),
+                is_active: d["is_active"].as_bool().unwrap_or(false),
+                volume: d["volume_percent"].as_u64(),
+            })
+        })
+        .collect())
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpPlayback {
+    pub is_playing: bool,
+    pub progress_ms: u64,
+    pub duration_ms: u64,
+    /// Spotify-ID des laufenden Songs
+    pub track_id: Option<String>,
+    pub device_id: Option<String>,
+    pub device_name: Option<String>,
+    pub volume: Option<u64>,
+}
+
+/// Aktueller Zustand des Spotify-Players (oder `None`, wenn nichts aktiv ist)
+pub async fn spotify_playback(spotify: &Spotify) -> Result<Option<SpPlayback>, String> {
+    let Some(r) = spotify.player_request(reqwest::Method::GET, "/me/player", None).await? else {
+        return Ok(None);
+    };
+    let item = if r["item"].is_object() { &r["item"] } else { &r["track"] };
+    Ok(Some(SpPlayback {
+        is_playing: r["is_playing"].as_bool().unwrap_or(false),
+        progress_ms: r["progress_ms"].as_u64().unwrap_or(0),
+        duration_ms: item["duration_ms"].as_u64().unwrap_or(0),
+        track_id: item["id"].as_str().map(str::to_string),
+        device_id: r["device"]["id"].as_str().map(str::to_string),
+        device_name: r["device"]["name"].as_str().map(str::to_string),
+        volume: r["device"]["volume_percent"].as_u64(),
+    }))
+}
+
+fn with_device(path: &str, device_id: &Option<String>) -> String {
+    match device_id {
+        Some(id) => format!("{path}?device_id={id}"),
+        None => path.to_string(),
+    }
+}
+
+/// Song auf einem Spotify-Gerät abspielen
+pub async fn spotify_play(
+    spotify: &Spotify,
+    device_id: Option<String>,
+    track_id: String,
+    position_ms: Option<u64>,
+) -> Result<(), String> {
+    let body = serde_json::json!({
+        "uris": [format!("spotify:track:{track_id}")],
+        "position_ms": position_ms.unwrap_or(0),
+    });
+    spotify
+        .player_request(reqwest::Method::PUT, &with_device("/me/player/play", &device_id), Some(body))
+        .await
+        .map(|_| ())
+}
+
+pub async fn spotify_resume(spotify: &Spotify, device_id: Option<String>) -> Result<(), String> {
+    spotify.player_request(reqwest::Method::PUT, &with_device("/me/player/play", &device_id), None).await.map(|_| ())
+}
+
+pub async fn spotify_pause(spotify: &Spotify, device_id: Option<String>) -> Result<(), String> {
+    spotify.player_request(reqwest::Method::PUT, &with_device("/me/player/pause", &device_id), None).await.map(|_| ())
+}
+
+pub async fn spotify_seek(spotify: &Spotify, position_ms: u64) -> Result<(), String> {
+    spotify
+        .player_request(reqwest::Method::PUT, &format!("/me/player/seek?position_ms={position_ms}"), None)
+        .await
+        .map(|_| ())
+}
+
+pub async fn spotify_volume(spotify: &Spotify, percent: u64) -> Result<(), String> {
+    spotify
+        .player_request(reqwest::Method::PUT, &format!("/me/player/volume?volume_percent={}", percent.min(100)), None)
+        .await
+        .map(|_| ())
+}
+
+/// Wiedergabe auf ein anderes Gerät übertragen
+pub async fn spotify_transfer(spotify: &Spotify, device_id: String, play: bool) -> Result<(), String> {
+    let body = serde_json::json!({ "device_ids": [device_id], "play": play });
+    spotify.player_request(reqwest::Method::PUT, "/me/player", Some(body)).await.map(|_| ())
+}
+
+/// Zugangstoken für den Spotify Web Playback SDK (spielt in Wavely selbst, nur mit Premium)
+pub async fn spotify_access_token(spotify: &Spotify) -> Result<String, String> {
+    spotify.access_token(false).await
+}
+
+// --- Playlists übertragen (nach Spotify) ----------------------------------
+
+/// Sucht den passenden Spotify-Song zu einem Song aus einer anderen Quelle.
+pub async fn spotify_match(
+    spotify: &Spotify,
+    title: String,
+    artist: Option<String>,
+    duration: f64,
+) -> Result<Option<SpTrack>, String> {
+    let first_artist = artist.as_deref().unwrap_or("").split(',').next().unwrap_or("").trim().to_string();
+    let wanted_title = normalize(&title);
+    let wanted_artist = first_artist.to_lowercase();
+    // Erst gezielt nach Titel + Künstler, sonst frei
+    let queries = [
+        format!("track:\"{title}\" artist:\"{first_artist}\""),
+        format!("{first_artist} {title}"),
+    ];
+    for query in queries {
+        let mut url = Url::parse(&format!("{API}/search")).map_err(err)?;
+        url.query_pairs_mut().append_pair("q", &query).append_pair("type", "track").append_pair("limit", "10");
+        let r = spotify.get(url.as_str()).await?;
+        let best = r["tracks"]["items"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|t| to_track(t, None))
+            .map(|t| {
+                let diff = if duration > 0.0 { (t.duration - duration).abs() } else { 10.0 };
+                let mut score = -diff.min(60.0);
+                let name = normalize(&t.title);
+                if name == wanted_title {
+                    score += 20.0;
+                } else if name.contains(&wanted_title) || wanted_title.contains(&name) {
+                    score += 8.0;
+                }
+                if t.artists.iter().any(|a| a.name.to_lowercase() == wanted_artist) {
+                    score += 15.0;
+                }
+                (score, t)
+            })
+            .max_by(|a, b| a.0.total_cmp(&b.0));
+        // Nur annehmen, wenn Titel oder Künstler wirklich passen
+        if let Some((score, track)) = best {
+            if score > 0.0 {
+                return Ok(Some(track));
+            }
+        }
+    }
+    Ok(None)
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpCreated {
+    pub id: String,
+    pub url: Option<String>,
+}
+
+/// Neue Playlist im eigenen Spotify-Konto anlegen und Songs hinzufügen (Pakete à 100).
+pub async fn spotify_create_playlist(
+    spotify: &Spotify,
+    name: String,
+    description: Option<String>,
+    public: bool,
+    track_ids: Vec<String>,
+) -> Result<SpCreated, String> {
+    let body = serde_json::json!({
+        "name": name,
+        "description": description.unwrap_or_default(),
+        "public": public,
+    });
+    let created = spotify
+        .player_request(reqwest::Method::POST, "/me/playlists", Some(body))
+        .await?
+        .ok_or("Spotify hat keine Playlist zurückgegeben")?;
+    let id = created["id"].as_str().ok_or("Spotify hat keine Playlist zurückgegeben")?.to_string();
+    for chunk in track_ids.chunks(100) {
+        let uris: Vec<String> = chunk.iter().map(|id| format!("spotify:track:{id}")).collect();
+        spotify
+            .player_request(reqwest::Method::POST, &format!("/playlists/{id}/items"), Some(serde_json::json!({ "uris": uris })))
+            .await?;
+    }
+    Ok(SpCreated { id, url: created["external_urls"]["spotify"].as_str().map(str::to_string) })
+}

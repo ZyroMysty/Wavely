@@ -10,11 +10,15 @@ mod local;
 mod menu;
 mod nav;
 mod playlists;
+mod resolve;
+mod offline;
 mod pages;
 mod panel;
 mod player;
 mod services;
 mod settings;
+mod soundcloud_view;
+mod spotify_view;
 mod store;
 mod wavely;
 mod youtube;
@@ -68,6 +72,13 @@ pub struct App {
     pub store: store::Store,
     pub paths: host::Paths,
     pub local_tracks: Mutex<Vec<Track>>,
+    pub offline: offline::Offline,
+    pub soundcloud: Arc<services::soundcloud::SoundCloud>,
+    pub spotify: Arc<services::spotify::Spotify>,
+    /// Zuordnungen Spotify/SoundCloud → YouTube
+    pub matches: resolve::Matches,
+    /// Discord-Status (Verbindung zum Discord-Client)
+    pub presence: Arc<Mutex<services::presence::Presence>>,
     /// Offenes Seitenfeld rechts und dessen Songs/Zeilen
     pub panel: Mutex<String>,
     pub panel_tracks: Mutex<Vec<Track>>,
@@ -253,7 +264,7 @@ impl App {
         self.sync_player();
         let app = self.clone();
         let title = track.title.clone();
-        player::start_load(&self.rt, self.engine.clone(), self.ytm.clone(), track, start_at, move |result| {
+        player::start_load(self, track, start_at, move |result| {
             let mut s = app.state.lock().unwrap();
             if s.index != Some(index) {
                 return;
@@ -323,6 +334,7 @@ impl App {
     pub fn seek(self: &Arc<Self>, seconds: f64) {
         self.state.lock().unwrap().position = seconds;
         self.engine.send(Command::Seek(seconds));
+        self.send_presence();
     }
 
     pub fn set_volume(self: &Arc<Self>, volume: f32) {
@@ -398,17 +410,30 @@ impl App {
                 return;
             }
             match s.current() {
-                Some(t) if t.source == "youtube" => t.id.clone(),
+                Some(t) if t.source != "local" => t.clone(),
                 _ => return,
             }
         };
         let app = self.clone();
         self.rt.spawn(async move {
-            let Ok(radio) = services::ytm::ytm_radio(&app.ytm, seed).await else { return };
+            // SoundCloud: ähnliche SoundCloud-Songs, sonst YouTube-Radio
+            let soundcloud = if seed.source == "soundcloud" {
+                services::soundcloud::soundcloud_related(&app.soundcloud, seed.id.clone()).await.ok()
+            } else {
+                None
+            };
+            let radio: Vec<Track> = match soundcloud {
+                Some(list) if !list.is_empty() => list.into_iter().map(Track::from).collect(),
+                _ => {
+                    let Ok(video) = app.resolve_video(&seed).await else { return };
+                    let Ok(radio) = services::ytm::ytm_radio(&app.ytm, video).await else { return };
+                    radio.into_iter().map(Track::from).collect()
+                }
+            };
             {
                 let mut s = app.state.lock().unwrap();
                 let known: std::collections::HashSet<String> = s.queue.iter().map(|t| t.id.clone()).collect();
-                let fresh: Vec<Track> = radio.into_iter().map(Track::from).filter(|t| !known.contains(&t.id)).take(20).collect();
+                let fresh: Vec<Track> = radio.into_iter().filter(|t| !known.contains(&t.id)).take(20).collect();
                 if fresh.is_empty() {
                     return;
                 }
@@ -438,6 +463,7 @@ impl App {
                 }
                 self.started_playing();
                 self.sync_player();
+                self.send_presence();
             }
             Event::Position { generation, seconds } => {
                 let (position, duration) = {
@@ -461,6 +487,7 @@ impl App {
             }
             Event::Playing(playing) => {
                 self.state.lock().unwrap().playing = playing;
+                self.send_presence();
                 self.ui(move |ui| ui.global::<Player>().set_playing(playing));
             }
             Event::Ended { generation } => {
@@ -690,6 +717,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         account: account::Account::new(&paths),
         paths: paths.clone(),
         local_tracks: Mutex::new(Vec::new()),
+        offline: offline::Offline::new(&paths),
+        soundcloud: Arc::new(services::soundcloud::SoundCloud::new(&paths)?),
+        spotify: Arc::new(services::spotify::Spotify::new(&paths)?),
+        matches: resolve::Matches::new(&paths),
+        presence: Default::default(),
         panel: Mutex::new(String::new()),
         panel_tracks: Mutex::new(Vec::new()),
         panel_rows: Mutex::new(Vec::new()),
@@ -748,8 +780,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             return;
         }
         // Neue Suche ersetzt eine angezeigte Suche
-        let page = nav::PageKind::Yt(youtube::YtPage::Search(q));
-        if matches!(a.current_page(), Some(nav::PageKind::Yt(youtube::YtPage::Search(_)))) {
+        let page = match a.current_view().as_str() {
+            "soundcloud" => nav::PageKind::Sc(soundcloud_view::ScPage::Search(q)),
+            "spotify" => nav::PageKind::Sp(spotify_view::SpPage::Search(q)),
+            _ => nav::PageKind::Yt(youtube::YtPage::Search(q)),
+        };
+        let searching = matches!(
+            a.current_page(),
+            Some(nav::PageKind::Yt(youtube::YtPage::Search(_)))
+                | Some(nav::PageKind::Sc(soundcloud_view::ScPage::Search(_)))
+                | Some(nav::PageKind::Sp(spotify_view::SpPage::Search(_)))
+        );
+        if searching {
             a.replace_top(page);
         } else {
             a.open(page);
@@ -884,6 +926,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     app.save_settings();
     app.engine.send(Command::Stop);
+    app.presence.lock().unwrap().shutdown();
     Ok(())
 }
 

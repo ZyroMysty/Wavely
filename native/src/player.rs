@@ -122,24 +122,35 @@ pub fn gain(volume: f32, muted: bool) -> f32 {
 }
 
 /// Startet das Laden eines Songs im Hintergrund. Liefert die Generation über `engine.load`.
+/// Quelle: eigene Datei (lokal oder offline gespeichert), SoundCloud direkt, sonst YouTube-Stream
+/// (Spotify- und SoundCloud-Songs über den passenden YouTube-Song).
 pub fn start_load(
-    rt: &tokio::runtime::Handle,
-    engine: Arc<Engine>,
-    ytm: Arc<Ytm>,
+    app: &Arc<crate::App>,
     track: Track,
     start_at: f64,
     on_generation: impl FnOnce(Result<Generation, String>) + Send + 'static,
 ) {
+    let engine = app.engine.clone();
+    let ytm: Arc<Ytm> = app.ytm.clone();
     engine.send(Command::Stop);
-    let handle = rt.clone();
-    rt.spawn(async move {
+    let handle = app.rt.clone();
+    let app = app.clone();
+    handle.clone().spawn(async move {
         let result = async {
-            if let Some(path) = &track.path {
+            let file_path = track
+                .path
+                .clone()
+                .filter(|p| std::path::Path::new(p).exists())
+                .or_else(|| app.offline.path_of(&track.id));
+            if let Some(path) = &file_path {
                 let file = std::fs::File::open(path).map_err(|e| format!("Datei nicht lesbar: {e}"))?;
                 let ext = std::path::Path::new(path).extension().and_then(|e| e.to_str()).map(str::to_lowercase);
                 return Ok(engine.load(Box::new(file), ext, start_at));
             }
-            let id = track.id.clone();
+            if let Some(source) = app.soundcloud_source(&track).await {
+                return Ok(engine.load(source.0, Some(source.1), start_at));
+            }
+            let id = app.resolve_video(&track).await?;
             let hint = ytm.stream_hint(&id).await.map(str::to_string);
             let fetch_ytm = ytm.clone();
             let fetch: FetchChunk = Arc::new(move |start, len| {
