@@ -226,10 +226,10 @@ pub fn page(app: &Arc<App>) -> PageData {
     // YouTube Music
     p.heading("YouTube Music");
     if app.yt_logged_in.load(Ordering::Relaxed) {
-        p.info("Angemeldet", "Die Anmeldung wurde aus der bisherigen Wavely übernommen.");
+        p.button("youtube-logout", "Angemeldet", "Likes, Bibliothek und Verlauf von YouTube Music", "Abmelden");
         p.toggle("syncYouTubeHistory", "Verlauf mit YouTube Music abgleichen", "In Wavely gehörte Songs auch im YouTube-Music-Verlauf speichern", s.sync_you_tube_history);
     } else {
-        p.info("Nicht angemeldet", "Die Anmeldung bei Google kommt in einer der nächsten nativen Testversionen. Suchen geht auch ohne.");
+        p.button("youtube-login", "Nicht angemeldet", "Suchen geht auch ohne Anmeldung", "Mit Google anmelden");
     }
 
     // Spotify & SoundCloud
@@ -241,9 +241,9 @@ pub fn page(app: &Arc<App>) -> PageData {
     }
     p.heading("SoundCloud");
     if app.soundcloud_logged_in() {
-        p.button("soundcloud-logout", "Angemeldet", "Die Anmeldung wurde aus der bisherigen Wavely übernommen.", "Abmelden");
+        p.button("soundcloud-logout", "Angemeldet", "Likes und Playlists von SoundCloud", "Abmelden");
     } else {
-        p.info("Nicht angemeldet", "Die SoundCloud-Anmeldung kommt in einer der nächsten nativen Testversionen. Suchen und Abspielen geht auch ohne.");
+        p.button("soundcloud-login", "Nicht angemeldet", "Suchen und Abspielen geht auch ohne Anmeldung", "Anmelden");
     }
 
     // Last.fm

@@ -8,6 +8,8 @@ mod host;
 mod icon;
 mod keys;
 mod local;
+#[cfg(windows)]
+mod logins;
 mod menu;
 #[cfg(windows)]
 mod mini_ui;
@@ -900,6 +902,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     p.on_cycle_repeat(move || a.cycle_repeat());
 
     let y = ui.global::<YouTube>();
+    let a = app.clone();
+    y.on_login(move || {
+        #[cfg(windows)]
+        a.youtube_login();
+    });
     let a = app.clone();
     y.on_search(move |q| {
         let q = q.trim().to_string();

@@ -59,6 +59,7 @@ pub async fn build(app: &Arc<App>, page: &YtPage, logged_in: bool) -> PageData {
             if !logged_in {
                 p.title("YouTube Music");
                 p.message("Melde dich an, um deine Playlists, Alben und Lieblingssongs zu sehen. Suchen geht auch ohne Anmeldung.");
+                p.buttons(&[("youtube-login", "Mit Google anmelden", crate::icon::YOUTUBE)]);
                 return p;
             }
             p.title("Deine Bibliothek");

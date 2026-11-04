@@ -79,7 +79,8 @@ pub async fn build(app: &Arc<App>, page: &ScPage) -> PageData {
         ScPage::Library => {
             p.title("SoundCloud");
             if !soundcloud::soundcloud_status(sc).await.unwrap_or(false) {
-                p.message("Nicht angemeldet. Suchen und Abspielen geht auch ohne Anmeldung.");
+                p.message("Melde dich an, um deine SoundCloud-Likes und Playlists zu sehen. Suchen und Abspielen geht auch ohne Anmeldung.");
+                p.buttons(&[("soundcloud-login", "Bei SoundCloud anmelden", icon::SOUNDCLOUD)]);
                 return p;
             }
             match soundcloud::soundcloud_library(sc).await {

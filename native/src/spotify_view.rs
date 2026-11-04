@@ -243,6 +243,21 @@ impl App {
                 });
                 true
             }
+            #[cfg(windows)]
+            "youtube-login" => {
+                self.youtube_login();
+                true
+            }
+            #[cfg(windows)]
+            "youtube-logout" => {
+                self.youtube_logout();
+                true
+            }
+            #[cfg(windows)]
+            "soundcloud-login" => {
+                self.soundcloud_login();
+                true
+            }
             "soundcloud-logout" => {
                 let app = self.clone();
                 self.rt.spawn(async move {

@@ -45,6 +45,8 @@ notify-debouncer-mini = "0.7"
 rfd = "0.17"
 
 [target.'cfg(windows)'.dependencies]
+# Browserfenster nur bei Bedarf (Anmeldungen, Spotify-Wiedergabe)
+wry = { version = "0.57", default-features = false }
 windows = { version = "0.62", features = [
     "Foundation",
     "Media",

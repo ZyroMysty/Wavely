@@ -4,6 +4,7 @@
 pub mod hotkeys;
 pub mod media;
 pub mod mini;
+pub mod web;
 pub mod taskbar;
 
 use std::sync::OnceLock;
