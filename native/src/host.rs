@@ -53,3 +53,29 @@ fn copy_dir(from: &Path, to: &Path) {
         }
     }
 }
+
+/// Windows im dunklen Modus? (Einstellungen → Personalisierung → Farben)
+pub fn system_dark() -> bool {
+    #[cfg(windows)]
+    {
+        use windows::{core::w, Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD}};
+        let mut value: u32 = 1;
+        let mut size = std::mem::size_of::<u32>() as u32;
+        let ok = unsafe {
+            RegGetValueW(
+                HKEY_CURRENT_USER,
+                w!(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"),
+                w!("AppsUseLightTheme"),
+                RRF_RT_REG_DWORD,
+                None,
+                Some(&mut value as *mut u32 as *mut _),
+                Some(&mut size),
+            )
+        };
+        ok.is_ok() && value == 0
+    }
+    #[cfg(not(windows))]
+    {
+        true
+    }
+}

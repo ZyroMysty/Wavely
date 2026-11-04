@@ -8,6 +8,7 @@ mod icon;
 mod pages;
 mod player;
 mod services;
+mod store;
 mod youtube;
 
 use std::{
@@ -41,7 +42,25 @@ pub struct App {
     /// Zählt Seitenwechsel: verspätete Ergebnisse alter Seiten werden verworfen
     pub page_token: AtomicU64,
     pub yt_logged_in: AtomicBool,
+    pub store: store::Store,
+    pub settings: Mutex<store::Settings>,
+    pub history: Mutex<Vec<store::HistoryEntry>>,
+    /// Laufender Song für die Hörstatistik
+    pub listening: Mutex<Option<Listening>>,
+    /// Zeitpunkt der letzten Sicherung der Warteschlange
+    pub last_resume_save: Mutex<std::time::Instant>,
 }
+
+/// Gerade gehörter Song: nur zusammenhängend gehörte Zeit zählt (wie stats.svelte.js)
+pub struct Listening {
+    pub track: Track,
+    pub started_at: u64,
+    pub listened: f64,
+    pub last_pos: f64,
+}
+
+/// Mindestens so lange gehört, damit ein Song in die Statistik kommt
+const MIN_LISTENED: f64 = 10.0;
 
 pub fn format_time(seconds: f64) -> String {
     if !seconds.is_finite() || seconds < 0.0 {
@@ -120,6 +139,7 @@ impl App {
     }
 
     fn sync_queue(self: &Arc<Self>) {
+        self.save_resume();
         let tracks: Vec<Track> = self.state.lock().unwrap().queue.clone();
         let app = self.clone();
         self.ui(move |ui| {
@@ -150,6 +170,7 @@ impl App {
     }
 
     pub fn load(self: &Arc<Self>, index: usize, start_at: f64) {
+        self.stats_flush();
         let track = {
             let mut s = self.state.lock().unwrap();
             let Some(track) = s.queue.get(index).cloned() else { return };
@@ -243,6 +264,8 @@ impl App {
             s.muted = false;
             player::gain(s.volume, s.muted)
         };
+        self.settings.lock().unwrap().volume = volume;
+        self.save_settings();
         self.engine.set_gain(gain);
         let app = self.clone();
         self.ui(move |ui| ui.global::<Player>().set_muted(false));
@@ -339,6 +362,7 @@ impl App {
                         s.duration = duration;
                     }
                 }
+                self.started_playing();
                 self.sync_player();
             }
             Event::Position { generation, seconds } => {
@@ -350,6 +374,10 @@ impl App {
                     s.position = seconds;
                     (seconds, s.duration)
                 };
+                self.stats_progress(position);
+                if self.last_resume_save.lock().unwrap().elapsed().as_secs() >= 5 {
+                    self.save_resume();
+                }
                 self.ui(move |ui| {
                     let p = ui.global::<Player>();
                     p.set_position(position as f32);
@@ -401,6 +429,124 @@ impl App {
                 }
             }
         }
+    }
+
+    // --- Speichern -----------------------------------------------------------
+
+    pub fn save_resume(self: &Arc<Self>) {
+        let resume = {
+            let s = self.state.lock().unwrap();
+            let index = s.index.unwrap_or(0);
+            // Höchstens 300 Songs rund um den aktuellen
+            let start = index.saturating_sub(50);
+            store::Resume {
+                queue: s.queue.iter().skip(start).take(300).cloned().collect(),
+                index: index - start,
+                position: s.position.floor(),
+                shuffle: s.shuffle,
+                repeat: s.repeat,
+            }
+        };
+        *self.last_resume_save.lock().unwrap() = std::time::Instant::now();
+        self.store.save_resume(&resume);
+    }
+
+    fn restore_resume(self: &Arc<Self>) {
+        let resume = self.store.resume();
+        if resume.queue.is_empty() {
+            return;
+        }
+        {
+            let mut s = self.state.lock().unwrap();
+            s.index = Some(resume.index.min(resume.queue.len() - 1));
+            s.original = resume.queue.clone();
+            s.queue = resume.queue;
+            s.position = resume.position;
+            s.duration = s.current().map(|t| t.duration).unwrap_or(0.0);
+            s.shuffle = resume.shuffle;
+            s.repeat = resume.repeat;
+        }
+        self.sync_queue();
+        self.sync_player();
+        let position = resume.position;
+        self.ui(move |ui| {
+            let p = ui.global::<Player>();
+            p.set_position(position as f32);
+            p.set_position_text(format_time(position).into());
+        });
+    }
+
+    pub fn save_settings(self: &Arc<Self>) {
+        let settings = self.settings.lock().unwrap().clone();
+        self.store.save_settings(&settings);
+    }
+
+    /// Design und Akzentfarbe anwenden
+    pub fn apply_appearance(self: &Arc<Self>) {
+        let (theme, accent) = {
+            let s = self.settings.lock().unwrap();
+            (s.theme.clone(), s.accent.clone())
+        };
+        let dark = match theme.as_str() {
+            "light" => false,
+            "system" => host::system_dark(),
+            _ => true,
+        };
+        let color = parse_hex(&accent).unwrap_or(slint::Color::from_rgb_u8(0xff, 0x4f, 0x7b));
+        self.ui(move |ui| {
+            let t = ui.global::<Theme>();
+            t.set_dark(dark);
+            t.set_accent(color);
+        });
+    }
+
+    /// Hörstatistik: laufenden Song abschließen
+    fn stats_flush(self: &Arc<Self>) {
+        let Some(l) = self.listening.lock().unwrap().take() else { return };
+        if l.listened < MIN_LISTENED {
+            return;
+        }
+        let entry = serde_json::json!({
+            "t": l.started_at,
+            "s": l.listened.round() as u64,
+            "d": l.track.duration.round() as u64,
+            "src": l.track.source,
+            "id": l.track.id,
+            "title": l.track.title,
+            "artist": l.track.artist,
+            "album": l.track.album,
+            "art": l.track.artwork_url,
+        });
+        self.store.append_plays(&[entry]);
+    }
+
+    fn stats_progress(self: &Arc<Self>, position: f64) {
+        if let Some(l) = self.listening.lock().unwrap().as_mut() {
+            let delta = position - l.last_pos;
+            if delta > 0.0 && delta < 5.0 {
+                l.listened += delta;
+            }
+            l.last_pos = position;
+        }
+    }
+
+    /// Song läuft wirklich: Verlauf und Statistik
+    fn started_playing(self: &Arc<Self>) {
+        let Some(track) = self.state.lock().unwrap().current().cloned() else { return };
+        self.stats_flush();
+        let now = store::now_ms();
+        *self.listening.lock().unwrap() = Some(Listening { track: track.clone(), started_at: now, listened: 0.0, last_pos: 0.0 });
+        let history = {
+            let mut h = self.history.lock().unwrap();
+            // Derselbe Song direkt nochmal innerhalb einer Minute: nicht doppelt eintragen
+            let repeat = h.first().is_some_and(|e| e.track.id == track.id && now - e.played_at < 60_000);
+            if !repeat {
+                h.insert(0, store::HistoryEntry { track, played_at: now });
+                h.truncate(store::MAX_HISTORY);
+            }
+            h.clone()
+        };
+        self.store.save_history(&history);
     }
 
     // --- Seiten ------------------------------------------------------------
@@ -579,7 +725,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ytdlp = YtDlp::init(&paths)?;
     let ytm = Arc::new(Ytm::new(&paths, ytdlp)?);
 
+    let store = store::Store::new(&paths);
+    let settings = store.settings();
+
     let ui = AppWindow::new()?;
+    ui.global::<Nav>().set_collapsed(settings.sidebar_collapsed);
 
     let app_slot: Arc<Mutex<Option<Arc<App>>>> = Arc::new(Mutex::new(None));
     let slot = app_slot.clone();
@@ -594,15 +744,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         rt: rt.handle().clone(),
         engine,
         ytm,
-        state: Mutex::new(State { volume: 0.6, ..Default::default() }),
+        state: Mutex::new(State { volume: settings.volume, ..Default::default() }),
         covers: covers::Covers::default(),
         yt_stack: Mutex::new(Vec::new()),
         page: Mutex::new(Default::default()),
         page_token: AtomicU64::new(0),
         yt_logged_in: AtomicBool::new(false),
+        history: Mutex::new(store.history()),
+        settings: Mutex::new(settings.clone()),
+        store,
+        listening: Mutex::new(None),
+        last_resume_save: Mutex::new(std::time::Instant::now()),
     });
     *app_slot.lock().unwrap() = Some(app.clone());
-    app.engine.set_gain(player::gain(0.6, false));
+    app.engine.set_gain(player::gain(settings.volume, false));
+    app.apply_appearance();
+    app.restore_resume();
     // Tests laufen stumm
     if std::env::var("WAVELY_TEST_PLAY").is_ok() {
         app.state.lock().unwrap().muted = true;
@@ -676,6 +833,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     ui.run()?;
+    app.stats_flush();
+    app.save_resume();
+    {
+        let mut settings = app.settings.lock().unwrap();
+        settings.sidebar_collapsed = ui.global::<Nav>().get_collapsed();
+    }
+    app.save_settings();
     app.engine.send(Command::Stop);
     Ok(())
 }
@@ -724,4 +888,14 @@ fn run_test_steps(app: Arc<App>, steps: String) {
     }
     queue.retain(|s| !s.is_empty());
     next(app, queue);
+}
+
+/// "#ff4f7b" → Farbe
+pub fn parse_hex(hex: &str) -> Option<slint::Color> {
+    let hex = hex.trim_start_matches('#');
+    if hex.len() != 6 {
+        return None;
+    }
+    let n = u32::from_str_radix(hex, 16).ok()?;
+    Some(slint::Color::from_rgb_u8((n >> 16) as u8, (n >> 8) as u8, n as u8))
 }

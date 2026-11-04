@@ -12,20 +12,48 @@ use crate::{
     services::ytm::Ytm,
 };
 
-/// Song aus einer beliebigen Quelle
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+/// Song aus einer beliebigen Quelle (gleiches JSON-Format wie in der bisherigen Wavely)
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
 pub struct Track {
     /// "youtube" | "local" | "soundcloud" | "spotify"
     pub source: String,
+    #[serde(deserialize_with = "string_or_number")]
     pub id: String,
     pub title: String,
     pub artist: Option<String>,
+    /// Einzelne Künstler mit Kanal-ID (anklickbar)
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub artists: Vec<ArtistRef>,
     pub album: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub album_id: Option<String>,
     pub duration: f64,
     pub artwork_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
     /// Lokale Datei
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
+    /// SoundCloud: nur 30-Sekunden-Ausschnitt
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub snipped: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ArtistRef {
+    pub id: Option<String>,
+    pub name: String,
+}
+
+/// SoundCloud-IDs sind in alten Daten Zahlen
+fn string_or_number<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    Ok(match serde_json::Value::deserialize(d)? {
+        serde_json::Value::String(s) => s,
+        serde_json::Value::Number(n) => n.to_string(),
+        _ => String::new(),
+    })
 }
 
 impl From<crate::services::ytm::YtTrack> for Track {
@@ -35,10 +63,13 @@ impl From<crate::services::ytm::YtTrack> for Track {
             id: t.id,
             title: t.title,
             artist: t.artist,
+            artists: t.artists.into_iter().map(|a| ArtistRef { id: a.id, name: a.name }).collect(),
             album: t.album,
+            album_id: t.album_id,
             duration: t.duration,
             artwork_url: t.artwork_url,
-            path: None,
+            url: Some(t.url),
+            ..Default::default()
         }
     }
 }
