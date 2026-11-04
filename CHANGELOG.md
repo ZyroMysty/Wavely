@@ -3,6 +3,7 @@
 Neue Punkte kommen zuerst unter „Unveröffentlicht“. Beim Veröffentlichen wird daraus der Abschnitt der neuen Version; dessen Text zeigt Wavely im Update-Hinweis an.
 
 ## Unveröffentlicht
+- YouTube-Songs spielen wieder mit der Audioqualität „Premium“: klappt die Premium-Abfrage nicht, nimmt Wavely automatisch „Hoch“ (aus 0.15.1)
 
 ## 0.16.0-test.3 – 2026-11-02
 - Bilder werden in der Größe geladen, in der sie angezeigt werden – vorher oft das Zehnfache (z. B. 544 px für ein 40-px-Cover)
@@ -20,6 +21,9 @@ Neue Punkte kommen zuerst unter „Unveröffentlicht“. Beim Veröffentlichen w
 - Minimiert gibt Wavely Speicher frei, die Musik läuft normal weiter
 - Cover lokaler Songs werden verkleinert geladen und erst, wenn sie ins Bild kommen
 - Spotify-Cover in passender statt größter Auflösung
+
+## 0.15.1 – 2026-11-04
+- YouTube-Songs spielen wieder mit der Audioqualität „Premium“: klappt die Premium-Abfrage nicht, nimmt Wavely automatisch „Hoch“, statt stumm zu bleiben (gilt auch für Downloads)
 
 ## 0.15.0 – 2026-11-02
 - Dienste ein- und ausschalten (Einstellungen → Dienste): Wer z. B. SoundCloud oder Spotify nicht braucht, blendet sie komplett aus
