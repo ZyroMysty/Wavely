@@ -18,6 +18,8 @@ mod settings;
 mod store;
 mod wavely;
 mod youtube;
+#[cfg(windows)]
+mod win;
 
 use std::{
     rc::Rc,
@@ -151,6 +153,7 @@ impl App {
             }
         };
         let app = self.clone();
+        let art_url = art.clone();
         self.ui(move |ui| {
             let p = ui.global::<Player>();
             p.set_title(title.into());
@@ -171,10 +174,24 @@ impl App {
             }
             .into());
             p.set_queue_index(index);
+            // Windows: Medientasten-Overlay und Taskleisten-Buttons
+            #[cfg(windows)]
+            {
+                win::media::update(win::media::MediaInfo {
+                    has_track,
+                    playing,
+                    title: has_track.then(|| p.get_title().to_string()),
+                    artist: has_track.then(|| p.get_artist().to_string()),
+                    album: None,
+                    artwork_url: art_url.clone().filter(|u| u.starts_with("http")),
+                });
+                win::taskbar::update(win::taskbar::TaskbarState { has_track, playing, liked: can_like.then_some(liked) });
+            }
             p.set_can_like(can_like);
             p.set_liked(liked);
             match art {
-                Some(url) => {
+                Some(url) if !url.is_empty() => {
+                    p.set_has_cover(false);
                     let weak = app.ui.clone();
                     app.covers.load(&app, url, 112, move |image| {
                         if let Some(ui) = weak.upgrade() {
@@ -183,7 +200,7 @@ impl App {
                         }
                     });
                 }
-                None => p.set_has_cover(false),
+                _ => p.set_has_cover(false),
             }
         });
     }
@@ -840,7 +857,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         run_test_steps(app.clone(), steps);
     }
 
-    ui.run()?;
+    // Windows-Anbindung, sobald das Fenster existiert
+    ui.show()?;
+    // Das Fenster entsteht erst, wenn die Ereignisschleife läuft
+    #[cfg(windows)]
+    {
+        let a = app.clone();
+        let weak = ui.as_weak();
+        slint::Timer::single_shot(std::time::Duration::from_millis(50), move || {
+            let Some(ui) = weak.upgrade() else { return };
+            let handler = a.clone();
+            win::init(ui.window(), move |action| {
+                let a = handler.clone();
+                let action = action.to_string();
+                let _ = slint::invoke_from_event_loop(move || a.windows_action(&action));
+            });
+            a.sync_player();
+        });
+    }
+    slint::run_event_loop()?;
     app.stats_flush();
     app.save_resume();
     {

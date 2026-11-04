@@ -104,6 +104,25 @@ impl App {
         });
     }
 
+    /// Medientasten und Taskleisten-Buttons
+    pub fn windows_action(self: &Arc<Self>, action: &str) {
+        let playing = self.state.lock().unwrap().playing;
+        match action {
+            "play" if !playing => self.toggle_play(),
+            "pause" if playing => self.toggle_play(),
+            "toggle" => self.toggle_play(),
+            "next" => self.next(),
+            "previous" => self.previous(),
+            "like" => {
+                let track = self.state.lock().unwrap().current().cloned();
+                if let Some(track) = track {
+                    self.toggle_like(track);
+                }
+            }
+            _ => {}
+        }
+    }
+
     pub fn close_menu(self: &Arc<Self>) {
         self.ui(|ui| ui.global::<Menu>().set_open(false));
     }
