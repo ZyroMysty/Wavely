@@ -276,6 +276,10 @@ pub fn page(app: &Arc<App>) -> PageData {
     // Über
     p.heading("Über Wavely");
     p.info(&format!("Wavely {} (native Testversion)", env!("CARGO_PKG_VERSION")), "Ohne Browser-Technik: Oberfläche mit Slint, eigene Audio-Engine");
+    match app.update.lock().unwrap().as_ref() {
+        Some(update) => p.button("update-install", &format!("Update {} verfügbar", update.version), update.notes.as_deref().unwrap_or(""), "Installieren"),
+        None => p.button("update-check", "Updates", "Neue native Testversionen werden automatisch gesucht", "Jetzt suchen"),
+    }
     p.info("Arbeitsspeicher", &format!("{:.1} MB privat", crate::host::private_bytes() as f64 / 1_048_576.0));
     p.spacer();
     p
@@ -292,6 +296,14 @@ impl App {
     pub fn setting_action(self: &Arc<Self>, action: &str) -> bool {
         if action == "account-logout" {
             self.account_logout();
+            return true;
+        }
+        if action == "update-check" {
+            self.check_update(true);
+            return true;
+        }
+        if action == "update-install" {
+            self.install_update();
             return true;
         }
         #[cfg(windows)]

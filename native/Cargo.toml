@@ -4,7 +4,7 @@ version = "0.17.0-native.1"
 edition = "2021"
 
 [[bin]]
-name = "wavely"
+name = "wavely-native"
 path = "src/main.rs"
 
 [build-dependencies]
@@ -32,6 +32,8 @@ symphonia-adapter-opus-rs = "0.1"
 cpal = "0.18"
 # Lokale Musik: Tags lesen, Ordner durchsuchen und beobachten, Ordnerauswahl
 lofty = "0.25"
+minisign-verify = "0.3"
+semver = "1"
 arboard = { version = "3", default-features = false }
 md-5 = "0.11"
 url = "2"

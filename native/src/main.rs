@@ -15,6 +15,7 @@ mod nav;
 mod playlists;
 mod recap;
 mod resolve;
+mod updater;
 mod offline;
 mod pages;
 mod panel;
@@ -86,6 +87,8 @@ pub struct App {
     pub sleep_until: Mutex<Option<std::time::Instant>>,
     /// Zeitraum im Rückblick
     pub recap_range: Mutex<String>,
+    /// Gefundenes Update
+    pub update: Mutex<Option<updater::Manifest>>,
     /// Zusammen hören
     pub room: Mutex<Option<together::Room>>,
     pub room_generation: AtomicU64,
@@ -836,6 +839,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         lastfm: Arc::new(services::lastfm::LastFm::new(&paths)?),
         sleep_until: Mutex::new(None),
         recap_range: Mutex::new("month".into()),
+        update: Mutex::new(None),
         room: Mutex::new(None),
         room_generation: AtomicU64::new(0),
         autoplay_blocked: AtomicBool::new(false),
@@ -1029,6 +1033,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     app.show_view(if start_view.is_empty() { "home" } else { &start_view });
     app.yt_init();
 
+
+    // Nach Updates suchen (nicht in Tests)
+    if !testing {
+        let a = app.clone();
+        slint::Timer::single_shot(std::time::Duration::from_secs(8), move || a.check_update(false));
+    }
 
     // yt-dlp aktuell halten, liegengebliebene Scrobbles nachreichen
     let a = app.clone();
