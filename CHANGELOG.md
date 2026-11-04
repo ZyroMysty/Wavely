@@ -4,6 +4,9 @@ Neue Punkte kommen zuerst unter „Unveröffentlicht“. Beim Veröffentlichen w
 
 ## Unveröffentlicht
 
+## 0.15.1 – 2026-11-04
+- YouTube-Songs spielen wieder mit der Audioqualität „Premium“: klappt die Premium-Abfrage nicht, nimmt Wavely automatisch „Hoch“, statt stumm zu bleiben (gilt auch für Downloads)
+
 ## 0.15.0 – 2026-11-02
 - Dienste ein- und ausschalten (Einstellungen → Dienste): Wer z. B. SoundCloud oder Spotify nicht braucht, blendet sie komplett aus
 - Der Mini-Player minimiert das Hauptfenster in die Taskleiste und holt es beim Schließen zurück – abschaltbar

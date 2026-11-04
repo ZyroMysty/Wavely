@@ -163,9 +163,13 @@ impl Ytm {
     async fn fetch_chunk(&self, id: &str, range: Option<&str>) -> Result<Response<Vec<u8>>, String> {
         let (start, requested_end) = parse_range(range);
 
-        // Beim zweiten Versuch eine frische URL holen (abgelaufen oder gesperrt)
-        for refresh in [false, true] {
-            let info = self.stream_info(id, refresh).await?;
+        // Beim zweiten Versuch eine frische URL holen (abgelaufen oder gesperrt), beim dritten
+        // ohne Premium – YouTube sperrt angemeldete Stream-Adressen manchmal trotzdem
+        for attempt in 0..3 {
+            if attempt == 2 {
+                self.ytdlp.mark_premium_failed();
+            }
+            let info = self.stream_info(id, attempt > 0).await?;
             if info.size > 0 && start >= info.size {
                 return Ok(Response::builder()
                     .status(StatusCode::RANGE_NOT_SATISFIABLE)

@@ -1,4 +1,4 @@
-//! yt-dlp als Hilfsprogramm: liefert die Audio-Stream-Adressen für YouTube Music.
+//! yt-dlp als Hilfsprogramm: liefert die Audio-Stream-Adressen fÃ¼r YouTube Music.
 //! Es liegt als Kopie im App-Datenordner, damit es sich selbst aktualisieren kann.
 
 use std::{
@@ -13,19 +13,19 @@ use tokio::process::Command;
 
 /// Wie oft yt-dlp nach Updates sucht
 const UPDATE_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
-/// Unter Windows kein Konsolenfenster öffnen
+/// Unter Windows kein Konsolenfenster Ã¶ffnen
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-/// Gewünschte Audioqualität (Einstellungen → Wiedergabe / Offline)
+/// GewÃ¼nschte AudioqualitÃ¤t (Einstellungen â†’ Wiedergabe / Offline)
 #[derive(Clone, Copy, PartialEq, Default, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Quality {
-    /// ~64 kbit Opus – etwa halber Speicher, klingt dank Opus trotzdem ordentlich
+    /// ~64 kbit Opus â€“ etwa halber Speicher, klingt dank Opus trotzdem ordentlich
     Low,
-    /// Beste Qualität ohne Premium (Opus/AAC ~130 kbit)
+    /// Beste QualitÃ¤t ohne Premium (Opus/AAC ~130 kbit)
     #[default]
     High,
-    /// 256 kbit AAC – nur mit YouTube Premium (Anmelde-Cookies werden an yt-dlp übergeben)
+    /// 256 kbit AAC â€“ nur mit YouTube Premium (Anmelde-Cookies werden an yt-dlp Ã¼bergeben)
     Premium,
 }
 
@@ -44,14 +44,19 @@ impl Quality {
 struct QualitySettings {
     stream: Quality,
     download: Quality,
-    /// Cookie-Datei mit der YouTube-Anmeldung (nur für „Premium“)
+    /// Cookie-Datei mit der YouTube-Anmeldung (nur fÃ¼r â€žPremiumâ€œ)
     cookies: Option<PathBuf>,
 }
+
+/// So lange wird â€žPremiumâ€œ nach einem Fehlschlag Ã¼bersprungen (spart den doppelten yt-dlp-Aufruf)
+const PREMIUM_RETRY: Duration = Duration::from_secs(30 * 60);
 
 #[derive(Clone)]
 pub struct YtDlp {
     path: PathBuf,
     quality: std::sync::Arc<std::sync::Mutex<QualitySettings>>,
+    /// Zeitpunkt, an dem â€žPremiumâ€œ zuletzt fehlgeschlagen ist
+    premium_failed: std::sync::Arc<std::sync::Mutex<Option<std::time::Instant>>>,
 }
 
 pub struct AudioInfo {
@@ -67,6 +72,8 @@ struct Format {
     ext: Option<String>,
     filesize: Option<u64>,
     filesize_approx: Option<u64>,
+    /// â€žhttpsâ€œ fÃ¼r direkte Dateien; â€žm3u8_nativeâ€œ & Co. kann der Player nicht stÃ¼ckweise laden
+    protocol: Option<String>,
     #[serde(default)]
     http_headers: std::collections::HashMap<String, String>,
 }
@@ -91,17 +98,36 @@ impl YtDlp {
             std::fs::copy(&bundled, &path)
                 .map_err(|e| format!("yt-dlp nicht gefunden ({}): {e}", bundled.display()))?;
         }
-        Ok(Self { path, quality: Default::default() })
+        Ok(Self { path, quality: Default::default(), premium_failed: Default::default() })
     }
 
     pub fn set_quality(&self, stream: Quality, download: Quality, cookies: Option<PathBuf>) {
         *self.quality.lock().unwrap() = QualitySettings { stream, download, cookies };
+        // Neue Einstellung oder neue Anmeldung: Premium wieder versuchen
+        *self.premium_failed.lock().unwrap() = None;
     }
 
-    /// Formatauswahl (+ Cookies bei „Premium“) für einen Aufruf
-    fn quality_args(&self, download: bool, youtube: bool) -> Vec<String> {
+    /// Ob dieser Aufruf â€žPremiumâ€œ (mit Anmelde-Cookies) versuchen soll
+    fn wants_premium(&self, download: bool, youtube: bool) -> bool {
         let settings = self.quality.lock().unwrap();
         let quality = if download { settings.download } else { settings.stream };
+        let recently_failed = self.premium_failed.lock().unwrap().is_some_and(|t| t.elapsed() < PREMIUM_RETRY);
+        quality == Quality::Premium && youtube && settings.cookies.is_some() && !recently_failed
+    }
+
+    /// Premium hat nicht geklappt: eine Weile ohne Anmeldung (â€žHochâ€œ) weitermachen
+    pub fn mark_premium_failed(&self) {
+        *self.premium_failed.lock().unwrap() = Some(std::time::Instant::now());
+    }
+
+    /// Formatauswahl (+ Cookies bei â€žPremiumâ€œ) fÃ¼r einen Aufruf. Ohne `premium` wird â€žPremiumâ€œ
+    /// zu â€žHochâ€œ ohne Cookies â€“ das klappt auch, wenn YouTube die angemeldete Abfrage verweigert.
+    fn quality_args(&self, download: bool, youtube: bool, premium: bool) -> Vec<String> {
+        let settings = self.quality.lock().unwrap();
+        let mut quality = if download { settings.download } else { settings.stream };
+        if quality == Quality::Premium && !premium {
+            quality = Quality::High;
+        }
         let mut args = vec!["-f".to_string(), quality.format(youtube).to_string()];
         if let (Quality::Premium, true, Some(cookies)) = (quality, youtube, &settings.cookies) {
             args.push("--cookies".into());
@@ -118,7 +144,7 @@ impl YtDlp {
         cmd
     }
 
-    /// Sucht höchstens einmal am Tag nach einer neuen yt-dlp-Version.
+    /// Sucht hÃ¶chstens einmal am Tag nach einer neuen yt-dlp-Version.
     pub async fn update_if_due(&self) {
         let marker = self.path.with_extension("checked");
         let due = std::fs::metadata(&marker)
@@ -142,19 +168,30 @@ impl YtDlp {
         }
     }
 
-    /// Lädt ein YouTube-Video als Audiodatei nach `dir/<video_id>.<ext>` und gibt den Pfad zurück.
+    /// LÃ¤dt ein YouTube-Video als Audiodatei nach `dir/<video_id>.<ext>` und gibt den Pfad zurÃ¼ck.
     pub async fn download(&self, video_id: &str, dir: &std::path::Path) -> Result<PathBuf, String> {
         let url = format!("https://music.youtube.com/watch?v={video_id}");
         self.download_url(&url, video_id, dir).await
     }
 
-    /// Lädt eine beliebige von yt-dlp unterstützte Adresse (z. B. SoundCloud) nach `dir/<name>.<ext>`.
+    /// LÃ¤dt eine beliebige von yt-dlp unterstÃ¼tzte Adresse (z. B. SoundCloud) nach `dir/<name>.<ext>`.
     pub async fn download_url(&self, url: &str, name: &str, dir: &std::path::Path) -> Result<PathBuf, String> {
+        let youtube = url.contains("youtube.com");
+        if self.wants_premium(true, youtube) {
+            match self.try_download(url, name, dir, true).await {
+                Ok(path) => return Ok(path),
+                Err(_) => self.mark_premium_failed(),
+            }
+        }
+        self.try_download(url, name, dir, false).await
+    }
+
+    async fn try_download(&self, url: &str, name: &str, dir: &std::path::Path, premium: bool) -> Result<PathBuf, String> {
         let template = dir.join(format!("{name}.%(ext)s"));
         let youtube = url.contains("youtube.com");
         let output = self
             .command()
-            .args(self.quality_args(true, youtube))
+            .args(self.quality_args(true, youtube, premium))
             .args([
                 "--no-playlist",
                 "--no-warnings",
@@ -184,10 +221,22 @@ impl YtDlp {
         }
     }
 
+    /// Stream-Adresse fÃ¼r ein YouTube-Video. Klappt â€žPremiumâ€œ nicht (YouTube verweigert die
+    /// angemeldete Abfrage oder liefert nur Segment-Streams), geht es ohne Anmeldung weiter.
     pub async fn audio(&self, video_id: &str) -> Result<AudioInfo, String> {
+        if self.wants_premium(false, true) {
+            match self.try_audio(video_id, true).await {
+                Ok(info) => return Ok(info),
+                Err(_) => self.mark_premium_failed(),
+            }
+        }
+        self.try_audio(video_id, false).await
+    }
+
+    async fn try_audio(&self, video_id: &str, premium: bool) -> Result<AudioInfo, String> {
         let output = self
             .command()
-            .args(self.quality_args(false, true))
+            .args(self.quality_args(false, true, premium))
             .args([
                 "-J",
                 "--no-playlist",
@@ -207,6 +256,9 @@ impl YtDlp {
         }
 
         let format: Format = serde_json::from_slice(&output.stdout).map_err(err)?;
+        if !format.protocol.as_deref().is_none_or(|p| p.starts_with("http")) {
+            return Err("yt-dlp: nur Segment-Stream verfÃ¼gbar".into());
+        }
         let mime = match format.ext.as_deref() {
             Some("m4a") | Some("mp4") => "audio/mp4",
             _ => "audio/webm",
