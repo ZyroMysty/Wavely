@@ -172,6 +172,12 @@ impl App {
     }
 
     pub fn menu_pick(self: &Arc<Self>, id: &str) {
+        // Auswahl einer Einstellung (Menü einer Auswahl-Zeile)
+        if let Some(action) = id.strip_prefix("set:") {
+            self.close_menu();
+            self.setting_action(action);
+            return;
+        }
         let Some(context) = self.menu.lock().unwrap().clone() else { return };
         if id == "wavely" {
             // Untermenü an gleicher Stelle

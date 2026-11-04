@@ -20,6 +20,11 @@ pub struct Shared {
     pub gain: AtomicU32,
     out_rate: AtomicU32,
     out_channels: AtomicU32,
+    /// Tempo (f32-Bits)
+    pub rate: AtomicU32,
+    /// Blende: Ziel und Schritt pro Sample (f32-Bits)
+    fade_target: AtomicU32,
+    fade_step: AtomicU32,
 }
 
 impl Default for Shared {
@@ -30,6 +35,9 @@ impl Default for Shared {
             gain: AtomicU32::new(1.0f32.to_bits()),
             out_rate: AtomicU32::new(48_000),
             out_channels: AtomicU32::new(2),
+            rate: AtomicU32::new(1.0f32.to_bits()),
+            fade_target: AtomicU32::new(1.0f32.to_bits()),
+            fade_step: AtomicU32::new(1.0f32.to_bits()),
         }
     }
 }
@@ -66,6 +74,12 @@ impl Shared {
         b.resampler = Resampler::default();
     }
 
+    pub fn set_fade(&self, target: f32, seconds: f32) {
+        let samples = (seconds.max(0.01) * self.out_rate.load(Ordering::Relaxed) as f32) * self.out_channels.load(Ordering::Relaxed) as f32;
+        self.fade_step.store((1.0 / samples).to_bits(), Ordering::Relaxed);
+        self.fade_target.store(target.clamp(0.0, 1.0).to_bits(), Ordering::Relaxed);
+    }
+
     pub fn set_paused(&self, paused: bool) {
         self.paused.store(paused, Ordering::Relaxed);
     }
@@ -82,8 +96,9 @@ impl Shared {
     /// Songzeit dessen, was gerade aus dem Lautsprecher kommt
     pub fn played_seconds(&self) -> f64 {
         let (rate, channels) = self.frame_len();
+        let tempo = load_f32(&self.rate) as f64;
         let b = self.buffer.lock().unwrap();
-        (b.end_seconds - b.samples.len() as f64 / channels as f64 / rate).max(0.0)
+        (b.end_seconds - b.samples.len() as f64 / channels as f64 / rate * tempo).max(0.0)
     }
 
     /// Dekodierte Samples (verschachtelt) anhängen; `pts` ist die Songzeit des ersten Frames.
@@ -96,7 +111,10 @@ impl Shared {
         }
         b.end_seconds = b.end_seconds.max(pts) + frames as f64 / in_rate as f64;
         let Buffer { samples, resampler, .. } = &mut *b;
-        resampler.process(input, in_channels, in_rate, out_rate as u32, out_channels, samples);
+        // Tempo: schneller abspielen = Eingang als höhere Abtastrate behandeln
+        let tempo = load_f32(&self.rate);
+        let effective = ((in_rate as f32) * tempo).round() as u32;
+        resampler.process(input, in_channels, effective, out_rate as u32, out_channels, samples);
     }
 }
 
@@ -162,10 +180,25 @@ pub struct Output {
     _stream: cpal::Stream,
 }
 
+/// Namen der Ausgabegeräte von Windows
+pub fn device_names() -> Vec<String> {
+    let host = cpal::default_host();
+    host.output_devices()
+        .map(|devices| devices.filter_map(|d| d.description().ok().map(|desc| desc.name().to_string())).collect())
+        .unwrap_or_default()
+}
+
 impl Output {
-    pub fn open(shared: Arc<Shared>) -> Result<Self, String> {
+    pub fn open(shared: Arc<Shared>, name: &str) -> Result<Self, String> {
         let host = cpal::default_host();
-        let device = host.default_output_device().ok_or("Kein Audiogerät gefunden")?;
+        let wanted = (!name.is_empty())
+            .then(|| host.output_devices().ok()?.find(|d| d.description().ok().is_some_and(|desc| desc.name() == name)))
+            .flatten();
+        // Gewähltes Gerät nicht angeschlossen → Windows-Standard
+        let device = match wanted {
+            Some(d) => d,
+            None => host.default_output_device().ok_or("Kein Audiogerät gefunden")?,
+        };
         let config = device.default_output_config().map_err(|e| format!("Audiogerät: {e}"))?;
         shared.out_rate.store(config.sample_rate(), Ordering::Relaxed);
         shared.out_channels.store(config.channels() as u32, Ordering::Relaxed);
@@ -187,6 +220,9 @@ where
 {
     // Lautstärke weich nachführen (kein Knacken beim Ziehen des Reglers)
     let mut gain = load_f32(&shared.gain);
+    let mut fade = 1.0f32;
+    // Begrenzer: verhindert Übersteuern (z. B. durch Equalizer oder Angleichung)
+    let mut limit = 1.0f32;
     device
         .build_output_stream(
             config,
@@ -194,10 +230,25 @@ where
                 let target = if shared.paused.load(Ordering::Relaxed) { 0.0 } else { load_f32(&shared.gain) };
                 let paused = shared.paused.load(Ordering::Relaxed);
                 let mut buffer = shared.buffer.lock().unwrap();
+                let fade_target = load_f32(&shared.fade_target);
+                let fade_step = load_f32(&shared.fade_step);
                 for sample in data.iter_mut() {
                     gain += (target - gain) * 0.002;
+                    if fade < fade_target {
+                        fade = (fade + fade_step).min(fade_target);
+                    } else if fade > fade_target {
+                        fade = (fade - fade_step).max(fade_target);
+                    }
                     let value = if paused { 0.0 } else { buffer.samples.pop_front().unwrap_or(0.0) };
-                    *sample = T::from_sample(value * gain);
+                    let mut out = value * gain * fade;
+                    let peak = out.abs() * limit;
+                    if peak > 0.98 {
+                        limit = 0.98 / out.abs();
+                    } else {
+                        limit = (limit + 0.00002).min(1.0);
+                    }
+                    out *= limit;
+                    *sample = T::from_sample(out);
                 }
             },
             |e| eprintln!("Audioausgabe: {e}"),

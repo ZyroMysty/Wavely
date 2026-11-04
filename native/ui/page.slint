@@ -254,6 +254,11 @@ export global Page {
     // Wavely-Konto: Name, E-Mail, Passwort, "login" | "register"
     callback login(string, string, string, string);
     callback reset-password(string);
+    // Auswahl-Zeile angeklickt (Zeile, Position fürs Menü)
+    callback select(int, length, length);
+    // Equalizer
+    in property <[float]> eq-gains;
+    callback eq-band(int, float);
 }
 
 // Eingabefeld (Anmeldung)
@@ -305,7 +310,8 @@ export component PageView inherits Rectangle {
                 : row.kind == "buttons" ? 56px
                 : row.kind == "spacer" ? 16px
                 : row.kind == "text" ? text.preferred-height + 16px
-                : row.kind == "setting" ? (row.subtext != "" ? 72px : 58px)
+                : row.kind == "setting" || row.kind == "select" ? (row.subtext != "" ? 72px : 58px)
+                : row.kind == "eq" ? 196px
                 : row.kind == "login" ? (login-mode == "register" ? 300px : 250px) + (row.subtext != "" ? 30px : 0px)
                 : 40px;
 
@@ -473,6 +479,135 @@ export component PageView inherits Rectangle {
                             primary: false;
                             text: row.cards[0].title;
                             clicked => { Page.action(row.cards[0].id); }
+                        }
+                    }
+                }
+            }
+
+
+            // Auswahl über ein Menü (z. B. Ausgabegerät, Equalizer-Voreinstellung)
+            if row.kind == "select": HorizontalLayout {
+                padding-left: root.side-padding;
+                padding-right: root.side-padding;
+                padding-bottom: 6px;
+                Rectangle {
+                    background: Theme.surface;
+                    border-radius: Theme.radius;
+                    HorizontalLayout {
+                        padding-left: 18px;
+                        padding-right: 18px;
+                        spacing: 16px;
+                        VerticalLayout {
+                            alignment: center;
+                            horizontal-stretch: 1;
+                            spacing: 2px;
+                            Text {
+                                text: row.text;
+                                color: Theme.text;
+                                font-weight: 600;
+                            }
+                            if row.subtext != "": Text {
+                                text: row.subtext;
+                                color: Theme.text-dim;
+                                font-size: 13px;
+                                overflow: elide;
+                            }
+                        }
+                        select := Rectangle {
+                            y: (parent.height - self.height) / 2;
+                            height: 34px;
+                            width: min(sel-text.preferred-width + 48px, 320px);
+                            border-radius: 8px;
+                            background: sel-touch.has-hover ? Theme.hover : Theme.surface-2;
+                            sel-text := Text {
+                                x: 12px;
+                                width: parent.width - 40px;
+                                text: row.label;
+                                color: Theme.text;
+                                vertical-alignment: center;
+                                height: parent.height;
+                                overflow: elide;
+                            }
+                            Icon {
+                                x: parent.width - 28px;
+                                path: Icons.chevron;
+                                size: 18px;
+                                color: Theme.text-dim;
+                            }
+                            sel-touch := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => {
+                                    Page.select(ri, self.absolute-position.x, self.absolute-position.y + self.height + 4px);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Equalizer: 10 Bänder (−12 bis +12 dB)
+            if row.kind == "eq": HorizontalLayout {
+                padding-left: root.side-padding;
+                padding-right: root.side-padding;
+                padding-bottom: 6px;
+                Rectangle {
+                    background: Theme.surface;
+                    border-radius: Theme.radius;
+                    HorizontalLayout {
+                        padding: 14px;
+                        spacing: 4px;
+                        for gain[bi] in Page.eq-gains: VerticalLayout {
+                            spacing: 6px;
+                            Text {
+                                text: (gain > 0 ? "+" : "") + round(gain);
+                                color: Theme.text-dim;
+                                font-size: 11px;
+                                horizontal-alignment: center;
+                            }
+                            band := Rectangle {
+                                height: 120px;
+                                property <float> ratio: (gain + 12) / 24;
+                                Rectangle {
+                                    x: (parent.width - 4px) / 2;
+                                    width: 4px;
+                                    border-radius: 2px;
+                                    background: Theme.hover;
+                                }
+                                Rectangle {
+                                    x: (parent.width - 4px) / 2;
+                                    width: 4px;
+                                    y: gain >= 0 ? parent.height * (1 - band.ratio) : parent.height / 2;
+                                    height: abs(gain) / 24 * parent.height;
+                                    background: Theme.accent;
+                                }
+                                Rectangle {
+                                    x: (parent.width - 14px) / 2;
+                                    y: parent.height * (1 - band.ratio) - 7px;
+                                    width: 14px;
+                                    height: 14px;
+                                    border-radius: 7px;
+                                    background: Theme.text;
+                                }
+                                TouchArea {
+                                    mouse-cursor: pointer;
+                                    pointer-event(e) => {
+                                        if (e.kind == PointerEventKind.down) {
+                                            Page.eq-band(bi, round((1 - max(0, min(1, self.mouse-y / self.height))) * 24 - 12));
+                                        }
+                                    }
+                                    moved => {
+                                        if (self.pressed) {
+                                            Page.eq-band(bi, round((1 - max(0, min(1, self.mouse-y / self.height))) * 24 - 12));
+                                        }
+                                    }
+                                }
+                            }
+                            Text {
+                                text: row.cards.length > bi ? row.cards[bi].title : "";
+                                color: Theme.text-dim;
+                                font-size: 11px;
+                                horizontal-alignment: center;
+                            }
                         }
                     }
                 }

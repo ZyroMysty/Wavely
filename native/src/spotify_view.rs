@@ -223,6 +223,26 @@ impl App {
                 });
                 true
             }
+            "lastfm-login" => {
+                self.toast("Last.fm-Anmeldung im Browser geöffnet…", false);
+                let app = self.clone();
+                self.rt.spawn(async move {
+                    match crate::services::lastfm::lastfm_login(&app.lastfm).await {
+                        Ok(()) => app.toast("Mit Last.fm verbunden", false),
+                        Err(e) => app.toast(&e, true),
+                    }
+                    app.settings_changed();
+                });
+                true
+            }
+            "lastfm-logout" => {
+                let app = self.clone();
+                self.rt.spawn(async move {
+                    let _ = crate::services::lastfm::lastfm_logout(&app.lastfm).await;
+                    app.settings_changed();
+                });
+                true
+            }
             "soundcloud-logout" => {
                 let app = self.clone();
                 self.rt.spawn(async move {

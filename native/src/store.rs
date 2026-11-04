@@ -33,6 +33,7 @@ pub struct Settings {
     pub sidebar_collapsed: bool,
     pub lastfm_scrobble: bool,
     pub test_channel: bool,
+    pub output_device: String,
 }
 
 impl Default for Settings {
@@ -56,6 +57,7 @@ impl Default for Settings {
             sidebar_collapsed: false,
             lastfm_scrobble: true,
             test_channel: false,
+            output_device: String::new(),
         }
     }
 }
@@ -123,6 +125,14 @@ impl Store {
     }
     pub fn save_resume(&self, resume: &Resume) {
         self.write("resume.json", resume)
+    }
+
+    /// Gemessene Lautheit je Song („quelle:id“ → LUFS)
+    pub fn loudness(&self) -> std::collections::HashMap<String, f32> {
+        self.read("loudness.json")
+    }
+    pub fn save_loudness(&self, map: &std::collections::HashMap<String, f32>) {
+        self.write("loudness.json", map)
     }
 
     pub fn history(&self) -> Vec<HistoryEntry> {

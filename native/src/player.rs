@@ -134,6 +134,7 @@ pub fn start_load(
     let ytm: Arc<Ytm> = app.ytm.clone();
     engine.send(Command::Stop);
     let handle = app.rt.clone();
+    let lufs = app.loudness.lock().unwrap().get(&format!("{}:{}", track.source, track.id)).copied();
     let app = app.clone();
     handle.clone().spawn(async move {
         let result = async {
@@ -145,10 +146,10 @@ pub fn start_load(
             if let Some(path) = &file_path {
                 let file = std::fs::File::open(path).map_err(|e| format!("Datei nicht lesbar: {e}"))?;
                 let ext = std::path::Path::new(path).extension().and_then(|e| e.to_str()).map(str::to_lowercase);
-                return Ok(engine.load(Box::new(file), ext, start_at));
+                return Ok(engine.load(Box::new(file), ext, start_at, lufs));
             }
             if let Some(source) = app.soundcloud_source(&track).await {
-                return Ok(engine.load(source.0, Some(source.1), start_at));
+                return Ok(engine.load(source.0, Some(source.1), start_at, lufs));
             }
             let id = app.resolve_video(&track).await?;
             let hint = ytm.stream_hint(&id).await.map(str::to_string);
@@ -160,7 +161,7 @@ pub fn start_load(
             });
             // Das erste Stück blockierend holen – nicht im Tokio-Thread
             let source = tokio::task::spawn_blocking(move || HttpSource::open(fetch)).await.map_err(|e| e.to_string())??;
-            Ok(engine.load(Box::new(source), hint, start_at))
+            Ok(engine.load(Box::new(source), hint, start_at, lufs))
         }
         .await;
         on_generation(result);

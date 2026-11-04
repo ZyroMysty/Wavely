@@ -2,11 +2,27 @@
 
 use std::sync::{atomic::Ordering, Arc};
 
+use slint::ComponentHandle;
+
 use crate::{
     nav::PageKind,
     pages::{CardData, PageData, RowData, Target},
     App,
 };
+
+/// Equalizer-Voreinstellungen (wie sound.svelte.js)
+pub const EQ_PRESETS: &[(&str, &str, [f32; 10])] = &[
+    ("flat", "Aus (neutral)", [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+    ("bass", "Bass Boost", [6.0, 5.0, 4.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+    ("treble", "Höhen", [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 4.0, 5.0, 6.0]),
+    ("vocal", "Gesang", [-2.0, -2.0, -1.0, 1.0, 3.0, 4.0, 3.0, 1.0, 0.0, -1.0]),
+    ("pop", "Pop", [-1.0, 1.0, 3.0, 4.0, 2.0, 0.0, -1.0, -1.0, 1.0, 2.0]),
+    ("rock", "Rock", [4.0, 3.0, 1.0, -1.0, -2.0, -1.0, 1.0, 3.0, 4.0, 4.0]),
+    ("electronic", "Elektronisch", [5.0, 4.0, 1.0, 0.0, -2.0, 1.0, 0.0, 2.0, 4.0, 5.0]),
+    ("acoustic", "Akustik", [3.0, 2.0, 1.0, 1.0, 2.0, 2.0, 3.0, 2.0, 2.0, 1.0]),
+    ("speech", "Sprache / Podcast", [-6.0, -4.0, -2.0, 0.0, 2.0, 4.0, 4.0, 3.0, 1.0, -2.0]),
+    ("night", "Nachtmodus (leise Stellen lauter)", [-3.0, -2.0, 0.0, 1.0, 2.0, 2.0, 2.0, 1.0, 0.0, -1.0]),
+];
 
 pub const ACCENTS: &[(&str, &str)] = &[
     ("Pink", "#ff4f7b"),
@@ -58,6 +74,19 @@ impl PageData {
             text: title.into(),
             subtext: description.into(),
             cards: vec![option(id.into(), button)],
+            ..Default::default()
+        });
+    }
+
+    /// Auswahl über ein Menü: Optionen (Wert, Beschriftung)
+    fn select(&mut self, key: &str, title: &str, description: &str, options: &[(String, String)], current: &str) {
+        let label = options.iter().find(|(v, _)| v == current).map(|(_, l)| l.clone()).unwrap_or_else(|| current.to_string());
+        self.rows.push(RowData {
+            kind: "select",
+            label,
+            text: title.into(),
+            subtext: description.into(),
+            cards: options.iter().map(|(value, l)| option(format!("{key}={value}"), l)).collect(),
             ..Default::default()
         });
     }
@@ -132,6 +161,37 @@ pub fn page(app: &Arc<App>) -> PageData {
         &s.stream_quality,
     );
 
+    // Klang
+    p.heading("Klang");
+    p.toggle("normalize", "Lautstärke angleichen", "Leise und laute Songs gleich laut abspielen", s.normalize);
+    let presets: Vec<(String, String)> = EQ_PRESETS
+        .iter()
+        .map(|(id, name, _)| (id.to_string(), name.to_string()))
+        .chain(std::iter::once(("custom".to_string(), "Eigene Einstellung".to_string())))
+        .collect();
+    p.select("eqPreset", "Equalizer", if s.eq_enabled { "An" } else { "Aus" }, &presets, &s.eq_preset);
+    if s.eq_enabled {
+        p.rows.push(RowData {
+            kind: "eq",
+            cards: crate::audio::dsp::EQ_BANDS
+                .iter()
+                .map(|f| option(String::new(), &if *f >= 1000.0 { format!("{}k", f / 1000.0) } else { format!("{f}") }))
+                .collect(),
+            ..Default::default()
+        });
+    }
+    p.choice(
+        "playbackRate",
+        "Tempo",
+        "Die Tonhöhe ändert sich mit",
+        &[("0.75", "0,75×"), ("0.9", "0,9×"), ("1", "1×"), ("1.1", "1,1×"), ("1.25", "1,25×"), ("1.5", "1,5×")],
+        &format!("{}", s.playback_rate),
+    );
+    let devices: Vec<(String, String)> = std::iter::once((String::new(), "Windows-Standard".to_string()))
+        .chain(crate::audio::device_names().into_iter().map(|n| (n.clone(), n)))
+        .collect();
+    p.select("outputDevice", "Ausgabegerät", "Lautsprecher oder Kopfhörer für Wavely", &devices, &s.output_device);
+
     // Discord
     p.heading("Discord");
     p.toggle("discordEnabled", "Im Discord-Status anzeigen", "Zeigt deinen Freunden, was du gerade hörst", s.discord_enabled);
@@ -164,6 +224,20 @@ pub fn page(app: &Arc<App>) -> PageData {
         p.button("soundcloud-logout", "Angemeldet", "Die Anmeldung wurde aus der bisherigen Wavely übernommen.", "Abmelden");
     } else {
         p.info("Nicht angemeldet", "Die SoundCloud-Anmeldung kommt in einer der nächsten nativen Testversionen. Suchen und Abspielen geht auch ohne.");
+    }
+
+    // Last.fm
+    p.heading("Last.fm");
+    match crate::services::lastfm::lastfm_status_now(&app.lastfm) {
+        status if !status.available => p.info("Nicht verfügbar", "Last.fm ist in dieser Version nicht eingerichtet."),
+        status => match status.user {
+            Some(user) => {
+                let pending = if status.pending > 0 { format!(" · {} warten aufs Senden", status.pending) } else { String::new() };
+                p.button("lastfm-logout", &user, &format!("Verbunden{pending}"), "Trennen");
+                p.toggle("lastfmScrobble", "Gehörte Songs scrobbeln", "Songs ab der Hälfte (höchstens 4 Minuten) eintragen", s.lastfm_scrobble);
+            }
+            None => p.button("lastfm-login", "Nicht verbunden", "Gehörte Songs in deinem Last.fm-Profil eintragen", "Verbinden"),
+        },
     }
 
     // Offline
@@ -211,6 +285,19 @@ impl App {
                 ("autoplay", None) => s.autoplay = !s.autoplay,
                 ("syncYouTubeHistory", None) => s.sync_you_tube_history = !s.sync_you_tube_history,
                 ("discordEnabled", None) => s.discord_enabled = !s.discord_enabled,
+                ("lastfmScrobble", None) => s.lastfm_scrobble = !s.lastfm_scrobble,
+                ("normalize", None) => s.normalize = !s.normalize,
+                ("playbackRate", Some(v)) => s.playback_rate = v.parse().unwrap_or(1.0),
+                ("outputDevice", Some(v)) => s.output_device = v,
+                ("eqPreset", Some(v)) => {
+                    if let Some((_, _, gains)) = EQ_PRESETS.iter().find(|(id, _, _)| *id == v) {
+                        s.eq_gains = gains.to_vec();
+                        s.eq_enabled = v != "flat";
+                    } else {
+                        s.eq_enabled = true;
+                    }
+                    s.eq_preset = v;
+                }
                 ("discordDisplay", Some(v)) => s.discord_display = v,
                 ("theme", Some(v)) => s.theme = v,
                 ("accent", Some(v)) => s.accent = v,
@@ -221,11 +308,80 @@ impl App {
             }
         }
         self.save_settings();
+        self.apply_sound();
         self.send_presence();
         self.apply_appearance();
         self.apply_quality();
         self.settings_changed();
         true
+    }
+
+    /// Klang-Einstellungen an die Audio-Engine geben
+    pub fn apply_sound(self: &Arc<Self>) {
+        let (dsp, rate, device, gains) = {
+            let s = self.settings.lock().unwrap();
+            let mut gains = [0.0f32; 10];
+            for (g, v) in gains.iter_mut().zip(s.eq_gains.iter()) {
+                *g = *v;
+            }
+            (
+                crate::audio::dsp::Settings { eq_enabled: s.eq_enabled, eq_gains: gains, normalize: s.normalize },
+                s.playback_rate,
+                s.output_device.clone(),
+                gains,
+            )
+        };
+        self.engine.send(crate::audio::Command::Dsp(dsp));
+        self.engine.send(crate::audio::Command::Device(device));
+        self.engine.set_rate(rate);
+        self.ui(move |ui| {
+            let model: Vec<f32> = gains.to_vec();
+            ui.global::<crate::Page>().set_eq_gains(slint::ModelRc::from(std::rc::Rc::new(slint::VecModel::from(model))));
+        });
+    }
+
+    /// Ein Equalizer-Band ziehen
+    pub fn set_eq_band(self: &Arc<Self>, band: usize, db: f32) {
+        {
+            let mut s = self.settings.lock().unwrap();
+            if s.eq_gains.len() < 10 {
+                s.eq_gains.resize(10, 0.0);
+            }
+            if s.eq_gains[band] == db {
+                return;
+            }
+            s.eq_gains[band] = db;
+            s.eq_preset = "custom".into();
+            s.eq_enabled = true;
+        }
+        self.save_settings();
+        self.apply_sound();
+    }
+
+    /// Klick auf eine Auswahl-Zeile: Optionen als Menü
+    pub fn setting_select(self: &Arc<Self>, row: usize, x: f32, y: f32) {
+        let options = self.page.lock().unwrap().rows.get(row).map(|r| r.cards.clone()).unwrap_or_default();
+        let items: Vec<crate::MenuItem> = options
+            .iter()
+            .map(|c| crate::MenuItem {
+                id: match &c.target {
+                    Target::Action(id) => format!("set:{id}").into(),
+                    _ => Default::default(),
+                },
+                label: c.title.clone().into(),
+                icon: Default::default(),
+                separator: false,
+                chevron: false,
+            })
+            .collect();
+        *self.menu.lock().unwrap() = None;
+        self.ui(move |ui| {
+            let m = ui.global::<crate::Menu>();
+            m.set_items(slint::ModelRc::from(std::rc::Rc::new(slint::VecModel::from(items))));
+            m.set_x(x);
+            m.set_y(y);
+            m.set_open(true);
+        });
     }
 
     /// Audioqualität an yt-dlp weitergeben

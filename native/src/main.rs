@@ -75,6 +75,9 @@ pub struct App {
     pub offline: offline::Offline,
     pub soundcloud: Arc<services::soundcloud::SoundCloud>,
     pub spotify: Arc<services::spotify::Spotify>,
+    pub lastfm: Arc<services::lastfm::LastFm>,
+    /// Gemessene Lautheit je Song (für die Angleichung)
+    pub loudness: Mutex<std::collections::HashMap<String, f32>>,
     /// Zuordnungen Spotify/SoundCloud → YouTube
     pub matches: resolve::Matches,
     /// Discord-Status (Verbindung zum Discord-Client)
@@ -109,6 +112,8 @@ pub struct Listening {
     pub started_at: u64,
     pub listened: f64,
     pub last_pos: f64,
+    /// Schon an Last.fm gemeldet
+    pub scrobbled: bool,
 }
 
 /// Mindestens so lange gehört, damit ein Song in die Statistik kommt
@@ -505,6 +510,29 @@ impl App {
                     self.next();
                 }
             }
+            Event::Measured { generation, lufs } => {
+                let key = {
+                    let s = self.state.lock().unwrap();
+                    if generation != s.generation {
+                        return;
+                    }
+                    s.current().map(|t| format!("{}:{}", t.source, t.id))
+                };
+                if let Some(key) = key {
+                    let map = {
+                        let mut map = self.loudness.lock().unwrap();
+                        map.insert(key, (lufs * 10.0).round() / 10.0);
+                        // Höchstens 3000 Songs merken
+                        if map.len() > 3000 {
+                            if let Some(k) = map.keys().next().cloned() {
+                                map.remove(&k);
+                            }
+                        }
+                        map.clone()
+                    };
+                    self.store.save_loudness(&map);
+                }
+            }
             Event::Error { generation, message } => {
                 let skip = {
                     let mut s = self.state.lock().unwrap();
@@ -626,13 +654,61 @@ impl App {
     }
 
     fn stats_progress(self: &Arc<Self>, position: f64) {
-        if let Some(l) = self.listening.lock().unwrap().as_mut() {
+        let duration = self.state.lock().unwrap().duration;
+        let scrobble = {
+            let mut listening = self.listening.lock().unwrap();
+            let Some(l) = listening.as_mut() else { return };
             let delta = position - l.last_pos;
             if delta > 0.0 && delta < 5.0 {
                 l.listened += delta;
             }
             l.last_pos = position;
+            // Last.fm-Regel: länger als 30 s, gehört bis zur Hälfte oder 4 Minuten
+            let length = if duration > 0.0 { duration } else { l.track.duration };
+            if !l.scrobbled && length >= 30.0 && l.listened >= (length / 2.0).min(240.0) {
+                l.scrobbled = true;
+                Some((l.track.clone(), l.started_at))
+            } else {
+                None
+            }
+        };
+        if let Some((track, started_at)) = scrobble {
+            self.lastfm_scrobble(&track, started_at);
         }
+    }
+
+    fn lastfm_data(&self, track: &Track, started_at: u64) -> Option<services::lastfm::Scrobble> {
+        if !self.settings.lock().unwrap().lastfm_scrobble || std::env::var_os("WAVELY_TEST_STEPS").is_some() {
+            return None;
+        }
+        let artist = track
+            .artists
+            .first()
+            .map(|a| a.name.clone())
+            .unwrap_or_else(|| track.artist.clone().unwrap_or_default().split(',').next().unwrap_or("").trim().to_string());
+        (!artist.is_empty()).then(|| services::lastfm::Scrobble {
+            artist,
+            title: track.title.clone(),
+            album: track.album.clone(),
+            duration: (track.duration > 0.0).then(|| track.duration.round() as u64),
+            timestamp: started_at / 1000,
+        })
+    }
+
+    fn lastfm_now_playing(self: &Arc<Self>, track: &Track) {
+        let Some(data) = self.lastfm_data(track, store::now_ms()) else { return };
+        let lastfm = self.lastfm.clone();
+        self.rt.spawn(async move {
+            let _ = services::lastfm::lastfm_now_playing(&lastfm, data).await;
+        });
+    }
+
+    fn lastfm_scrobble(self: &Arc<Self>, track: &Track, started_at: u64) {
+        let Some(data) = self.lastfm_data(track, started_at) else { return };
+        let lastfm = self.lastfm.clone();
+        self.rt.spawn(async move {
+            let _ = services::lastfm::lastfm_scrobble(&lastfm, data).await;
+        });
     }
 
     /// Song läuft wirklich: Verlauf und Statistik
@@ -648,7 +724,8 @@ impl App {
             });
         }
         let now = store::now_ms();
-        *self.listening.lock().unwrap() = Some(Listening { track: track.clone(), started_at: now, listened: 0.0, last_pos: 0.0 });
+        *self.listening.lock().unwrap() = Some(Listening { track: track.clone(), started_at: now, listened: 0.0, last_pos: 0.0, scrobbled: false });
+        self.lastfm_now_playing(&track);
         let history = {
             let mut h = self.history.lock().unwrap();
             // Derselbe Song direkt nochmal innerhalb einer Minute: nicht doppelt eintragen
@@ -720,6 +797,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         offline: offline::Offline::new(&paths),
         soundcloud: Arc::new(services::soundcloud::SoundCloud::new(&paths)?),
         spotify: Arc::new(services::spotify::Spotify::new(&paths)?),
+        lastfm: Arc::new(services::lastfm::LastFm::new(&paths)?),
+        loudness: Mutex::new(store.loudness()),
         matches: resolve::Matches::new(&paths),
         presence: Default::default(),
         panel: Mutex::new(String::new()),
@@ -876,8 +955,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
     let a = app.clone();
     pg.on_reset_password(move |email| a.account_reset(email.to_string()));
+    let a = app.clone();
+    pg.on_select(move |row, x, y| a.setting_select(row as usize, x, y));
+    let a = app.clone();
+    pg.on_eq_band(move |band, db| a.set_eq_band(band as usize, db));
 
     app.playlists_changed_local();
+    app.apply_sound();
     app.local_scan();
     app.apply_quality();
     app.start_sync();
@@ -886,9 +970,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     app.yt_init();
 
 
-    // yt-dlp im Hintergrund aktuell halten
+    // yt-dlp aktuell halten, liegengebliebene Scrobbles nachreichen
     let a = app.clone();
-    rt.spawn(async move { a.ytm.update_tools().await });
+    rt.spawn(async move {
+        services::lastfm::flush_pending(&a.lastfm).await;
+        a.ytm.update_tools().await;
+    });
 
     if let Ok(query) = std::env::var("WAVELY_TEST_PLAY") {
         ui.global::<YouTube>().set_query(query.clone().into());
@@ -973,6 +1060,12 @@ fn run_test_steps(app: Arc<App>, steps: String) {
                 }
             }
             "confirm" => app.dialog_confirm(arg.to_string()),
+            // Fenstergröße (für Bilder langer Seiten)
+            "size" if nums.len() == 2 => {
+                if let Some(ui) = app.ui.upgrade() {
+                    ui.window().set_size(slint::LogicalSize::new(nums[0] as f32, nums[1] as f32));
+                }
+            }
             "panel" => app.toggle_panel(arg),
             "dump" => {
                 for (i, r) in app.page.lock().unwrap().rows.iter().enumerate() {

@@ -9,6 +9,8 @@ path = "src/main.rs"
 
 [build-dependencies]
 slint-build = "1.18"
+serde_json = "1"
+winresource = "0.1"
 
 [dependencies]
 # Oberfläche ohne Browser: Software-Renderer (kein Grafiktreiber-Speicher)
@@ -29,6 +31,7 @@ symphonia-adapter-opus-rs = "0.1"
 cpal = "0.18"
 # Lokale Musik: Tags lesen, Ordner durchsuchen und beobachten, Ordnerauswahl
 lofty = "0.25"
+md-5 = "0.11"
 url = "2"
 base64 = "0.22"
 percent-encoding = "2"
