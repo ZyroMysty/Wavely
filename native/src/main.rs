@@ -6,10 +6,12 @@ mod audio;
 mod covers;
 mod host;
 mod icon;
+mod local;
 mod menu;
 mod nav;
 mod playlists;
 mod pages;
+mod panel;
 mod player;
 mod services;
 mod settings;
@@ -62,6 +64,16 @@ pub struct App {
     pub dialog_target: Mutex<Option<String>>,
     pub dialog_tracks: Mutex<Vec<Track>>,
     pub store: store::Store,
+    pub paths: host::Paths,
+    pub local_tracks: Mutex<Vec<Track>>,
+    /// Offenes Seitenfeld rechts und dessen Songs/Zeilen
+    pub panel: Mutex<String>,
+    pub panel_tracks: Mutex<Vec<Track>>,
+    pub panel_rows: Mutex<Vec<Option<usize>>>,
+    /// Liedtext: Song-Schlüssel, Ergebnis, Zeilen mit Zeit, lädt gerade
+    pub lyrics: Mutex<(String, Option<services::lyrics::Lyrics>, Vec<(f64, String)>, bool)>,
+    pub local_loading: Mutex<bool>,
+    pub local_watcher: services::library::Watcher,
     pub account: account::Account,
     /// Zählt Anmeldungen: ein alter Abgleich hört auf, wenn sich jemand neu anmeldet
     pub sync_generation: AtomicU64,
@@ -126,7 +138,7 @@ impl App {
                 s.shuffle,
                 s.repeat,
                 s.index.map(|i| i as i32).unwrap_or(-1),
-                t.and_then(|t| t.artwork_url.clone()),
+                t.and_then(covers::cover_url),
             )
         };
         let (can_like, liked) = {
@@ -184,7 +196,7 @@ impl App {
             let rows: Vec<TrackRow> = tracks.iter().map(pages::track_row).collect();
             let model = Rc::new(VecModel::from(rows));
             ui.global::<Queue>().set_tracks(ModelRc::from(model.clone()));
-            covers::fill(&app, &model, tracks.iter().map(|t| t.artwork_url.clone()).collect());
+            covers::fill(&app, &model, tracks.iter().map(covers::cover_url).collect());
         });
     }
 
@@ -420,6 +432,7 @@ impl App {
                     (seconds, s.duration)
                 };
                 self.stats_progress(position);
+                self.lyrics_progress(position);
                 if self.last_resume_save.lock().unwrap().elapsed().as_secs() >= 5 {
                     self.save_resume();
                 }
@@ -603,6 +616,14 @@ impl App {
             h.clone()
         };
         self.store.save_history(&history);
+        // Offene Seitenfelder zum neuen Song aktualisieren
+        let panel = self.panel.lock().unwrap().clone();
+        let app = self.clone();
+        let _ = slint::invoke_from_event_loop(move || match panel.as_str() {
+            "lyrics" => app.show_lyrics(),
+            "history" => app.show_history(),
+            _ => {}
+        });
     }
 
 }
@@ -650,6 +671,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         history: Mutex::new(load_history(&store)),
         settings: Mutex::new(settings.clone()),
         account: account::Account::new(&paths),
+        paths: paths.clone(),
+        local_tracks: Mutex::new(Vec::new()),
+        panel: Mutex::new(String::new()),
+        panel_tracks: Mutex::new(Vec::new()),
+        panel_rows: Mutex::new(Vec::new()),
+        lyrics: Mutex::new(Default::default()),
+        local_loading: Mutex::new(false),
+        local_watcher: Default::default(),
         sync_generation: AtomicU64::new(0),
         sync_status: Mutex::new(String::new()),
         account_busy: Mutex::new(false),
@@ -752,7 +781,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let a = app.clone();
     d.on_cancel(move || a.ui(|ui| ui.global::<Dialog>().set_open(false)));
 
+    let side = ui.global::<Side>();
+    let a = app.clone();
+    side.on_play(move |row| a.panel_play(row as usize));
+    let a = app.clone();
+    side.on_menu(move |row, x, y| a.panel_menu(row as usize, x, y));
+    let a = app.clone();
+    side.on_lyric_clicked(move |line| a.lyrics_seek(line as usize));
+
     let n = ui.global::<Nav>();
+    let a = app.clone();
+    n.on_toggle_panel(move |panel| a.toggle_panel(&panel));
     let a = app.clone();
     n.on_select(move |view| a.show_view(&view));
     let a = app.clone();
@@ -780,6 +819,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     pg.on_reset_password(move |email| a.account_reset(email.to_string()));
 
     app.playlists_changed_local();
+    app.local_scan();
     app.apply_quality();
     app.start_sync();
     let start_view = app.settings.lock().unwrap().start_view.clone();
@@ -855,11 +895,7 @@ fn run_test_steps(app: Arc<App>, steps: String) {
                 }
             }
             "confirm" => app.dialog_confirm(arg.to_string()),
-            "panel" => {
-                if let Some(ui) = app.ui.upgrade() {
-                    ui.global::<Nav>().set_panel(arg.into());
-                }
-            }
+            "panel" => app.toggle_panel(arg),
             "dump" => {
                 for (i, r) in app.page.lock().unwrap().rows.iter().enumerate() {
                     eprintln!("[test] Zeile {i}: {} {:?} ({} Kacheln)", r.kind, r.text, r.cards.len());

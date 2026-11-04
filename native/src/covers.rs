@@ -63,8 +63,18 @@ impl Covers {
     }
 }
 
+/// Bild-Adresse eines Songs: Cover-URL oder (lokale Datei) das eingebettete Bild
+pub fn cover_url(track: &crate::player::Track) -> Option<String> {
+    track.artwork_url.clone().or_else(|| track.path.as_ref().map(|p| format!("{LOCAL_PREFIX}{p}")))
+}
+
+const LOCAL_PREFIX: &str = "localcover:";
+
 async fn fetch(http: &reqwest::Client, url: &str, size: u32) -> Option<SharedPixelBuffer<Rgba8Pixel>> {
-    let bytes = if let Some(path) = url.strip_prefix("file://") {
+    let bytes = if let Some(path) = url.strip_prefix(LOCAL_PREFIX) {
+        let path = path.to_string();
+        tokio::task::spawn_blocking(move || crate::services::library::cover_bytes(&path).map(|(data, _)| data)).await.ok()??
+    } else if let Some(path) = url.strip_prefix("file://") {
         tokio::fs::read(path).await.ok()?
     } else {
         http.get(url).send().await.ok()?.bytes().await.ok()?.to_vec()

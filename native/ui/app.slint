@@ -66,6 +66,7 @@ export global Nav {
     in property <[int]> playlist-counts;
     in property <string> current-playlist;
     callback select(string);
+    callback toggle-panel(string);
     callback open-playlist(string);
     callback new-playlist();
 }
@@ -113,6 +114,21 @@ export global Menu {
     in property <[MenuItem]> items;
     callback pick(string);
     callback close();
+}
+
+
+// Seitenfeld rechts: Verlauf (Zeilen) oder Liedtext
+export global Side {
+    in property <string> title;
+    in property <string> message;
+    in property <[PageRow]> rows;
+    in property <[string]> lyric-lines;
+    in property <bool> lyric-synced;
+    in property <int> lyric-current: -1;
+    in property <string> lyric-source;
+    callback play(int);
+    callback menu(int, length, length);
+    callback lyric-clicked(int);
 }
 
 // Kurze Meldung unten in der Mitte
@@ -224,7 +240,7 @@ component Sidebar inherits Rectangle {
             }
             Flickable {
                 vertical-stretch: 1;
-                viewport-height: plist.preferred-height;
+                content-height: plist.preferred-height;
                 plist := VerticalLayout {
                     alignment: start;
                     for playlist[i] in Nav.playlists: Rectangle {
@@ -377,25 +393,6 @@ component GenericView inherits Rectangle {
     }
 }
 
-component Placeholder inherits Rectangle {
-    in property <string> title;
-    VerticalLayout {
-        padding: 28px;
-        spacing: 12px;
-        alignment: start;
-        Text {
-            text: root.title;
-            font-size: 28px;
-            font-weight: 700;
-            color: Theme.text;
-        }
-        Text {
-            text: "Kommt in einer der nächsten nativen Testversionen.";
-            color: Theme.text-dim;
-        }
-    }
-}
-
 component QueuePanel inherits Rectangle {
     width: 360px;
     background: Theme.surface;
@@ -423,6 +420,104 @@ component QueuePanel inherits Rectangle {
                 play => { Queue.jump(i); }
                 menu(x, y) => { Queue.menu(i, x, y); }
             }
+        }
+    }
+}
+
+
+component SidePanel inherits Rectangle {
+    width: 360px;
+    background: Theme.surface;
+    Rectangle {
+        x: 0;
+        width: 1px;
+        background: Theme.border;
+    }
+    VerticalLayout {
+        padding: 16px;
+        spacing: 12px;
+        HorizontalLayout {
+            Text {
+                horizontal-stretch: 1;
+                text: Side.title;
+                font-size: 18px;
+                font-weight: 700;
+                color: Theme.text;
+                vertical-alignment: center;
+            }
+            IconButton {
+                icon: Icons.close;
+                icon-size: 18px;
+                clicked => { Nav.toggle-panel(Nav.panel); }
+            }
+        }
+        if Side.message != "": Text {
+            text: Side.message;
+            color: Theme.text-dim;
+            wrap: word-wrap;
+        }
+        // Verlauf
+        if Nav.panel == "history": ListView {
+            vertical-stretch: 1;
+            for row[i] in Side.rows: Rectangle {
+                height: row.kind == "heading" ? 40px : 56px;
+                if row.kind == "heading": Text {
+                    x: 8px;
+                    y: parent.height - self.height - 6px;
+                    text: row.text;
+                    font-weight: 700;
+                    color: Theme.text;
+                }
+                if row.kind == "track": TrackLine {
+                    track: row.track;
+                    number: row.number + 1;
+                    show-album: false;
+                    play => { Side.play(i); }
+                    menu(x, y) => { Side.menu(i, x, y); }
+                }
+            }
+        }
+        // Liedtext
+        if Nav.panel == "lyrics" && Side.lyric-lines.length > 0: lyric-view := Flickable {
+            vertical-stretch: 1;
+            property <length> line-height: 54px;
+            content-height: Side.lyric-lines.length * line-height + self.height;
+            // Aktuelle Zeile etwa im oberen Drittel halten
+            property <int> current: Side.lyric-current;
+            changed current => {
+                if (Side.lyric-synced && self.current >= 0) {
+                    self.content-y = min(0px, -(self.current * self.line-height) + self.height / 3);
+                }
+            }
+            animate content-y { duration: 300ms; easing: ease-out; }
+            for line[li] in Side.lyric-lines: Rectangle {
+                y: li * lyric-view.line-height;
+                height: lyric-view.line-height;
+                width: parent.width;
+                Text {
+                    x: 6px;
+                    width: parent.width - 12px;
+                    height: parent.height;
+                    text: line;
+                    wrap: word-wrap;
+                    overflow: elide;
+                    vertical-alignment: center;
+                    font-size: Side.lyric-synced ? 17px : 15px;
+                    font-weight: Side.lyric-synced ? 600 : 400;
+                    color: !Side.lyric-synced ? Theme.text
+                        : li == Side.lyric-current ? Theme.text
+                        : li < Side.lyric-current ? Theme.text-dim.with-alpha(0.6) : Theme.text-dim;
+                }
+                if Side.lyric-synced: TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { Side.lyric-clicked(li); }
+                }
+            }
+        }
+        if Nav.panel == "lyrics" && Side.lyric-source != "": Text {
+            text: Side.lyric-source;
+            color: Theme.text-dim;
+            font-size: 12px;
         }
     }
 }
@@ -555,9 +650,21 @@ component PlayerBar inherits Rectangle {
             spacing: 4px;
             IconButton {
                 y: (parent.height - self.height) / 2;
+                icon: Icons.lyrics;
+                on: Nav.panel == "lyrics";
+                clicked => { Nav.toggle-panel("lyrics"); }
+            }
+            IconButton {
+                y: (parent.height - self.height) / 2;
+                icon: Icons.history;
+                on: Nav.panel == "history";
+                clicked => { Nav.toggle-panel("history"); }
+            }
+            IconButton {
+                y: (parent.height - self.height) / 2;
                 icon: Icons.queue;
                 on: Nav.panel == "queue";
-                clicked => { Nav.panel = Nav.panel == "queue" ? "" : "queue"; }
+                clicked => { Nav.toggle-panel("queue"); }
             }
             IconButton {
                 y: (parent.height - self.height) / 2;
@@ -596,6 +703,7 @@ export component AppWindow inherits Window {
                 if Nav.view != "youtube": GenericView { }
             }
             if Nav.panel == "queue": QueuePanel { }
+            if Nav.panel == "history" || Nav.panel == "lyrics": SidePanel { }
         }
         PlayerBar { }
     }

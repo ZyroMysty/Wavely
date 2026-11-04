@@ -81,6 +81,50 @@ pub fn private_bytes() -> u64 {
     }
 }
 
+/// Abstand der Ortszeit zu UTC in Millisekunden (inkl. Sommerzeit)
+pub fn local_offset_ms() -> i64 {
+    #[cfg(windows)]
+    {
+        use windows::Win32::System::SystemInformation::{GetLocalTime, GetSystemTime};
+        let to_ms = |t: windows::Win32::Foundation::SYSTEMTIME| {
+            days_from_civil(t.wYear as i64, t.wMonth as i64, t.wDay as i64) * 86_400_000
+                + t.wHour as i64 * 3_600_000
+                + t.wMinute as i64 * 60_000
+        };
+        let (local, utc) = unsafe { (GetLocalTime(), GetSystemTime()) };
+        // Auf Minuten runden (beide Uhren werden kurz nacheinander gelesen)
+        ((to_ms(local) - to_ms(utc)) as f64 / 60_000.0).round() as i64 * 60_000
+    }
+    #[cfg(not(windows))]
+    {
+        0
+    }
+}
+
+/// Datum → Tage seit 1970 (Algorithmus von Howard Hinnant)
+pub fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let mp = (m + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+/// Tage seit 1970 → (Jahr, Monat, Tag)
+pub fn civil_from_days(days: i64) -> (i64, i64, i64) {
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    (if m <= 2 { yoe + era * 400 + 1 } else { yoe + era * 400 }, m, d)
+}
+
 /// Windows im dunklen Modus? (Einstellungen → Personalisierung → Farben)
 pub fn system_dark() -> bool {
     #[cfg(windows)]

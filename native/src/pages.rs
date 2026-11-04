@@ -156,8 +156,8 @@ pub fn show(app: &Arc<App>, ui: &crate::AppWindow, page: &PageData) {
         .enumerate()
         .map(|(i, r)| {
             let track = r.track.map(|t| {
-                if let Some(url) = &page.tracks[t].artwork_url {
-                    row_covers.push((i, url.clone(), covers::LIST_SIZE));
+                if let Some(url) = covers::cover_url(&page.tracks[t]) {
+                    row_covers.push((i, url, covers::LIST_SIZE));
                 }
                 track_row(&page.tracks[t])
             });

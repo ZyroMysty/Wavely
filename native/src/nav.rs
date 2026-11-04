@@ -13,6 +13,7 @@ pub enum PageKind {
     Playlist(String),
     Home,
     Settings,
+    Local,
     /// Noch nicht nachgebaute Ansicht
     Placeholder(&'static str),
 }
@@ -22,7 +23,7 @@ fn root_of(view: &str) -> PageKind {
     match view {
         "youtube" => PageKind::Yt(youtube::YtPage::Library),
         "home" => PageKind::Home,
-        "local" => PageKind::Placeholder("Lokale Musik"),
+        "local" => PageKind::Local,
         "spotify" => PageKind::Placeholder("Spotify"),
         "soundcloud" => PageKind::Placeholder("SoundCloud"),
         "offline" => PageKind::Placeholder("Offline"),
@@ -155,6 +156,10 @@ impl App {
                 let data = wavely::home_page(self);
                 self.set_page(data, back, false);
             }
+            PageKind::Local => {
+                let data = crate::local::page(self);
+                self.set_page(data, back, false);
+            }
             PageKind::Settings => {
                 let data = crate::settings::page(self);
                 self.set_page(data, back, false);
@@ -216,7 +221,7 @@ impl App {
     }
 
     pub fn page_action(self: &Arc<Self>, action: &str) {
-        if self.setting_action(action) {
+        if self.setting_action(action) || self.local_action(action) {
             return;
         }
         let tracks = self.page.lock().unwrap().tracks.clone();
