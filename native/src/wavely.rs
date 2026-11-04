@@ -336,6 +336,20 @@ impl App {
         self.ui(|ui| ui.global::<Dialog>().set_open(false));
         match self.dialog_target.lock().unwrap().take() {
             Some(target) if target == "together" => self.together_join(value),
+            Some(target) if target == "youtube-new" => {
+                let tracks = std::mem::take(&mut *self.dialog_tracks.lock().unwrap());
+                let app = self.clone();
+                self.rt.spawn(async move {
+                    let ids = tracks.iter().map(|t| t.id.clone()).collect();
+                    match crate::services::ytm::ytm_create_playlist(&app.ytm, value.clone(), "PRIVATE".into(), ids).await {
+                        Ok(id) => {
+                            app.yt_playlists.lock().unwrap().insert(0, (id, value.clone()));
+                            app.toast(&format!("YouTube-Playlist „{value}“ erstellt"), false);
+                        }
+                        Err(e) => app.toast(&format!("Playlist konnte nicht erstellt werden: {e}"), true),
+                    }
+                });
+            }
             Some(id) => {
                 self.playlists.lock().unwrap().rename(&id, &value);
                 self.playlists_changed();

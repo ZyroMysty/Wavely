@@ -173,7 +173,7 @@ pub fn show(app: &Arc<App>, ui: &crate::AppWindow, page: &PageData) {
                 row
             });
             if let Some(url) = &r.art {
-                row_covers.push((i, url.clone(), 400));
+                row_covers.push((i, url.clone(), 320));
             }
             let cards: Vec<Card> = r
                 .cards
@@ -222,12 +222,12 @@ pub fn show(app: &Arc<App>, ui: &crate::AppWindow, page: &PageData) {
         r.track.cover = image;
         r.track.has_cover = true;
     });
-    covers::fill_with(app, &model, big.into_iter().map(|(i, u, _)| (i, u)).collect(), 400, |r| r.text.clone(), |r, image| {
+    covers::fill_with(app, &model, big.into_iter().map(|(i, u, _)| (i, u)).collect(), 320, |r| r.text.clone(), |r, image| {
         r.cover = image;
         r.has_cover = true;
     });
     for (cards, urls) in card_models {
-        covers::fill_with(app, &cards, urls, 340, |c| c.id.clone(), |c, image| {
+        covers::fill_with(app, &cards, urls, 256, |c| c.id.clone(), |c, image| {
             c.cover = image;
             c.has_cover = true;
         });

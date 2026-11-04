@@ -71,6 +71,8 @@ pub struct App {
     pub yt_logged_in: AtomicBool,
     /// Gelikte YouTube-Songs (Video-IDs)
     pub liked: Mutex<std::collections::HashSet<String>>,
+    /// Eigene YouTube-Playlists (ID, Name), zu denen man Songs hinzufügen kann
+    pub yt_playlists: Mutex<Vec<(String, String)>>,
     pub playlists: Mutex<playlists::Playlists>,
     /// Charts für die Startseite
     pub charts: Mutex<Option<services::ytm::YtHome>>,
@@ -867,6 +869,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         view: Mutex::new("home".into()),
         stacks: Mutex::new(Default::default()),
         liked: Mutex::new(Default::default()),
+        yt_playlists: Mutex::new(Vec::new()),
         playlists: Mutex::new(playlists::Playlists::load(&store)),
         charts: Mutex::new(None),
         charts_loading: AtomicBool::new(false),

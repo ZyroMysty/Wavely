@@ -127,7 +127,7 @@ impl Resampler {
         if self.in_rate != in_rate || self.channels != in_ch {
             *self = Resampler { in_rate, channels: in_ch, last: input[..in_ch].to_vec(), phase: 0.0 };
         }
-        let mut write = |l: f32, r: f32, out: &mut VecDeque<f32>| {
+        let write = |l: f32, r: f32, out: &mut VecDeque<f32>| {
             out.push_back(l);
             if out_ch > 1 {
                 out.push_back(r);

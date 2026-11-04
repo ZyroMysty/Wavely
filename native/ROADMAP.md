@@ -1,29 +1,37 @@
-# Wavely nativ – Fahrplan
+# Wavely nativ – Stand
 
-Ziel: Wavely ohne WebView2 als reine Rust-App (Branch `native`). Erwartet: rund 30–50 MB statt 160 MB.
+Ziel: Wavely ohne WebView2 als reine Rust-App (Branch `native`).
+Gemessen (Release-Build, Startseite + laufender Song + Liedtext): **rund 40 MB** statt 160 MB.
 
 ## Technik
 
-- **Oberfläche:** [Slint](https://slint.dev) mit Software-Renderer (zeichnet auf dem Prozessor, kein Grafiktreiber-Speicher).
-  Die Oberfläche steht in `ui/*.slint`, die Logik in `src/`.
-- **Audio:** Symphonia (Entpacken/Dekodieren: AAC, MP3, FLAC, Vorbis, Opus) → eigener Signalweg
-  (Lautstärke, Equalizer, Überblenden) → cpal (WASAPI).
-- **Dienste:** die bisherigen Rust-Module aus `src-tauri/src` (YouTube Music, SoundCloud, Spotify, Last.fm,
-  Liedtexte, Offline, yt-dlp …), ohne Tauri – `src/host.rs` ersetzt AppHandle (Ordner, Ereignisse).
-- **Wavely-Konto:** Firebase über REST (Identity Toolkit + Firestore) statt Firebase-JS.
-- **Spotify-Wiedergabe:** kleines, unsichtbares WebView2-Fenster nur solange Spotify spielt.
-- **Daten:** eigener Ordner `com.wavely.native`; beim ersten Start werden Anmeldungen aus `com.wavely.app` übernommen.
+- **Oberfläche:** [Slint](https://slint.dev) mit Software-Renderer (`ui/*.slint`), Seiten aus Zeilen (`src/pages.rs`).
+- **Audio:** Symphonia (AAC, MP3, FLAC, Vorbis, Opus) → Equalizer/Angleichung (`audio/dsp.rs`) → cpal (WASAPI).
+- **Dienste:** die Rust-Module der bisherigen Wavely ohne Tauri (`src/services/`).
+- **Wavely-Konto:** Firebase über REST (`src/account.rs`), Abgleich alle 60 Sekunden.
+- **Browser nur bei Bedarf** (`win/web.rs`, WebView2 über wry): Anmeldung Google/SoundCloud, Spotify-Premium-Wiedergabe.
+- **Daten:** eigener Ordner `com.wavely.native`; Anmeldungen, Playlists, Hörstatistik und Offline-Verzeichnis
+  werden beim ersten Start aus `com.wavely.app` übernommen.
+- **Installer/Updates:** `node scripts/build-native.mjs` (NSIS, signiert mit dem Wavely-Schlüssel,
+  `updates/latest-native.json`).
 
-## Schritte
+## Erledigt
 
-1. [ ] Grundgerüst: Fenster, Design (dunkel/hell, Akzentfarbe), Seitenleiste, Player-Leiste
-2. [ ] Audio-Engine: lokale Dateien + YouTube-Streams, Position, Lautstärke, Ende → nächster Song
-3. [ ] YouTube Music: Suche, Bibliothek, Playlists/Alben, Künstler, Likes, Radio/Autoplay
-4. [ ] Warteschlange, Verlauf, Fortsetzen nach Neustart, Zufall/Wiederholen
-5. [ ] Startseite, Lokale Musik (Ordner, Cover), Offline-Downloads
-6. [ ] Wavely-Konto (Anmeldung, Sync von Likes/Playlists/Verlauf/Einstellungen), Wavely-Playlists
-7. [ ] SoundCloud, Spotify (Bibliothek, Zuordnung, Premium-Wiedergabe im WebView)
-8. [ ] Einstellungen komplett, Klang (Equalizer, Normalisierung, Überblenden, Tempo), Schlaf-Timer
-9. [ ] Liedtexte, Rückblick/Statistik, Last.fm, Discord, Zusammen hören
-10. [ ] Windows: Mediensteuerung, Taskleisten-Buttons, Mini-Player, Tastenkürzel, Autostart, Einladungslinks
-11. [ ] Updater, Feedback, Diagnose, Neuigkeiten-Dialog, Installer
+- [x] Fenster, Design (dunkel/hell/System, Akzentfarbe), Seitenleiste mit Playlists, Player-Leiste
+- [x] Audio-Engine: lokale Dateien, YouTube-/SoundCloud-Streams, Offline-Dateien, Spulen, Lautstärke
+- [x] YouTube Music: Suche, Bibliothek, Playlists/Alben, Künstler, Likes, Radio/Autoplay, YouTube-Playlists, Verlauf melden
+- [x] Warteschlange, Verlauf, Fortsetzen nach Neustart, Zufall/Wiederholen, Kontextmenü
+- [x] Startseite, Lokale Musik (Ordner, Cover, Beobachten), Offline-Downloads
+- [x] Wavely-Konto (Anmeldung, Registrierung, Abgleich von Playlists und Hören), Wavely-Playlists
+- [x] SoundCloud, Spotify (Anmeldung im Browser, Zuordnung zu YouTube Music, Premium-Wiedergabe)
+- [x] Einstellungen, Equalizer, Lautstärke angleichen, Tempo, Ausgabegerät, Schlaf-Timer
+- [x] Liedtexte, Rückblick, Last.fm, Discord, Zusammen hören, Feedback
+- [x] Medientasten, Taskleisten-Buttons, Mini-Player, Tastenkürzel (auch systemweit), Autostart, nur eine Instanz
+- [x] Updater, Installer, Diagnose für Admins
+
+## Noch offen
+
+- [ ] Playlists zu anderen Diensten übertragen („Übertragen“)
+- [ ] Neuigkeiten-Dialog nach Updates
+- [ ] Tonhöhe beim Tempo beibehalten (zurzeit ändert sich die Tonhöhe mit)
+- [ ] Einladungslinks „wavely://“ dieser Version zuordnen (bewusst nicht, solange die normale Wavely sie nutzt)

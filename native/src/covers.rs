@@ -30,6 +30,10 @@ impl Default for Covers {
 }
 
 impl Covers {
+    pub fn count(&self) -> usize {
+        self.cache.lock().unwrap().0.len()
+    }
+
     fn cached(&self, key: &(String, u32)) -> Option<SharedPixelBuffer<Rgba8Pixel>> {
         self.cache.lock().unwrap().0.get(key).cloned()
     }

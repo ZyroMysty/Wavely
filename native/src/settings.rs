@@ -281,6 +281,21 @@ pub fn page(app: &Arc<App>) -> PageData {
         None => p.button("update-check", "Updates", "Neue native Testversionen werden automatisch gesucht", "Jetzt suchen"),
     }
     p.info("Arbeitsspeicher", &format!("{:.1} MB privat", crate::host::private_bytes() as f64 / 1_048_576.0));
+    if app.account.admin.load(Ordering::Relaxed) {
+        let queue = app.state.lock().unwrap().queue.len();
+        p.info(
+            "Diagnose",
+            &format!(
+                "Warteschlange {queue} · Verlauf {} · Likes {} · Playlists {} · Lokal {} · Offline {} · Cover im Speicher {}",
+                app.history.lock().unwrap().len(),
+                app.liked.lock().unwrap().len(),
+                app.playlists.lock().unwrap().list.len(),
+                app.local_tracks.lock().unwrap().len(),
+                app.offline.stats().0,
+                app.covers.count(),
+            ),
+        );
+    }
     p.spacer();
     p
 }

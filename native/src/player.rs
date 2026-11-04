@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     audio::{
         source::{FetchChunk, HttpSource},
-        Command, Engine, Generation,
+        Command, Generation,
     },
     services::ytm::Ytm,
 };

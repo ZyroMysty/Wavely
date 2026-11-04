@@ -51,6 +51,12 @@ impl App {
         let track = &context.track;
         let mut items = Vec::new();
         match page {
+            "youtube" => {
+                items.push(item("yt-new", "Neue YouTube-Playlist…", icon::PLUS, false, false));
+                for (i, (id, title)) in self.yt_playlists.lock().unwrap().iter().enumerate() {
+                    items.push(item(&format!("yt-add:{id}"), title, icon::YOUTUBE, i == 0, false));
+                }
+            }
             "wavely" => {
                 items.push(item("new-playlist", "Neue Playlist…", icon::PLUS, false, false));
                 for (i, p) in self.playlists.lock().unwrap().list.iter().enumerate() {
@@ -73,6 +79,7 @@ impl App {
                         true,
                         false,
                     ));
+                    items.push(item("youtube", "Zu YouTube-Playlist hinzufügen", icon::YOUTUBE, false, true));
                 }
                 if matches!(track.source.as_str(), "youtube" | "spotify" | "soundcloud") {
                     let saved = self.offline.path_of(&track.id).is_some();
@@ -192,9 +199,9 @@ impl App {
             return;
         }
         let Some(context) = self.menu.lock().unwrap().clone() else { return };
-        if id == "wavely" {
+        if id == "wavely" || id == "youtube" {
             // Untermenü an gleicher Stelle
-            self.show_menu_page("wavely", -1.0, -1.0);
+            self.show_menu_page(id, -1.0, -1.0);
             return;
         }
         self.close_menu();
@@ -235,6 +242,17 @@ impl App {
                     self.playlist_remove_item(&pid, index);
                 }
             }
+            "yt-new" => {
+                *self.dialog_tracks.lock().unwrap() = vec![track];
+                *self.dialog_target.lock().unwrap() = Some("youtube-new".into());
+                self.ui(|ui| {
+                    let d = ui.global::<crate::Dialog>();
+                    d.set_title("Neue YouTube-Playlist (privat)".into());
+                    d.set_value("Neue Playlist".into());
+                    d.set_confirm_text("Erstellen".into());
+                    d.set_open(true);
+                });
+            }
             "new-playlist" => {
                 *self.dialog_tracks.lock().unwrap() = vec![track];
                 self.ask_playlist_name(None);
@@ -242,6 +260,16 @@ impl App {
             other => {
                 if let Some(pid) = other.strip_prefix("add:") {
                     self.playlist_add(pid, vec![track]);
+                } else if let Some(pid) = other.strip_prefix("yt-add:") {
+                    let app = self.clone();
+                    let pid = pid.to_string();
+                    let title = self.yt_playlists.lock().unwrap().iter().find(|(id, _)| *id == pid).map(|(_, t)| t.clone()).unwrap_or_default();
+                    self.rt.spawn(async move {
+                        match ytm::ytm_add_to_playlist(&app.ytm, pid, vec![track.id.clone()]).await {
+                            Ok(()) => app.toast(&format!("Zu „{title}“ hinzugefügt"), false),
+                            Err(e) => app.toast(&format!("Hinzufügen fehlgeschlagen: {e}"), true),
+                        }
+                    });
                 }
             }
         }
@@ -371,6 +399,10 @@ impl App {
             let _ = slint::invoke_from_event_loop(move || a.refresh_if_showing(|p| matches!(p, crate::nav::PageKind::Yt(YtPage::Library))));
             if !logged_in {
                 return;
+            }
+            if let Ok(library) = ytm::ytm_library(&app.ytm).await {
+                *app.yt_playlists.lock().unwrap() =
+                    library.playlists.into_iter().filter(|p| p.editable).map(|p| (p.id, p.title)).collect();
             }
             if let Ok(ids) = ytm::ytm_liked_ids(&app.ytm).await {
                 *app.liked.lock().unwrap() = ids.into_iter().collect();
