@@ -45,7 +45,8 @@ pub struct Options {
     pub visible: bool,
     /// Eigener Browser-Ordner (Anmeldungen bleiben getrennt)
     pub data_dir: std::path::PathBuf,
-    pub html: Option<String>,
+    /// Eigene Seite unter https://<name>.localhost/ (sicherer Ursprung, z. B. für Kopierschutz/EME)
+    pub html: Option<(String, String)>,
 }
 
 /// Öffnet ein Browserfenster mit Kennung `id` (oder holt es nach vorn)
@@ -111,8 +112,20 @@ pub fn open(
             })
             .with_ipc_handler(move |request| on_ipc(request.body().clone()))
             .with_autoplay(true);
-        builder = match &options.html {
-            Some(html) => builder.with_html(html.clone()),
+        builder = match options.html.clone() {
+            Some((scheme, html)) => {
+                use wry::WebViewBuilderExtWindows;
+                let url = format!("https://{scheme}.localhost/");
+                builder
+                    .with_https_scheme(true)
+                    .with_custom_protocol(scheme, move |_, _| {
+                        wry::http::Response::builder()
+                            .header("Content-Type", "text/html; charset=utf-8")
+                            .body(std::borrow::Cow::Owned(html.clone().into_bytes()))
+                            .unwrap()
+                    })
+                    .with_url(url)
+            }
             None => builder.with_url(options.url.clone()),
         };
         let view = builder.build(&parent).map_err(|e| e.to_string())?;

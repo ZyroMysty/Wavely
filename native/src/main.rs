@@ -25,6 +25,8 @@ mod player;
 mod services;
 mod settings;
 mod soundcloud_view;
+#[cfg(windows)]
+mod spotify_engine;
 mod spotify_view;
 mod store;
 mod together;
@@ -84,6 +86,8 @@ pub struct App {
     pub offline: offline::Offline,
     pub soundcloud: Arc<services::soundcloud::SoundCloud>,
     pub spotify: Arc<services::spotify::Spotify>,
+    #[cfg(windows)]
+    pub spotify_playback: Mutex<spotify_engine::SpotifyPlayback>,
     pub lastfm: Arc<services::lastfm::LastFm>,
     /// Schlaf-Timer: Ende, „am Ende des Songs“, Zähler (ältere Timer verfallen)
     pub sleep_until: Mutex<Option<std::time::Instant>>,
@@ -292,6 +296,33 @@ impl App {
             track
         };
         self.sync_player();
+        // Spotify Premium: echt über Spotify (sonst weiter über YouTube Music)
+        #[cfg(windows)]
+        if self.can_play_on_spotify(&track) {
+            self.engine.send(Command::Stop);
+            let app = self.clone();
+            let id = track.id.clone();
+            self.rt.spawn(async move {
+                if app.play_on_spotify(&id, start_at).await.is_err() {
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if app.state.lock().unwrap().index == Some(index) {
+                            app.spotify_stop();
+                            app.load_audio(index, track, start_at);
+                        }
+                    });
+                }
+            });
+            self.extend_with_autoplay();
+            return;
+        }
+        #[cfg(windows)]
+        self.spotify_stop();
+        self.load_audio(index, track, start_at);
+        self.extend_with_autoplay();
+    }
+
+    /// Über Wavelys eigenen Player laden
+    fn load_audio(self: &Arc<Self>, index: usize, track: Track, start_at: f64) {
         let app = self.clone();
         let title = track.title.clone();
         player::start_load(self, track, start_at, move |result| {
@@ -309,7 +340,6 @@ impl App {
                 }
             }
         });
-        self.extend_with_autoplay();
     }
 
     pub fn toggle_play(self: &Arc<Self>) {
@@ -327,6 +357,14 @@ impl App {
                 (s.index.unwrap_or(0), s.position)
             };
             self.load(i, pos);
+            return;
+        }
+        #[cfg(windows)]
+        if self.spotify_active() {
+            self.spotify_command(if playing { "pause" } else { "resume" }, 0.0);
+            self.state.lock().unwrap().playing = !playing;
+            self.sync_player();
+            self.send_presence();
             return;
         }
         self.engine.send(if playing { Command::Pause } else { Command::Play });
@@ -363,6 +401,11 @@ impl App {
 
     pub fn seek(self: &Arc<Self>, seconds: f64) {
         self.state.lock().unwrap().position = seconds;
+        #[cfg(windows)]
+        if self.spotify_active() {
+            self.spotify_command("seek", (seconds * 1000.0).round());
+            return;
+        }
         self.engine.send(Command::Seek(seconds));
         self.send_presence();
     }
@@ -377,6 +420,10 @@ impl App {
         self.settings.lock().unwrap().volume = volume;
         self.save_settings();
         self.engine.set_gain(gain);
+        #[cfg(windows)]
+        if self.spotify_active() {
+            self.spotify_command("volume", gain as f64);
+        }
         let app = self.clone();
         self.ui(move |ui| ui.global::<Player>().set_muted(false));
         drop(app);
@@ -838,6 +885,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         offline: offline::Offline::new(&paths),
         soundcloud: Arc::new(services::soundcloud::SoundCloud::new(&paths)?),
         spotify: Arc::new(services::spotify::Spotify::new(&paths)?),
+        #[cfg(windows)]
+        spotify_playback: Default::default(),
         lastfm: Arc::new(services::lastfm::LastFm::new(&paths)?),
         sleep_until: Mutex::new(None),
         recap_range: Mutex::new("month".into()),
