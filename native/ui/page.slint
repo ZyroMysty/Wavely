@@ -1,0 +1,400 @@
+// Allgemeine Seite: eine lange, scrollbare Liste aus Zeilen verschiedener Art.
+// Nur die sichtbaren Zeilen werden gebaut (ListView) – auch bei Playlists mit Tausenden Songs.
+
+import { Theme } from "theme.slint";
+import { Icon, Icons } from "icons.slint";
+import { IconButton, PillButton } from "controls.slint";
+import { ListView } from "std-widgets.slint";
+
+export struct TrackRow {
+    id: string,
+    title: string,
+    artist: string,
+    album: string,
+    duration: string,
+    cover: image,
+    has-cover: bool,
+}
+
+export struct Card {
+    id: string,
+    title: string,
+    subtitle: string,
+    cover: image,
+    has-cover: bool,
+    // Künstler: rundes Bild
+    round: bool,
+}
+
+export struct PageRow {
+    // "hero" | "heading" | "track" | "cards" | "message" | "buttons" | "text" | "spacer"
+    kind: string,
+    text: string,
+    subtext: string,
+    // Kleine Überschrift über dem Titel („Playlist“, „Album“, „Künstler“)
+    label: string,
+    track: TrackRow,
+    // Nummer in der Songliste (ab 1) bzw. Index der Songs der Seite
+    number: int,
+    cards: [Card],
+    cover: image,
+    has-cover: bool,
+    round: bool,
+}
+
+// Wiederverwendbare Songzeile
+export component TrackLine inherits Rectangle {
+    in property <TrackRow> track;
+    in property <int> number;
+    in property <bool> current;
+    in property <bool> show-album: true;
+    callback play();
+    callback menu();
+    height: 56px;
+    border-radius: 8px;
+    background: touch.has-hover ? Theme.surface-2 : transparent;
+    touch := TouchArea {
+        double-clicked => {
+            root.play();
+        }
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.right) {
+                root.menu();
+            }
+        }
+    }
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 14px;
+        Rectangle {
+            width: 24px;
+            if !touch.has-hover: Text {
+                width: parent.width;
+                height: parent.height;
+                text: root.number;
+                color: root.current ? Theme.accent : Theme.text-dim;
+                horizontal-alignment: right;
+                vertical-alignment: center;
+                font-size: 13px;
+            }
+            if touch.has-hover: Rectangle {
+                Icon {
+                    x: parent.width - self.width;
+                    path: Icons.play;
+                    size: 18px;
+                    color: Theme.text;
+                }
+                TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.play();
+                    }
+                }
+            }
+        }
+        Rectangle {
+            width: 40px;
+            Rectangle {
+                y: (parent.height - 40px) / 2;
+                width: 40px;
+                height: 40px;
+                border-radius: 6px;
+                background: Theme.surface-2;
+                clip: true;
+                if track.has-cover: Image {
+                    width: parent.width;
+                    height: parent.height;
+                    source: track.cover;
+                    image-fit: cover;
+                }
+                if !track.has-cover: Icon {
+                    path: Icons.music;
+                    size: 18px;
+                    color: Theme.text-dim;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 2;
+            // Breite nur nach Anteil, nicht nach Textlänge
+            preferred-width: 0px;
+            min-width: 0px;
+            Text {
+                text: track.title;
+                color: root.current ? Theme.accent : Theme.text;
+                overflow: elide;
+                font-weight: 500;
+            }
+            Text {
+                text: track.artist;
+                color: Theme.text-dim;
+                overflow: elide;
+                font-size: 13px;
+            }
+        }
+        if root.show-album: Rectangle {
+            horizontal-stretch: 1;
+            preferred-width: 0px;
+            Text {
+                x: 0;
+                width: parent.width;
+                text: track.album;
+                color: Theme.text-dim;
+                overflow: elide;
+                vertical-alignment: center;
+                horizontal-alignment: left;
+                font-size: 13px;
+            }
+        }
+        Text {
+            width: 48px;
+            text: track.duration;
+            color: Theme.text-dim;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+            font-size: 13px;
+        }
+        IconButton {
+            y: (parent.height - self.height) / 2;
+            opacity: touch.has-hover ? 1 : 0;
+            icon: Icons.queue;
+            icon-size: 18px;
+            clicked => {
+                root.menu();
+            }
+        }
+    }
+}
+
+// Kachel (Playlist, Album, Künstler)
+component CardView inherits Rectangle {
+    in property <Card> card;
+    callback open();
+    border-radius: Theme.radius;
+    background: touch.has-hover ? Theme.surface-2 : transparent;
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.open();
+        }
+    }
+    VerticalLayout {
+        padding: 12px;
+        spacing: 4px;
+        Rectangle {
+            height: self.width;
+            border-radius: card.round ? self.width / 2 : 8px;
+            background: Theme.surface-2;
+            clip: true;
+            if card.has-cover: Image {
+                width: parent.width;
+                height: parent.height;
+                source: card.cover;
+                image-fit: cover;
+            }
+            if !card.has-cover: Icon {
+                path: Icons.music;
+                size: 40px;
+                color: Theme.text-dim;
+            }
+        }
+        Rectangle { height: 4px; }
+        Text {
+            text: card.title;
+            color: Theme.text;
+            font-weight: 600;
+            overflow: elide;
+            horizontal-alignment: card.round ? center : left;
+        }
+        Text {
+            text: card.subtitle;
+            color: Theme.text-dim;
+            font-size: 13px;
+            overflow: elide;
+            horizontal-alignment: card.round ? center : left;
+        }
+    }
+}
+
+// Kachel-Raster mit automatischem Umbruch
+component CardGrid inherits Rectangle {
+    in property <[Card]> cards;
+    callback open(int);
+    property <int> columns: max(1, floor((self.width + 0px) / 182px));
+    property <length> cell-width: self.width / columns;
+    property <length> cell-height: cell-width + 54px;
+    height: ceil(cards.length / columns) * cell-height;
+    for card[i] in cards: CardView {
+        x: mod(i, columns) * cell-width;
+        y: floor(i / columns) * cell-height;
+        width: cell-width - 4px;
+        height: cell-height - 4px;
+        card: card;
+        open => {
+            root.open(i);
+        }
+    }
+}
+
+export global Page {
+    in property <[PageRow]> rows;
+    in property <bool> can-go-back;
+    in property <bool> loading;
+    in property <string> error;
+    // Index des laufenden Songs unter den Songs der Seite (-1: keiner)
+    in property <string> current-id;
+    callback back();
+    callback play(int);
+    callback card(int, int);
+    callback action(string);
+    callback track-menu(int);
+}
+
+export component PageView inherits Rectangle {
+    // Kopfzeile der Ansicht (Suche, Anmelden …) kommt von außen
+    in property <length> side-padding: 32px;
+
+    ListView {
+        for row[ri] in Page.rows: Rectangle {
+            // Höhe je nach Art der Zeile
+            height: row.kind == "hero" ? 248px
+                : row.kind == "heading" ? 60px
+                : row.kind == "track" ? 56px
+                : row.kind == "cards" ? grid.height + 8px
+                : row.kind == "buttons" ? 56px
+                : row.kind == "spacer" ? 16px
+                : row.kind == "text" ? text.preferred-height + 16px
+                : 40px;
+
+            if row.kind == "hero": HorizontalLayout {
+                padding-left: root.side-padding;
+                padding-right: root.side-padding;
+                padding-top: 8px;
+                padding-bottom: 20px;
+                spacing: 24px;
+                Rectangle {
+                    width: 200px;
+                    height: 200px;
+                    border-radius: row.round ? 100px : Theme.radius;
+                    background: Theme.surface-2;
+                    clip: true;
+                    drop-shadow-blur: 30px;
+                    drop-shadow-color: #00000070;
+                    if row.has-cover: Image {
+                        width: parent.width;
+                        height: parent.height;
+                        source: row.cover;
+                        image-fit: cover;
+                    }
+                    if !row.has-cover: Icon {
+                        path: Icons.music;
+                        size: 64px;
+                        color: Theme.text-dim;
+                    }
+                }
+                VerticalLayout {
+                    alignment: end;
+                    spacing: 4px;
+                    Text {
+                        text: row.label;
+                        font-size: 12px;
+                        font-weight: 600;
+                        color: Theme.text-dim;
+                        letter-spacing: 0.7px;
+                    }
+                    Text {
+                        text: row.text;
+                        font-size: 36px;
+                        font-weight: 700;
+                        color: Theme.text;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: row.subtext;
+                        color: Theme.text-dim;
+                        overflow: elide;
+                    }
+                }
+            }
+
+            if row.kind == "heading": HorizontalLayout {
+                padding-left: root.side-padding;
+                padding-right: root.side-padding;
+                padding-top: 24px;
+                Text {
+                    text: row.text;
+                    font-size: row.number == 1 ? 30px : 20px;
+                    font-weight: 700;
+                    color: Theme.text;
+                    vertical-alignment: center;
+                }
+            }
+
+            if row.kind == "message": HorizontalLayout {
+                padding-left: root.side-padding;
+                padding-right: root.side-padding;
+                Text {
+                    text: row.text;
+                    color: row.number == 1 ? Theme.accent : Theme.text-dim;
+                    vertical-alignment: center;
+                    wrap: word-wrap;
+                }
+            }
+
+            text := Text {
+                visible: row.kind == "text";
+                x: root.side-padding;
+                width: parent.width - 2 * root.side-padding;
+                text: row.kind == "text" ? row.text : "";
+                color: Theme.text-dim;
+                wrap: word-wrap;
+            }
+
+            if row.kind == "buttons": HorizontalLayout {
+                padding-left: root.side-padding;
+                padding-right: root.side-padding;
+                padding-top: 4px;
+                padding-bottom: 14px;
+                spacing: 8px;
+                alignment: start;
+                // Knöpfe: Kennung = id, Beschriftung = title, Symbol = subtitle
+                for button[ai] in row.cards: PillButton {
+                    primary: ai == 0;
+                    text: button.title;
+                    icon: button.subtitle;
+                    clicked => {
+                        Page.action(button.id);
+                    }
+                }
+            }
+
+            if row.kind == "track": HorizontalLayout {
+                padding-left: root.side-padding - 12px;
+                padding-right: root.side-padding - 12px;
+                TrackLine {
+                    track: row.track;
+                    number: row.number + 1;
+                    current: row.track.id == Page.current-id;
+                    play => {
+                        Page.play(ri);
+                    }
+                    menu => {
+                        Page.track-menu(ri);
+                    }
+                }
+            }
+
+            grid := CardGrid {
+                visible: row.kind == "cards";
+                x: root.side-padding - 12px;
+                width: parent.width - 2 * root.side-padding + 24px;
+                cards: row.kind == "cards" ? row.cards : [];
+                open(ci) => {
+                    Page.card(ri, ci);
+                }
+            }
+        }
+    }
+}

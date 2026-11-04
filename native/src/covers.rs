@@ -80,31 +80,51 @@ async fn fetch(http: &reqwest::Client, url: &str, size: u32) -> Option<SharedPix
 
 thread_local! {
     /// Listen, in die gerade Cover eingetragen werden (nur im UI-Thread)
-    static MODELS: std::cell::RefCell<HashMap<u64, std::rc::Weak<VecModel<TrackRow>>>> = Default::default();
+    static MODELS: std::cell::RefCell<HashMap<u64, Box<dyn std::any::Any>>> = Default::default();
 }
 static NEXT_MODEL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
-/// Trägt die Cover nach und nach in eine Liste ein (im UI-Thread aufrufen). Ist die Liste
-/// inzwischen ersetzt oder die Zeile eine andere, passiert nichts.
-pub fn fill(app: &Arc<App>, model: &Rc<VecModel<TrackRow>>, urls: Vec<Option<String>>) {
+/// Trägt Cover nach und nach in eine Liste ein (im UI-Thread aufrufen). `items`: (Zeile, Bild-URL).
+/// Ist die Liste inzwischen ersetzt oder die Zeile eine andere (`id_of`), passiert nichts.
+pub fn fill_with<R: Clone + 'static>(
+    app: &Arc<App>,
+    model: &Rc<VecModel<R>>,
+    items: Vec<(usize, String)>,
+    size: u32,
+    id_of: fn(&R) -> slint::SharedString,
+    set: fn(&mut R, Image),
+) {
     let key = NEXT_MODEL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     MODELS.with(|m| {
         let mut m = m.borrow_mut();
-        m.retain(|_, weak| weak.strong_count() > 0);
-        m.insert(key, Rc::downgrade(model));
+        // Aufräumen: nicht mehr angezeigte Listen
+        m.retain(|_, weak| {
+            weak.downcast_ref::<std::rc::Weak<VecModel<R>>>().is_none_or(|w| w.strong_count() > 0)
+        });
+        m.insert(key, Box::new(Rc::downgrade(model)));
     });
-    for (i, url) in urls.into_iter().enumerate() {
-        let Some(url) = url else { continue };
-        let Some(id) = model.row_data(i).map(|r| r.id) else { continue };
-        app.covers.load(app, url, LIST_SIZE, move |image| {
-            let Some(model) = MODELS.with(|m| m.borrow().get(&key).and_then(|w| w.upgrade())) else { return };
+    for (i, url) in items {
+        let Some(id) = model.row_data(i).map(|r| id_of(&r)) else { continue };
+        app.covers.load(app, url, size, move |image| {
+            let model = MODELS.with(|m| {
+                m.borrow().get(&key).and_then(|w| w.downcast_ref::<std::rc::Weak<VecModel<R>>>()).and_then(|w| w.upgrade())
+            });
+            let Some(model) = model else { return };
             if let Some(mut row) = model.row_data(i) {
-                if row.id == id {
-                    row.cover = image;
-                    row.has_cover = true;
+                if id_of(&row) == id {
+                    set(&mut row, image);
                     model.set_row_data(i, row);
                 }
             }
         });
     }
+}
+
+/// Cover einer Songliste
+pub fn fill(app: &Arc<App>, model: &Rc<VecModel<TrackRow>>, urls: Vec<Option<String>>) {
+    let items = urls.into_iter().enumerate().filter_map(|(i, u)| u.map(|u| (i, u))).collect();
+    fill_with(app, model, items, LIST_SIZE, |r| r.id.clone(), |r, image| {
+        r.cover = image;
+        r.has_cover = true;
+    });
 }

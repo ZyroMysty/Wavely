@@ -4,18 +4,9 @@ import { Theme } from "theme.slint";
 import { Icon, Icons } from "icons.slint";
 import { IconButton, SquareButton, PillButton, Slider, SearchField } from "controls.slint";
 import { ListView } from "std-widgets.slint";
+import { Page, PageView, PageRow, TrackRow, TrackLine, Card } from "page.slint";
 
-export { Theme }
-
-export struct TrackRow {
-    id: string,
-    title: string,
-    artist: string,
-    album: string,
-    duration: string,
-    cover: image,
-    has-cover: bool,
-}
+export { Theme, Page, PageRow, TrackRow, Card }
 
 export struct NavItem {
     id: string,
@@ -71,16 +62,17 @@ export global Nav {
 
 export global YouTube {
     in-out property <string> query;
-    in property <[TrackRow]> results;
-    in property <bool> searching;
-    in property <string> message: "Suche nach Songs, Alben und Künstlern";
+    // "checking" | "loggedOut" | "loggedIn"
+    in property <string> status: "checking";
+    in property <string> account-name;
     callback search(string);
-    callback play(int);
+    callback login();
 }
 
 export global Queue {
     in property <[TrackRow]> tracks;
     callback jump(int);
+    callback remove(int);
 }
 
 component Sidebar inherits Rectangle {
@@ -215,109 +207,40 @@ component Cover inherits Rectangle {
     }
 }
 
-// Songliste: nur sichtbare Zeilen werden gebaut (ListView)
-component TrackList inherits Rectangle {
-    in property <[TrackRow]> tracks;
-    in property <int> current: -1;
-    callback play(int);
-
-    ListView {
-        for track[i] in root.tracks: Rectangle {
-            height: 56px;
-            border-radius: 8px;
-            background: row-touch.has-hover ? Theme.surface-2 : transparent;
-            row-touch := TouchArea {
-                double-clicked => {
-                    root.play(i);
-                }
-            }
-            HorizontalLayout {
-                padding-left: 12px;
-                padding-right: 12px;
-                spacing: 14px;
-                Text {
-                    width: 24px;
-                    text: i + 1;
-                    color: i == root.current ? Theme.accent : Theme.text-dim;
-                    horizontal-alignment: right;
-                    vertical-alignment: center;
-                    font-size: 13px;
-                }
-                Cover {
-                    y: (parent.height - self.height) / 2;
-                    source: track.cover;
-                    has-image: track.has-cover;
-                }
-                VerticalLayout {
-                    alignment: center;
-                    horizontal-stretch: 2;
-                    Text {
-                        text: track.title;
-                        color: i == root.current ? Theme.accent : Theme.text;
-                        overflow: elide;
-                        font-weight: 500;
-                    }
-                    Text {
-                        text: track.artist;
-                        color: Theme.text-dim;
-                        overflow: elide;
-                        font-size: 13px;
-                    }
-                }
-                Text {
-                    horizontal-stretch: 1;
-                    text: track.album;
-                    color: Theme.text-dim;
-                    overflow: elide;
-                    vertical-alignment: center;
-                    font-size: 13px;
-                }
-                Text {
-                    width: 48px;
-                    text: track.duration;
-                    color: Theme.text-dim;
-                    horizontal-alignment: right;
-                    vertical-alignment: center;
-                    font-size: 13px;
-                }
-            }
-        }
-    }
-}
-
 component YouTubeView inherits Rectangle {
     VerticalLayout {
-        padding: 28px;
-        spacing: 20px;
         HorizontalLayout {
-            spacing: 16px;
-            Text {
-                text: "YouTube Music";
-                font-size: 28px;
-                font-weight: 700;
-                color: Theme.text;
-                vertical-alignment: center;
+            padding-left: 32px;
+            padding-right: 32px;
+            padding-top: 20px;
+            padding-bottom: 12px;
+            spacing: 8px;
+            if Page.can-go-back: IconButton {
+                y: (parent.height - self.height) / 2;
+                size: 38px;
+                icon: Icons.previous;
+                icon-size: 18px;
+                clicked => { Page.back(); }
+            }
+            SearchField {
+                width: 320px;
+                text <=> YouTube.query;
+                placeholder: "Songs, Alben, Playlists suchen";
+                accepted(q) => { YouTube.search(q); }
             }
             Rectangle { horizontal-stretch: 1; }
-            SearchField {
-                width: 280px;
-                text <=> YouTube.query;
-                placeholder: "Songs suchen";
-                accepted(q) => {
-                    YouTube.search(q);
-                }
+            if YouTube.status == "loggedOut": PillButton {
+                text: "Anmelden";
+                clicked => { YouTube.login(); }
+            }
+            if YouTube.status == "loggedIn" && YouTube.account-name != "": Text {
+                text: YouTube.account-name;
+                color: Theme.text-dim;
+                vertical-alignment: center;
             }
         }
-        if YouTube.searching || YouTube.results.length == 0: Text {
-            text: YouTube.searching ? "Suche läuft…" : YouTube.message;
-            color: Theme.text-dim;
-        }
-        TrackList {
+        PageView {
             vertical-stretch: 1;
-            tracks: YouTube.results;
-            play(i) => {
-                YouTube.play(i);
-            }
         }
     }
 }
@@ -342,7 +265,7 @@ component Placeholder inherits Rectangle {
 }
 
 component QueuePanel inherits Rectangle {
-    width: 340px;
+    width: 360px;
     background: Theme.surface;
     Rectangle {
         x: 0;
@@ -350,7 +273,7 @@ component QueuePanel inherits Rectangle {
         background: Theme.border;
     }
     VerticalLayout {
-        padding: 20px;
+        padding: 16px;
         spacing: 12px;
         Text {
             text: "Warteschlange";
@@ -358,12 +281,15 @@ component QueuePanel inherits Rectangle {
             font-weight: 700;
             color: Theme.text;
         }
-        TrackList {
+        ListView {
             vertical-stretch: 1;
-            tracks: Queue.tracks;
-            current: Player.queue-index;
-            play(i) => {
-                Queue.jump(i);
+            for track[i] in Queue.tracks: TrackLine {
+                track: track;
+                number: i + 1;
+                current: i == Player.queue-index;
+                show-album: false;
+                play => { Queue.jump(i); }
+                menu => { Queue.remove(i); }
             }
         }
     }
