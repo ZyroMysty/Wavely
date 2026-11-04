@@ -43,6 +43,8 @@ pub struct RowData {
     pub cards: Vec<CardData>,
     pub art: Option<String>,
     pub round: bool,
+    /// Zahlen für Diagramme (0–1)
+    pub values: Vec<f32>,
 }
 
 /// Eine fertige Seite
@@ -90,11 +92,13 @@ impl PageData {
     pub fn buttons(&mut self, buttons: &[(&str, &str, &str)]) {
         let cards = buttons
             .iter()
-            .map(|(id, text, icon)| CardData {
+            .enumerate()
+            .map(|(i, (id, text, icon))| CardData {
                 title: text.to_string(),
                 subtitle: icon.to_string(),
                 art: None,
-                round: false,
+                // Hervorgehobener Knopf (standardmäßig der erste)
+                round: i == 0,
                 target: Target::Action(id.to_string()),
             })
             .collect();
@@ -161,7 +165,12 @@ pub fn show(app: &Arc<App>, ui: &crate::AppWindow, page: &PageData) {
                 if let Some(url) = covers::cover_url(&page.tracks[t]) {
                     row_covers.push((i, url, covers::LIST_SIZE));
                 }
-                track_row(&page.tracks[t])
+                let mut row = track_row(&page.tracks[t]);
+                // Eigener Text statt der Länge (z. B. „12×“ im Rückblick)
+                if !r.subtext.is_empty() {
+                    row.duration = r.subtext.clone().into();
+                }
+                row
             });
             if let Some(url) = &r.art {
                 row_covers.push((i, url.clone(), 400));
@@ -200,6 +209,7 @@ pub fn show(app: &Arc<App>, ui: &crate::AppWindow, page: &PageData) {
                 cover: Default::default(),
                 has_cover: false,
                 round: r.round,
+                values: ModelRc::from(Rc::new(VecModel::from(r.values.clone()))),
             }
         })
         .collect();

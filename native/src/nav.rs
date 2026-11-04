@@ -16,6 +16,7 @@ pub enum PageKind {
     Home,
     Settings,
     Local,
+    Recap,
     Offline,
     OfflineCollection(String),
     /// Noch nicht nachgebaute Ansicht
@@ -31,7 +32,7 @@ fn root_of(view: &str) -> PageKind {
         "spotify" => PageKind::Sp(crate::spotify_view::SpPage::Library),
         "soundcloud" => PageKind::Sc(crate::soundcloud_view::ScPage::Library),
         "offline" => PageKind::Offline,
-        "recap" => PageKind::Placeholder("Rückblick"),
+        "recap" => PageKind::Recap,
         "settings" => PageKind::Settings,
         _ => PageKind::Placeholder("Wavely"),
     }
@@ -200,6 +201,11 @@ impl App {
                 let data = crate::offline::collection_page(self, &id);
                 self.set_page(data, back, false);
             }
+            PageKind::Recap => {
+                let range = self.recap_range.lock().unwrap().clone();
+                let data = crate::recap::page(self, &range);
+                self.set_page(data, back, false);
+            }
             PageKind::Local => {
                 let data = crate::local::page(self);
                 self.set_page(data, back, false);
@@ -266,7 +272,12 @@ impl App {
     }
 
     pub fn page_action(self: &Arc<Self>, action: &str) {
-        if self.setting_action(action) || self.local_action(action) || self.offline_action(action) || self.service_action(action) {
+        if self.setting_action(action)
+            || self.local_action(action)
+            || self.offline_action(action)
+            || self.service_action(action)
+            || self.recap_action(action)
+        {
             return;
         }
         let tracks = self.page.lock().unwrap().tracks.clone();

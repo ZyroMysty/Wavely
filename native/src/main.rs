@@ -13,6 +13,7 @@ mod menu;
 mod mini_ui;
 mod nav;
 mod playlists;
+mod recap;
 mod resolve;
 mod offline;
 mod pages;
@@ -81,6 +82,8 @@ pub struct App {
     pub lastfm: Arc<services::lastfm::LastFm>,
     /// Schlaf-Timer: Ende, „am Ende des Songs“, Zähler (ältere Timer verfallen)
     pub sleep_until: Mutex<Option<std::time::Instant>>,
+    /// Zeitraum im Rückblick
+    pub recap_range: Mutex<String>,
     /// Song, dessen Cover der Mini-Player gerade hat
     pub mini_cover_key: Mutex<Option<String>>,
     pub sleep_end_of_track: AtomicBool,
@@ -820,6 +823,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         spotify: Arc::new(services::spotify::Spotify::new(&paths)?),
         lastfm: Arc::new(services::lastfm::LastFm::new(&paths)?),
         sleep_until: Mutex::new(None),
+        recap_range: Mutex::new("month".into()),
         mini_cover_key: Mutex::new(None),
         sleep_end_of_track: AtomicBool::new(false),
         sleep_token: AtomicU64::new(0),
