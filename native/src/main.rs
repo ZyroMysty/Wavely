@@ -1253,6 +1253,24 @@ fn run_test_steps(app: Arc<App>, steps: String) {
                     let acc = services::ytm::ytm_account(&a.ytm).await;
                     eprintln!("[test] Konto: {:?}", acc.as_ref().map(|a| a.name.clone()));
                     eprintln!("[test] Cookie: {}", a.ytm.rp.user_auth_cookie_header().is_some());
+                    eprintln!("[test] Prüfung: {:?}", a.ytm.rp.user_auth_check_cookie().await);
+                    for id in ["FEmusic_liked_playlists", "FEmusic_library_landing"] {
+                        let raw = a
+                            .ytm
+                            .rp
+                            .query()
+                            .authenticated()
+                            .raw(rustypipe::client::ClientType::DesktopMusic, "browse", &serde_json::json!({ "browseId": id }))
+                            .await;
+                        match raw {
+                            Ok(body) => {
+                                let li = body.split("\"logged_in\",\"value\":\"").nth(1).map(|s| &s[..1]).unwrap_or("?");
+                                let _ = std::fs::write(std::env::temp_dir().join(format!("wavely-{id}.json")), &body);
+                                eprintln!("[test] {id}: logged_in={li}, {} Bytes", body.len());
+                            }
+                            Err(e) => eprintln!("[test] {id}: {e}"),
+                        }
+                    }
                 });
             }
             "tab" => {

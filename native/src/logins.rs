@@ -10,9 +10,17 @@ const YT_LOGIN_URL: &str = "https://accounts.google.com/ServiceLogin?service=you
 const SC_LOGIN_URL: &str = "https://soundcloud.com/signin";
 
 impl App {
+    /// Browserprofil der YouTube-Anmeldung. Bleibt erhalten: Google erneuert die Anmelde-Cookies
+    /// nur im Browser, ohne ihn gilt die übernommene Anmeldung nach kurzer Zeit nicht mehr.
+    fn yt_profile(&self) -> std::path::PathBuf {
+        self.paths.cache.join("ytm-webview")
+    }
+
     pub fn youtube_login(self: &Arc<Self>) {
-        let data_dir = self.paths.cache.join("login-webview");
+        let data_dir = self.yt_profile();
         let _ = std::fs::remove_dir_all(&data_dir);
+        let _ = std::fs::remove_dir_all(self.paths.cache.join("login-webview"));
+        self.toast("Anmeldefenster wird geöffnet…", false);
         let app = self.clone();
         let result = web::open(
             "ytm-login",
@@ -59,7 +67,78 @@ impl App {
                 }
                 Err(e) => app.toast(&format!("YouTube-Anmeldung fehlgeschlagen: {e}"), true),
             }
-            let _ = std::fs::remove_dir_all(app.paths.cache.join("login-webview"));
+        });
+    }
+
+    /// Anmeldung im Hintergrund auffrischen: unsichtbares Browserfenster mit dem gespeicherten
+    /// Profil öffnet YouTube Music, danach werden die erneuerten Cookies übernommen.
+    /// `done(true)`, wenn es geklappt hat. Nur im UI-Thread aufrufen.
+    pub fn youtube_refresh(self: &Arc<Self>, done: impl FnOnce(bool) + Send + 'static) {
+        let profile = self.yt_profile();
+        if !profile.join("EBWebView").exists() || web::is_open("ytm-refresh") || web::is_open("ytm-login") {
+            done(false);
+            return;
+        }
+        let done = Arc::new(std::sync::Mutex::new(Some(Box::new(done) as Box<dyn FnOnce(bool) + Send>)));
+        let finish = move |ok: bool| {
+            if let Some(f) = done.lock().unwrap().take() {
+                f(ok);
+            }
+        };
+        let app = self.clone();
+        let on_load = {
+            let finish = finish.clone();
+            move |url: String| {
+                if !url.starts_with("https://music.youtube.com") {
+                    return;
+                }
+                let app = app.clone();
+                let finish = finish.clone();
+                // Kurz warten, bis die Seite ihre Cookies erneuert hat
+                slint::Timer::single_shot(std::time::Duration::from_secs(2), move || {
+                    if !web::is_open("ytm-refresh") {
+                        return;
+                    }
+                    let cookies = web::cookies("ytm-refresh", "https://music.youtube.com");
+                    web::close("ytm-refresh");
+                    if !cookies.iter().any(|(name, _)| name == "SAPISID") {
+                        finish(false);
+                        return;
+                    }
+                    let cookie = cookies.iter().map(|(n, v)| format!("{n}={v}")).collect::<Vec<_>>().join("; ");
+                    let a = app.clone();
+                    app.rt.spawn(async move {
+                        let ok = a.ytm.rp.user_auth_set_cookie(cookie).await.is_ok();
+                        finish(ok);
+                    });
+                });
+            }
+        };
+        let result = web::open(
+            "ytm-refresh",
+            web::Options {
+                title: "YouTube Music".into(),
+                url: "https://music.youtube.com/".into(),
+                size: (800, 600),
+                visible: false,
+                data_dir: profile,
+                html: None,
+            },
+            |_| true,
+            on_load,
+            |_| {},
+            || {},
+        );
+        if result.is_err() {
+            finish(false);
+            return;
+        }
+        // Lädt die Seite nicht, nach 30 Sekunden aufgeben
+        slint::Timer::single_shot(std::time::Duration::from_secs(30), move || {
+            if web::is_open("ytm-refresh") {
+                web::close("ytm-refresh");
+                finish(false);
+            }
         });
     }
 
@@ -67,6 +146,7 @@ impl App {
         let app = self.clone();
         self.rt.spawn(async move {
             let _ = crate::services::ytm::ytm_logout(&app.ytm).await;
+            let _ = std::fs::remove_dir_all(app.yt_profile());
             app.yt_logged_in.store(false, Ordering::Relaxed);
             app.liked.lock().unwrap().clear();
             app.ui(|ui| {

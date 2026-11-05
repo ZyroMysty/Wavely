@@ -74,6 +74,7 @@ pub fn open(
                 lpfnWndProc: Some(window_proc),
                 hInstance: instance.into(),
                 hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
+                hbrBackground: windows::Win32::Graphics::Gdi::GetSysColorBrush(windows::Win32::Graphics::Gdi::COLOR_WINDOW),
                 lpszClassName: CLASS,
                 ..Default::default()
             };
@@ -98,6 +99,11 @@ pub fn open(
         let scale = GetDpiForWindow(hwnd) as f32 / 96.0;
         let _ = SetWindowPos(hwnd, None, 0, 0, (options.size.0 as f32 * scale) as i32, (options.size.1 as f32 * scale) as i32, SWP_NOMOVE | SWP_NOZORDER);
 
+        // Fenster gleich zeigen: Der Browser braucht beim ersten Mal ein paar Sekunden
+        if options.visible {
+            let _ = ShowWindow(hwnd, SW_SHOW);
+            let _ = SetForegroundWindow(hwnd);
+        }
         let _ = std::fs::create_dir_all(&options.data_dir);
         let mut context = Box::new(wry::WebContext::new(Some(options.data_dir.clone())));
         let context_ptr: *mut wry::WebContext = &mut *context;
@@ -131,8 +137,7 @@ pub fn open(
         let view = builder.build(&parent).map_err(|e| e.to_string())?;
         resize(hwnd, &view);
         if options.visible {
-            let _ = ShowWindow(hwnd, SW_SHOW);
-            let _ = SetForegroundWindow(hwnd);
+            let _ = view.focus();
         }
         WEBS.with(|w| w.borrow_mut().insert(id.to_string(), Web { hwnd, view, on_close: Some(Box::new(on_close)) }));
     }

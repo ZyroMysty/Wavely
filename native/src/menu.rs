@@ -390,6 +390,10 @@ impl App {
 
     /// Likes und Kontoname von YouTube Music laden
     pub fn yt_init(self: &Arc<Self>) {
+        self.yt_init_with(true);
+    }
+
+    fn yt_init_with(self: &Arc<Self>, may_refresh: bool) {
         let app = self.clone();
         self.rt.spawn(async move {
             let logged_in = ytm::ytm_status(&app.ytm).await.unwrap_or(false);
@@ -408,13 +412,16 @@ impl App {
             let name = ytm::ytm_account(&app.ytm).await.ok().and_then(|a| a.name);
             // Weder Likes noch Kontoname: Die übernommene Anmeldung gilt nicht mehr → neu anmelden
             if liked.is_err() && name.is_none() {
-                app.yt_logged_in.store(false, Ordering::Relaxed);
-                app.ui(|ui| ui.global::<crate::YouTube>().set_status("loggedOut".into()));
-                app.toast("Die YouTube-Music-Anmeldung ist abgelaufen – bitte neu anmelden.", true);
-                let a = app.clone();
-                let _ = slint::invoke_from_event_loop(move || {
-                    a.refresh_if_showing(|p| matches!(p, crate::nav::PageKind::Yt(YtPage::Library) | crate::nav::PageKind::Settings));
-                });
+                // Erst versuchen, die Anmeldung im unsichtbaren Browser aufzufrischen
+                if may_refresh {
+                    let a = app.clone();
+                    let _ = slint::invoke_from_event_loop(move || {
+                        let b = a.clone();
+                        a.youtube_refresh(move |ok| if ok { b.yt_init_with(false) } else { b.yt_expired() });
+                    });
+                } else {
+                    app.yt_expired();
+                }
                 return;
             }
             if let Ok(ids) = liked {
@@ -423,6 +430,22 @@ impl App {
             }
             let name = name.unwrap_or_default();
             app.ui(move |ui| ui.global::<crate::YouTube>().set_account_name(name.into()));
+            // Nach dem Auffrischen: Bibliothek mit Inhalt neu zeigen
+            if !may_refresh {
+                let a = app.clone();
+                let _ = slint::invoke_from_event_loop(move || a.refresh_if_showing(|p| matches!(p, crate::nav::PageKind::Yt(YtPage::Library))));
+            }
+        });
+    }
+
+    /// Die Anmeldung gilt nicht mehr → Anmelden-Knopf zeigen
+    fn yt_expired(self: &Arc<Self>) {
+        self.yt_logged_in.store(false, Ordering::Relaxed);
+        self.ui(|ui| ui.global::<crate::YouTube>().set_status("loggedOut".into()));
+        self.toast("Die YouTube-Music-Anmeldung ist abgelaufen – bitte neu anmelden.", true);
+        let a = self.clone();
+        let _ = slint::invoke_from_event_loop(move || {
+            a.refresh_if_showing(|p| matches!(p, crate::nav::PageKind::Yt(YtPage::Library) | crate::nav::PageKind::Settings));
         });
     }
 }
