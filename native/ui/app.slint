@@ -149,6 +149,13 @@ export global Feedback {
     callback send(string, string, string, bool);
 }
 
+// Reiter der Einstellungen
+export global SettingsTabs {
+    in property <[NavItem]> tabs;
+    in-out property <string> current: "account";
+    callback select(string);
+}
+
 // Kurze Meldung unten in der Mitte
 export global Toast {
     in property <string> text;
@@ -755,7 +762,44 @@ export component AppWindow inherits Window {
             Rectangle {
                 horizontal-stretch: 1;
                 if Nav.view == "youtube" || Nav.view == "soundcloud" || Nav.view == "spotify": YouTubeView { }
-                if Nav.view != "youtube" && Nav.view != "soundcloud" && Nav.view != "spotify": GenericView { }
+                if Nav.view == "settings": HorizontalLayout {
+                    Rectangle {
+                        width: 220px;
+                        VerticalLayout {
+                            padding-left: 20px;
+                            padding-right: 8px;
+                            padding-top: 28px;
+                            spacing: 2px;
+                            alignment: start;
+                            Text {
+                                text: "Einstellungen";
+                                font-size: 22px;
+                                font-weight: 700;
+                                color: Theme.text;
+                                height: 52px;
+                            }
+                            for tab in SettingsTabs.tabs: Rectangle {
+                                height: 36px;
+                                border-radius: 8px;
+                                property <bool> active: SettingsTabs.current == tab.id;
+                                background: active ? Theme.accent-soft : tab-touch.has-hover ? Theme.hover : transparent;
+                                Text {
+                                    x: 12px;
+                                    height: parent.height;
+                                    text: tab.label;
+                                    vertical-alignment: center;
+                                    color: active ? Theme.accent : tab-touch.has-hover ? Theme.text : Theme.text-dim;
+                                }
+                                tab-touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { SettingsTabs.select(tab.id); }
+                                }
+                            }
+                        }
+                    }
+                    GenericView { width: parent.width - 220px; }
+                }
+                if Nav.view != "youtube" && Nav.view != "soundcloud" && Nav.view != "spotify" && Nav.view != "settings": GenericView { }
             }
             if Nav.panel == "queue": QueuePanel { }
             if Nav.panel == "history" || Nav.panel == "lyrics": SidePanel { }

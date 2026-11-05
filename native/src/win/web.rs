@@ -200,6 +200,20 @@ unsafe extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lpar
             });
             LRESULT(0)
         }
+        // Fenster aktiviert: Fokus in den Browser (sonst lässt sich nichts eintippen)
+        WM_SETFOCUS | WM_ACTIVATE => {
+            if msg == WM_ACTIVATE && (wparam.0 & 0xffff) == 0 {
+                return DefWindowProcW(hwnd, msg, wparam, lparam);
+            }
+            WEBS.with(|w| {
+                if let Ok(webs) = w.try_borrow() {
+                    if let Some(web) = webs.values().find(|web| web.hwnd == hwnd) {
+                        let _ = web.view.focus();
+                    }
+                }
+            });
+            DefWindowProcW(hwnd, msg, wparam, lparam)
+        }
         WM_CLOSE => {
             let id = WEBS.with(|w| w.try_borrow().ok().and_then(|webs| webs.iter().find(|(_, web)| web.hwnd == hwnd).map(|(id, _)| id.clone())));
             match id {

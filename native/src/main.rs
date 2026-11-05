@@ -95,6 +95,8 @@ pub struct App {
     pub sleep_until: Mutex<Option<std::time::Instant>>,
     /// Zeitraum im Rückblick
     pub recap_range: Mutex<String>,
+    /// Gewählter Reiter der Einstellungen
+    pub settings_tab: Mutex<String>,
     /// Gefundenes Update
     pub update: Mutex<Option<updater::Manifest>>,
     /// Zusammen hören
@@ -893,6 +895,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         lastfm: Arc::new(services::lastfm::LastFm::new(&paths)?),
         sleep_until: Mutex::new(None),
         recap_range: Mutex::new("month".into()),
+        settings_tab: Mutex::new("account".into()),
         update: Mutex::new(None),
         room: Mutex::new(None),
         room_generation: AtomicU64::new(0),
@@ -1037,6 +1040,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let fb = ui.global::<Feedback>();
     let a = app.clone();
     fb.on_send(move |kind, text, contact, info| a.send_feedback(kind.to_string(), text.to_string(), contact.to_string(), info));
+
+    let st = ui.global::<SettingsTabs>();
+    st.set_tabs(ModelRc::from(Rc::new(VecModel::from(
+        settings::TABS.iter().map(|(id, label, _)| NavItem { id: (*id).into(), label: (*label).into(), icon: Default::default() }).collect::<Vec<_>>(),
+    ))));
+    let a = app.clone();
+    st.on_select(move |tab| {
+        *a.settings_tab.lock().unwrap() = tab.to_string();
+        if let Some(ui) = a.ui.upgrade() {
+            ui.global::<SettingsTabs>().set_current(tab);
+        }
+        a.render();
+    });
 
     let n = ui.global::<Nav>();
     let a = app.clone();
@@ -1227,6 +1243,11 @@ fn run_test_steps(app: Arc<App>, steps: String) {
                 }
             }
             "confirm" => app.dialog_confirm(arg.to_string()),
+            "tab" => {
+                if let Some(ui) = app.ui.upgrade() {
+                    ui.global::<SettingsTabs>().invoke_select(arg.into());
+                }
+            }
             "feedback" => {
                 if let Some(ui) = app.ui.upgrade() {
                     ui.global::<Feedback>().set_open(true);

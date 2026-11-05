@@ -97,7 +97,44 @@ impl PageData {
     }
 }
 
+/// Reiter der Einstellungen: (Kennung, Name, Abschnitte)
+pub const TABS: &[(&str, &str, &[&str])] = &[
+    ("account", "Wavely-Konto", &["Wavely-Konto"]),
+    ("appearance", "Darstellung", &["Darstellung"]),
+    ("playback", "Wiedergabe", &["Wiedergabe"]),
+    ("sound", "Klang", &["Klang"]),
+    ("services", "Dienste", &["YouTube Music", "Spotify", "SoundCloud", "Last.fm", "Discord"]),
+    ("offline", "Offline", &["Offline"]),
+    ("windows", "Windows", &["Windows", "Tastenkürzel"]),
+    ("about", "Über Wavely", &["Über Wavely"]),
+];
+
+/// Nur die Abschnitte des gewählten Reiters
 pub fn page(app: &Arc<App>) -> PageData {
+    let tab = app.settings_tab.lock().unwrap().clone();
+    let (_, label, sections) = TABS.iter().find(|(id, _, _)| *id == tab).copied().unwrap_or(TABS[0]);
+    let all = full_page(app);
+    let mut p = PageData { tracks: all.tracks, ..Default::default() };
+    p.title(label);
+    let mut keep = false;
+    for row in all.rows.into_iter().skip(1) {
+        if row.kind == "heading" {
+            keep = sections.contains(&row.text.as_str());
+            // Überschrift nur, wenn der Reiter mehrere Abschnitte hat
+            if keep && sections.len() > 1 {
+                p.rows.push(row);
+            }
+            continue;
+        }
+        if keep {
+            p.rows.push(row);
+        }
+    }
+    p.spacer();
+    p
+}
+
+fn full_page(app: &Arc<App>) -> PageData {
     let s = app.settings.lock().unwrap().clone();
     let mut p = PageData::default();
     p.title("Einstellungen");
