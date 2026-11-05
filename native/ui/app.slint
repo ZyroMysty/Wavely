@@ -553,6 +553,7 @@ component SidePanel inherits Rectangle {
 
 component PlayerBar inherits Rectangle {
     height: 88px;
+    property <length> center-width: max(260px, min(560px, self.width * 0.34));
     background: Theme.surface;
     Rectangle {
         y: 0;
@@ -565,9 +566,10 @@ component PlayerBar inherits Rectangle {
         padding-right: 20px;
         spacing: 16px;
 
-        // Links: Cover und Titel
+        // Links: Cover und Titel (links und rechts gleich breit → Steuerung genau in der Mitte)
         HorizontalLayout {
             horizontal-stretch: 1;
+            preferred-width: 0px;
             min-width: 140px;
             spacing: 14px;
             if Player.has-track: Cover {
@@ -599,10 +601,70 @@ component PlayerBar inherits Rectangle {
             }
         }
 
+        // Platz für die Steuerung (liegt genau in der Mitte des Fensters, siehe unten)
+        Rectangle { width: root.center-width; }
+
+        // Rechts: Seitenfelder und Lautstärke
+        HorizontalLayout {
+            horizontal-stretch: 1;
+            preferred-width: 0px;
+            alignment: end;
+            spacing: 4px;
+            IconButton {
+                y: (parent.height - self.height) / 2;
+                icon: Icons.group;
+                on: Nav.together-active;
+                clicked => { Nav.together-menu(self.absolute-position.x - 220px, self.absolute-position.y - 160px); }
+            }
+            IconButton {
+                y: (parent.height - self.height) / 2;
+                icon: Icons.bedtime;
+                on: Nav.sleep-active;
+                clicked => { Nav.sleep-menu(self.absolute-position.x - 200px, self.absolute-position.y - 380px); }
+            }
+            IconButton {
+                y: (parent.height - self.height) / 2;
+                icon: Icons.mini-player;
+                clicked => { Nav.mini-player(); }
+            }
+            IconButton {
+                y: (parent.height - self.height) / 2;
+                icon: Icons.lyrics;
+                on: Nav.panel == "lyrics";
+                clicked => { Nav.toggle-panel("lyrics"); }
+            }
+            IconButton {
+                y: (parent.height - self.height) / 2;
+                icon: Icons.history;
+                on: Nav.panel == "history";
+                clicked => { Nav.toggle-panel("history"); }
+            }
+            IconButton {
+                y: (parent.height - self.height) / 2;
+                icon: Icons.queue;
+                on: Nav.panel == "queue";
+                clicked => { Nav.toggle-panel("queue"); }
+            }
+            IconButton {
+                y: (parent.height - self.height) / 2;
+                icon: Player.muted || Player.volume == 0 ? Icons.mute : Icons.volume;
+                clicked => { Player.toggle-mute(); }
+            }
+            Slider {
+                y: (parent.height - self.height) / 2;
+                width: 96px;
+                maximum: 1;
+                value: Player.muted ? 0 : Player.volume;
+                changed(v) => { Player.set-volume(v); }
+            }
+        }
+    }
+
         // Mitte: Steuerung und Fortschritt
         VerticalLayout {
-            horizontal-stretch: 1.5;
-            min-width: 240px;
+            x: (root.width - self.width) / 2;
+            width: root.center-width;
+            height: root.height;
             alignment: center;
             spacing: 6px;
             HorizontalLayout {
@@ -673,59 +735,6 @@ component PlayerBar inherits Rectangle {
             }
         }
 
-        // Rechts: Seitenfelder und Lautstärke
-        HorizontalLayout {
-            alignment: end;
-            spacing: 4px;
-            IconButton {
-                y: (parent.height - self.height) / 2;
-                icon: Icons.group;
-                on: Nav.together-active;
-                clicked => { Nav.together-menu(self.absolute-position.x - 220px, self.absolute-position.y - 160px); }
-            }
-            IconButton {
-                y: (parent.height - self.height) / 2;
-                icon: Icons.bedtime;
-                on: Nav.sleep-active;
-                clicked => { Nav.sleep-menu(self.absolute-position.x - 200px, self.absolute-position.y - 380px); }
-            }
-            IconButton {
-                y: (parent.height - self.height) / 2;
-                icon: Icons.mini-player;
-                clicked => { Nav.mini-player(); }
-            }
-            IconButton {
-                y: (parent.height - self.height) / 2;
-                icon: Icons.lyrics;
-                on: Nav.panel == "lyrics";
-                clicked => { Nav.toggle-panel("lyrics"); }
-            }
-            IconButton {
-                y: (parent.height - self.height) / 2;
-                icon: Icons.history;
-                on: Nav.panel == "history";
-                clicked => { Nav.toggle-panel("history"); }
-            }
-            IconButton {
-                y: (parent.height - self.height) / 2;
-                icon: Icons.queue;
-                on: Nav.panel == "queue";
-                clicked => { Nav.toggle-panel("queue"); }
-            }
-            IconButton {
-                y: (parent.height - self.height) / 2;
-                icon: Player.muted || Player.volume == 0 ? Icons.mute : Icons.volume;
-                clicked => { Player.toggle-mute(); }
-            }
-            Slider {
-                y: (parent.height - self.height) / 2;
-                width: 96px;
-                maximum: 1;
-                value: Player.muted ? 0 : Player.volume;
-                changed(v) => { Player.set-volume(v); }
-            }
-        }
-    }
 }
 
 export component AppWindow inherits Window {

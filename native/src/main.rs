@@ -1243,6 +1243,18 @@ fn run_test_steps(app: Arc<App>, steps: String) {
                 }
             }
             "confirm" => app.dialog_confirm(arg.to_string()),
+            "ytdebug" => {
+                let a = app.clone();
+                app.rt.spawn(async move {
+                    let lib = services::ytm::ytm_library(&a.ytm).await;
+                    eprintln!("[test] Bibliothek: {:?}", lib.as_ref().map(|l| (l.playlists.len(), l.albums.len())));
+                    let liked = services::ytm::ytm_liked_ids(&a.ytm).await;
+                    eprintln!("[test] Likes: {:?}", liked.as_ref().map(|l| l.len()));
+                    let acc = services::ytm::ytm_account(&a.ytm).await;
+                    eprintln!("[test] Konto: {:?}", acc.as_ref().map(|a| a.name.clone()));
+                    eprintln!("[test] Cookie: {}", a.ytm.rp.user_auth_cookie_header().is_some());
+                });
+            }
             "tab" => {
                 if let Some(ui) = app.ui.upgrade() {
                     ui.global::<SettingsTabs>().invoke_select(arg.into());

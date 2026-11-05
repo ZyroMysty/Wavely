@@ -404,14 +404,25 @@ impl App {
                 *app.yt_playlists.lock().unwrap() =
                     library.playlists.into_iter().filter(|p| p.editable).map(|p| (p.id, p.title)).collect();
             }
-            if let Ok(ids) = ytm::ytm_liked_ids(&app.ytm).await {
+            let liked = ytm::ytm_liked_ids(&app.ytm).await;
+            let name = ytm::ytm_account(&app.ytm).await.ok().and_then(|a| a.name);
+            // Weder Likes noch Kontoname: Die übernommene Anmeldung gilt nicht mehr → neu anmelden
+            if liked.is_err() && name.is_none() {
+                app.yt_logged_in.store(false, Ordering::Relaxed);
+                app.ui(|ui| ui.global::<crate::YouTube>().set_status("loggedOut".into()));
+                app.toast("Die YouTube-Music-Anmeldung ist abgelaufen – bitte neu anmelden.", true);
+                let a = app.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    a.refresh_if_showing(|p| matches!(p, crate::nav::PageKind::Yt(YtPage::Library) | crate::nav::PageKind::Settings));
+                });
+                return;
+            }
+            if let Ok(ids) = liked {
                 *app.liked.lock().unwrap() = ids.into_iter().collect();
                 app.sync_player();
             }
-            if let Ok(account) = ytm::ytm_account(&app.ytm).await {
-                let name = account.name.unwrap_or_default();
-                app.ui(move |ui| ui.global::<crate::YouTube>().set_account_name(name.into()));
-            }
+            let name = name.unwrap_or_default();
+            app.ui(move |ui| ui.global::<crate::YouTube>().set_account_name(name.into()));
         });
     }
 }
