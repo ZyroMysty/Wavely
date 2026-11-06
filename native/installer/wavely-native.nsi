@@ -4,6 +4,8 @@
 
 Unicode true
 !include "MUI2.nsh"
+!include "FileFunc.nsh"
+!include "LogicLib.nsh"
 
 Name "Wavely Native"
 OutFile "${OUTFILE}"
@@ -22,6 +24,22 @@ SetCompressor /SOLID lzma
 !insertmacro MUI_LANGUAGE "German"
 
 !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\WavelyNative"
+!define OLD_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\Wavely"
+
+; Aufruf aus der alten Wavely als Update (der Tauri-Updater übergibt /UPDATE): still installieren
+; und die alte Wavely danach ersetzen. Per Doppelklick bleibt die alte App daneben bestehen.
+Var FromOldWavely
+
+Function .onInit
+  StrCpy $FromOldWavely 0
+  ${GetParameters} $R0
+  ClearErrors
+  ${GetOptions} $R0 "/UPDATE" $R1
+  ${IfNot} ${Errors}
+    StrCpy $FromOldWavely 1
+    SetSilent silent
+  ${EndIf}
+FunctionEnd
 
 Section "Wavely Native"
   ; Bei Updates beendet sich Wavely Native selbst, bevor der Installer startet
@@ -37,6 +55,26 @@ Section "Wavely Native"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "UninstallString" '"$INSTDIR\uninstall.exe"'
   WriteRegDWORD HKCU "${UNINSTALL_KEY}" "NoModify" 1
   WriteRegDWORD HKCU "${UNINSTALL_KEY}" "NoRepair" 1
+  ; Alte Wavely ersetzen: beenden und still deinstallieren. Einstellungen und Daten bleiben im
+  ; Ordner com.wavely.app, Wavely Native übernimmt sie beim ersten Start.
+  ${If} $FromOldWavely == 1
+    ReadRegStr $R2 HKCU "${OLD_KEY}" "InstallLocation"
+    ; Anführungszeichen entfernen
+    StrCpy $R3 $R2 1
+    ${If} $R3 == '"'
+      StrCpy $R2 $R2 "" 1
+      StrCpy $R2 $R2 -1
+    ${EndIf}
+    ${If} $R2 != ""
+    ${AndIf} ${FileExists} "$R2\uninstall.exe"
+      Sleep 1500
+      nsExec::Exec 'taskkill /F /IM wavely.exe'
+      Sleep 500
+      ExecWait '"$R2\uninstall.exe" /S _?=$R2'
+      Delete "$R2\uninstall.exe"
+      RMDir "$R2"
+    ${EndIf}
+  ${EndIf}
   ; Stilles Update (/S): danach gleich wieder starten
   IfSilent 0 +2
     Exec '"$INSTDIR\wavely-native.exe"'

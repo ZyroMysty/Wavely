@@ -4,8 +4,12 @@
 //   node scripts/release-native.mjs
 //
 // Lädt den signierten Installer hoch und committet updates/latest-native.json auf diesen Branch –
-// die native App sucht dort nach Updates (native/src/updater.rs). Normale Nutzer bekommen davon
-// nichts mit: ein Pre-Release ist nie „latest“, latest.json und latest-test.json bleiben unverändert.
+// die native App sucht dort nach Updates (native/src/updater.rs). Außerdem bekommt der Test-Kanal
+// der alten Wavely (updates/latest-test.json auf main) diese Version: Admins der alten App
+// aktualisieren so auf Wavely Native, der Installer ersetzt dabei die alte App.
+// Normale Nutzer bekommen davon nichts mit: ein Pre-Release ist nie „latest“, latest.json bleibt.
+//
+// --replace: Installer einer schon veröffentlichten Version austauschen (gleiche Versionsnummer)
 // Das GitHub-Token kommt aus der Git-Anmeldung (Git Credential Manager), es wird nirgends gespeichert.
 import { execFileSync } from "node:child_process";
 import { readFileSync, existsSync, writeFileSync } from "node:fs";
@@ -53,23 +57,35 @@ async function github(path, options = {}) {
   return response.status === 204 ? null : response.json();
 }
 
+const replace = process.argv.includes("--replace");
 const existing = await fetch(`https://api.github.com/repos/${REPO}/releases/tags/${tag}`, { headers: { Authorization: `Bearer ${token}` } });
-if (existing.ok) throw new Error(`Release ${tag} gibt es schon – Version in native/Cargo.toml erhöhen.`);
+if (existing.ok && !replace) throw new Error(`Release ${tag} gibt es schon – Version in native/Cargo.toml erhöhen (oder --replace).`);
 
-console.log(`Erstelle Testversion ${tag}…`);
-const release = await github("/releases", {
-  method: "POST",
-  body: JSON.stringify({
-    tag_name: tag,
-    target_commitish: head,
-    name: `Wavely Native ${version} (Testversion)`,
-    body: `Native Testversion ohne Browser-Technik – wird neben der normalen Wavely installiert.\n\n${notes}`,
-    prerelease: true,
-    make_latest: "false",
-  }),
-});
-
+const body = `Native Testversion ohne Browser-Technik. Admins der bisherigen Wavely bekommen sie als Test-Update; sie ersetzt dabei die alte App (Einstellungen, Anmeldungen und Playlists werden übernommen).\n\n${notes}`;
 const name = basename(installer);
+let release;
+if (existing.ok) {
+  release = await existing.json();
+  console.log(`Tausche den Installer von ${tag} aus…`);
+  await github(`/releases/${release.id}`, { method: "PATCH", body: JSON.stringify({ body }) });
+  for (const asset of release.assets.filter((a) => a.name === name)) {
+    await github(`/releases/assets/${asset.id}`, { method: "DELETE" });
+  }
+} else {
+  console.log(`Erstelle Testversion ${tag}…`);
+  release = await github("/releases", {
+    method: "POST",
+    body: JSON.stringify({
+      tag_name: tag,
+      target_commitish: head,
+      name: `Wavely Native ${version} (Testversion)`,
+      body,
+      prerelease: true,
+      make_latest: "false",
+    }),
+  });
+}
+
 const url = release.upload_url.replace(/\{.*\}$/, `?name=${encodeURIComponent(name)}`);
 await github(url, { method: "POST", body: readFileSync(installer), headers: { "Content-Type": "application/octet-stream" } });
 console.log(`  hochgeladen: ${name}`);
@@ -80,7 +96,29 @@ manifest.notes = notes;
 manifest.url = `https://github.com/${REPO}/releases/download/${tag}/${name}`;
 writeFileSync(manifestFile, JSON.stringify(manifest, null, 2) + "\n");
 execFileSync("git", ["add", "updates/latest-native.json"], { cwd: root });
-execFileSync("git", ["commit", "-q", "-m", `Native Testversion ${version}`], { cwd: root });
-execFileSync("git", ["push", "-q", "origin", "HEAD"], { cwd: root, stdio: "inherit" });
+if (git("status", "--porcelain", "updates/latest-native.json")) {
+  execFileSync("git", ["commit", "-q", "-m", `Native Testversion ${version}`], { cwd: root });
+  execFileSync("git", ["push", "-q", "origin", "HEAD"], { cwd: root, stdio: "inherit" });
+}
 console.log("  Update-Kanal aktualisiert: updates/latest-native.json");
+
+// Test-Kanal der alten Wavely (Tauri-Format) direkt auf main ändern, ohne main auszuchecken
+const latestTest = {
+  version,
+  notes,
+  pub_date: new Date().toISOString(),
+  platforms: { "windows-x86_64": { signature: manifest.signature, url: manifest.url } },
+};
+const testPath = "/contents/updates/latest-test.json";
+const current = await github(`${testPath}?ref=main`);
+await github(testPath, {
+  method: "PUT",
+  body: JSON.stringify({
+    message: `Test-Kanal: Wavely Native ${version} für Admins`,
+    content: Buffer.from(JSON.stringify(latestTest, null, 2) + "\n").toString("base64"),
+    sha: current.sha,
+    branch: "main",
+  }),
+});
+console.log("  Test-Kanal der alten Wavely aktualisiert: updates/latest-test.json (main)");
 console.log(`Fertig: ${release.html_url}`);
