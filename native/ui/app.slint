@@ -106,6 +106,8 @@ export global YouTube {
     in property <string> status: "checking";
     in property <string> account-name;
     in property <string> account-initial;
+    in property <image> account-photo;
+    in property <bool> has-account-photo;
     callback account-menu(length, length);
     callback search(string);
     callback login();
@@ -152,6 +154,17 @@ export global Side {
     callback lyric-clicked(int);
 }
 
+
+// Versionsverlauf (aus CHANGELOG.md)
+export struct Release {
+    version: string,
+    date: string,
+    items: string,
+}
+export global Changelog {
+    in-out property <bool> open;
+    in property <[Release]> releases;
+}
 
 // Eigene Akzentfarbe wählen (Farbton 0–360, Sättigung und Helligkeit 0–1)
 export global ColorPick {
@@ -432,7 +445,14 @@ component YouTubeView inherits Rectangle {
                 height: 38px;
                 border-radius: 19px;
                 background: avatar-touch.has-hover ? Theme.accent.brighter(0.1) : Theme.accent;
-                Text {
+                clip: true;
+                if YouTube.has-account-photo: Image {
+                    width: parent.width;
+                    height: parent.height;
+                    source: YouTube.account-photo;
+                    image-fit: cover;
+                }
+                if !YouTube.has-account-photo: Text {
                     text: YouTube.account-initial;
                     color: #fff;
                     font-weight: 700;
@@ -1005,6 +1025,56 @@ export component AppWindow inherits Window {
         }
     }
 
+
+    // Versionsverlauf
+    if Changelog.open: Rectangle {
+        background: #00000080;
+        TouchArea { clicked => { Changelog.open = false; } }
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: min(620px, parent.width - 80px);
+            height: min(640px, parent.height - 80px);
+            background: Theme.surface;
+            border-radius: 14px;
+            border-width: 1px;
+            border-color: Theme.border;
+            clip: true;
+            TouchArea { }
+            VerticalLayout {
+                HorizontalLayout {
+                    padding: 20px;
+                    padding-bottom: 8px;
+                    Text { text: "Versionsverlauf"; font-size: 20px; font-weight: 700; color: Theme.text; vertical-alignment: center; }
+                    Rectangle { horizontal-stretch: 1; }
+                    IconButton {
+                        icon: Icons.close;
+                        clicked => { Changelog.open = false; }
+                    }
+                }
+                ListView {
+                    vertical-stretch: 1;
+                    for release in Changelog.releases: VerticalLayout {
+                        padding-left: 22px;
+                        padding-right: 22px;
+                        padding-bottom: 18px;
+                        spacing: 6px;
+                        HorizontalLayout {
+                            spacing: 10px;
+                            alignment: start;
+                            Text { text: release.version; font-size: 16px; font-weight: 700; color: Theme.text; }
+                            Text { text: release.date; color: Theme.text-dim; font-size: 13px; vertical-alignment: center; }
+                        }
+                        Text {
+                            text: release.items;
+                            color: Theme.text-dim;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // Farbauswahl
     if ColorPick.open: Rectangle {

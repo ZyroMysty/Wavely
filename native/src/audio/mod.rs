@@ -80,6 +80,11 @@ impl Engine {
     }
 
     /// Tempo (1 = normal); die Tonhöhe ändert sich mit
+    /// Songzeit dessen, was gerade zu hören ist
+    pub fn played_seconds(&self) -> f64 {
+        self.shared.played_seconds()
+    }
+
     /// Beim Tempo die Tonhöhe beibehalten
     pub fn set_preserve_pitch(&self, on: bool) {
         self.shared.preserve_pitch.store(on, Ordering::Relaxed);

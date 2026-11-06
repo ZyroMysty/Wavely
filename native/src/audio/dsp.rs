@@ -95,7 +95,7 @@ impl State {
 }
 
 /// Einstellungen des Signalwegs (von der Oberfläche)
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Settings {
     pub eq_enabled: bool,
     pub eq_gains: [f32; 10],

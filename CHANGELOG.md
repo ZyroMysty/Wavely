@@ -5,6 +5,12 @@ Neue Punkte kommen zuerst unter „Unveröffentlicht“. Beim Veröffentlichen w
 ## Unveröffentlicht
 - YouTube-Songs spielen wieder mit der Audioqualität „Premium“: klappt die Premium-Abfrage nicht, nimmt Wavely automatisch „Hoch“ (aus 0.15.1)
 
+## 0.17.0-native.1 – 2026-11-06
+- Native Testversion ohne Browser-Technik: Oberfläche und Audio sind komplett neu in Rust gebaut und brauchen rund 40 statt 160 MB Arbeitsspeicher
+- Eigene Audio-Engine mit Equalizer, Lautstärke-Angleichung, Tempo (mit oder ohne gleiche Tonhöhe) und Auswahl des Ausgabegeräts
+- Anmeldung bei YouTube Music und SoundCloud in einem kleinen Fenster nur bei Bedarf; die YouTube-Anmeldung frischt sich im Hintergrund selbst auf
+- Einstellungen als Reiter, Dienste ein- und ausschaltbar, eigene Akzentfarbe
+
 ## 0.16.0-test.3 – 2026-11-02
 - Bilder werden in der Größe geladen, in der sie angezeigt werden – vorher oft das Zehnfache (z. B. 544 px für ein 40-px-Cover)
 - Lange Songlisten (ab 150 Songs, z. B. „Gefällt mir“) bauen nur die sichtbaren Zeilen auf: bei 400 Songs rund 15 MB weniger, bei Tausenden entsprechend mehr

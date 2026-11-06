@@ -506,7 +506,9 @@ impl App {
                     library.playlists.into_iter().filter(|p| p.editable).map(|p| (p.id, p.title)).collect();
             }
             let liked = ytm::ytm_liked_ids(&app.ytm).await;
-            let name = ytm::ytm_account(&app.ytm).await.ok().and_then(|a| a.name);
+            let account = ytm::ytm_account(&app.ytm).await.ok();
+            let photo = account.as_ref().and_then(|a| a.photo_url.clone());
+            let name = account.and_then(|a| a.name);
             // Weder Likes noch Kontoname: Die übernommene Anmeldung gilt nicht mehr → neu anmelden
             if liked.is_err() && name.is_none() {
                 // Erst versuchen, die Anmeldung im unsichtbaren Browser aufzufrischen
@@ -526,6 +528,16 @@ impl App {
                 app.sync_player();
             }
             let name = name.unwrap_or_default();
+            if let Some(url) = photo {
+                let weak = app.ui.clone();
+                app.covers.load(&app, url, 96, move |image| {
+                    if let Some(ui) = weak.upgrade() {
+                        let y = ui.global::<crate::YouTube>();
+                        y.set_account_photo(round_image(&image));
+                        y.set_has_account_photo(true);
+                    }
+                });
+            }
             let initial = name.trim().chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_default();
             app.ui(move |ui| {
                 let y = ui.global::<crate::YouTube>();
@@ -550,4 +562,19 @@ impl App {
             a.refresh_if_showing(|p| matches!(p, crate::nav::PageKind::Yt(YtPage::Library) | crate::nav::PageKind::Settings));
         });
     }
+}
+
+/// Bild kreisrund ausschneiden (der Software-Renderer schneidet nicht rund zu)
+fn round_image(image: &slint::Image) -> slint::Image {
+    let Some(mut buffer) = image.to_rgba8() else { return image.clone() };
+    let (w, h) = (buffer.width() as f32, buffer.height() as f32);
+    let r = w.min(h) / 2.0;
+    let width = buffer.width() as usize;
+    for (i, px) in buffer.make_mut_slice().iter_mut().enumerate() {
+        let (x, y) = ((i % width) as f32 + 0.5 - w / 2.0, (i / width) as f32 + 0.5 - h / 2.0);
+        // Weicher Rand über einen Pixel
+        let coverage = (r - (x * x + y * y).sqrt()).clamp(0.0, 1.0);
+        px.a = (px.a as f32 * coverage) as u8;
+    }
+    slint::Image::from_rgba8(buffer)
 }

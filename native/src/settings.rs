@@ -10,6 +10,34 @@ use crate::{
     App,
 };
 
+/// Versionsverlauf aus CHANGELOG.md (wie changelog.svelte.js): (Version, Datum, Punkte), neueste zuerst
+fn changelog() -> Vec<(String, String, Vec<String>)> {
+    const TEXT: &str = include_str!("../../CHANGELOG.md");
+    let months = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+    TEXT.replace('\r', "")
+        .split("\n## ")
+        .skip(1)
+        .filter_map(|part| {
+            let mut lines = part.lines();
+            let head = lines.next()?;
+            let (version, date) = match head.split_once(" – ").or_else(|| head.split_once(" - ")) {
+                Some((v, d)) => (v.trim().to_string(), d.trim().to_string()),
+                None => (head.trim().to_string(), String::new()),
+            };
+            if !version.starts_with(|c: char| c.is_ascii_digit()) {
+                return None;
+            }
+            // 2026-11-02 → 2. November 2026
+            let date = match date.split('-').map(|n| n.parse::<usize>().ok()).collect::<Option<Vec<_>>>().as_deref() {
+                Some([y, m, d]) if (1..=12).contains(m) => format!("{d}. {} {y}", months[m - 1]),
+                _ => date,
+            };
+            let items: Vec<String> = lines.filter_map(|l| l.strip_prefix("- ")).map(|l| l.trim().to_string()).collect();
+            (!items.is_empty()).then_some((version, date, items))
+        })
+        .collect()
+}
+
 /// Farbe → (Farbton 0–360, Sättigung 0–1, Helligkeit 0–1)
 fn rgb_to_hsv(c: slint::Color) -> (f32, f32, f32) {
     let (r, g, b) = (c.red() as f32 / 255.0, c.green() as f32 / 255.0, c.blue() as f32 / 255.0);
@@ -495,9 +523,19 @@ impl App {
             return true;
         }
         if action == "changelog" {
-            let _ = std::process::Command::new("rundll32")
-                .args(["url.dll,FileProtocolHandler", "https://github.com/ZyroMysty/Wavely/releases"])
-                .spawn();
+            self.ui(|ui| {
+                let releases: Vec<crate::Release> = changelog()
+                    .into_iter()
+                    .map(|(version, date, items)| crate::Release {
+                        version: version.into(),
+                        date: date.into(),
+                        items: items.iter().map(|i| format!("•  {i}")).collect::<Vec<_>>().join("\n").into(),
+                    })
+                    .collect();
+                let c = ui.global::<crate::Changelog>();
+                c.set_releases(slint::ModelRc::from(std::rc::Rc::new(slint::VecModel::from(releases))));
+                c.set_open(true);
+            });
             return true;
         }
         if action == "appearance-reset" {
@@ -715,10 +753,23 @@ impl App {
                 gains,
             )
         };
+        let preserve = self.settings.lock().unwrap().preserve_pitch;
+        // Klang hat sich geändert: Vorrat verwerfen und ab der aktuellen Stelle neu berechnen,
+        // sonst hört man die Änderung erst nach dem Puffer (rund 2 Sekunden)
+        static LAST: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+        let key = format!("{dsp:?}|{rate}|{preserve}");
+        let changed = LAST.lock().unwrap().replace(key.clone()).is_some_and(|old| old != key);
         self.engine.send(crate::audio::Command::Dsp(dsp));
         self.engine.send(crate::audio::Command::Device(device));
         self.engine.set_rate(rate);
-        self.engine.set_preserve_pitch(self.settings.lock().unwrap().preserve_pitch);
+        self.engine.set_preserve_pitch(preserve);
+        #[cfg(windows)]
+        let spotify = self.spotify_active();
+        #[cfg(not(windows))]
+        let spotify = false;
+        if changed && !spotify && self.state.lock().unwrap().current().is_some() {
+            self.engine.send(crate::audio::Command::Seek(self.engine.played_seconds()));
+        }
         self.ui(move |ui| {
             let model: Vec<f32> = gains.to_vec();
             ui.global::<crate::Page>().set_eq_gains(slint::ModelRc::from(std::rc::Rc::new(slint::VecModel::from(model))));
