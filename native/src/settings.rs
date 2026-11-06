@@ -631,6 +631,12 @@ impl App {
                 self.apply_sound();
                 self.settings_changed();
             }
+            "accountDelete" => {
+                if value.is_empty() {
+                    return;
+                }
+                self.account_delete(value.to_string());
+            }
             "accountName" => {
                 if value.is_empty() {
                     return;

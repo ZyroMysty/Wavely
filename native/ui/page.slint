@@ -303,6 +303,8 @@ export component PageView inherits Rectangle {
     property <string> login-email;
     property <string> login-password;
     property <string> login-mode: "login";
+    // Wavely-Konto: Löschen bestätigen
+    property <bool> account-confirm;
 
     ListView {
         for row[ri] in Page.rows: Rectangle {
@@ -319,7 +321,7 @@ export component PageView inherits Rectangle {
                 : row.kind == "stats" ? 110px
                 : row.kind == "bars" ? 130px
                 : row.kind == "login" ? (login-mode == "register" ? 300px : 250px) + (row.subtext != "" ? 30px : 0px)
-                : row.kind == "account" ? 162px
+                : row.kind == "account" ? (account-confirm ? 316px : 210px)
                 : 40px;
 
             if row.kind == "hero": HorizontalLayout {
@@ -820,6 +822,7 @@ export component PageView inherits Rectangle {
                         }
                         Rectangle { height: 1px; background: Theme.border; }
                         HorizontalLayout {
+                            height: 64px;
                             padding-left: 20px;
                             padding-right: 20px;
                             spacing: 12px;
@@ -835,6 +838,71 @@ export component PageView inherits Rectangle {
                                 path: row.number == 1 ? Icons.check : Icons.refresh;
                                 size: 20px;
                                 color: row.number == 1 ? Theme.accent : Theme.text-dim;
+                            }
+                        }
+                        Rectangle { height: 1px; background: Theme.border; }
+                        // Konto löschen
+                        if !account-confirm: HorizontalLayout {
+                            height: 46px;
+                            padding-left: 20px;
+                            Text {
+                                text: "Konto löschen…";
+                                color: delete-touch.has-hover ? #ff6b6b : #e5484d;
+                                vertical-alignment: center;
+                                delete-touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { account-confirm = true; }
+                                }
+                            }
+                        }
+                        if account-confirm: VerticalLayout {
+                            padding: 20px;
+                            spacing: 10px;
+                            Text { text: "Konto wirklich löschen?"; color: Theme.text; font-weight: 600; }
+                            Text {
+                                text: "Dein Konto und alle Daten in der Cloud werden gelöscht. Was auf diesem PC gespeichert ist, bleibt.";
+                                color: Theme.text-dim;
+                                font-size: 13px;
+                                wrap: word-wrap;
+                            }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                alignment: start;
+                                delete-password := LoginField {
+                                    width: 260px;
+                                    placeholder: "Passwort zur Bestätigung";
+                                    password: true;
+                                    accepted => {
+                                        if (self.text != "") {
+                                            Page.input("accountDelete", self.text);
+                                            account-confirm = false;
+                                        }
+                                    }
+                                }
+                                Rectangle {
+                                    width: 170px;
+                                    height: 38px;
+                                    border-radius: 19px;
+                                    background: delete-button.has-hover ? #e5484d : Theme.surface-2;
+                                    opacity: delete-password.text == "" ? 0.5 : 1;
+                                    Text {
+                                        text: "Endgültig löschen";
+                                        color: delete-button.has-hover ? #fff : #e5484d;
+                                    }
+                                    delete-button := TouchArea {
+                                        enabled: delete-password.text != "";
+                                        mouse-cursor: pointer;
+                                        clicked => {
+                                            Page.input("accountDelete", delete-password.text);
+                                            account-confirm = false;
+                                        }
+                                    }
+                                }
+                                PillButton {
+                                    primary: false;
+                                    text: "Abbrechen";
+                                    clicked => { account-confirm = false; }
+                                }
                             }
                         }
                     }

@@ -157,6 +157,33 @@ impl Account {
         Ok(self.start_session(&value))
     }
 
+    /// Konto und alle Daten in der Cloud löschen (wie deleteAccount): erst mit dem Passwort neu
+    /// anmelden (Bestätigung), dann Hörverlauf und Playlists in Firestore, zuletzt das Konto selbst.
+    /// Was auf diesem PC gespeichert ist, bleibt.
+    pub async fn delete_account(&self, password: &str) -> Result<(), String> {
+        let session = self.logged_in().ok_or("Nicht angemeldet")?;
+        let value = self
+            .auth_request("signInWithPassword", json!({ "email": session.email, "password": password, "returnSecureToken": true }))
+            .await?;
+        let id_token = value["idToken"].as_str().unwrap_or("").to_string();
+        *self.token.lock().await = Some((id_token.clone(), Instant::now()));
+        for collection in ["plays", "playlists"] {
+            let path = format!("users/{}/{collection}", session.uid);
+            // Seitenweise (höchstens 300 je Abfrage), bis nichts mehr da ist
+            for _ in 0..1000 {
+                let names = self.list_names(&path).await?;
+                if names.is_empty() {
+                    break;
+                }
+                let writes = names.iter().map(|n| json!({ "delete": doc_name(&format!("{path}/{n}")) })).collect();
+                self.commit(writes).await?;
+            }
+        }
+        self.auth_request("delete", json!({ "idToken": id_token })).await?;
+        self.logout();
+        Ok(())
+    }
+
     /// Anzeigenamen ändern (wie updateProfile)
     pub async fn rename(&self, name: &str) -> Result<(), String> {
         let token = self.id_token().await?;
@@ -698,6 +725,30 @@ impl App {
         *self.sync_status.lock().unwrap() = String::new();
         self.settings_changed();
         self.toast("Abgemeldet", false);
+    }
+
+    /// Konto löschen (Passwort zur Bestätigung)
+    pub fn account_delete(self: &Arc<Self>, password: String) {
+        let app = self.clone();
+        self.rt.spawn(async move {
+            // Abgleich anhalten, damit nichts wieder hochgeladen wird
+            let generation = app.sync_generation.fetch_add(1, Ordering::SeqCst);
+            app.together_leave_async().await;
+            match app.account.delete_account(&password).await {
+                Ok(()) => {
+                    *app.sync_status.lock().unwrap() = String::new();
+                    app.toast("Konto und Cloud-Daten gelöscht", false);
+                }
+                Err(e) => {
+                    app.toast(&format!("Konto konnte nicht gelöscht werden: {e}"), true);
+                    // Abgleich wieder starten, wenn noch angemeldet
+                    if app.account.logged_in().is_some() && app.sync_generation.load(Ordering::SeqCst) == generation + 1 {
+                        app.start_sync();
+                    }
+                }
+            }
+            app.settings_changed();
+        });
     }
 
     pub fn account_reset(self: &Arc<Self>, email: String) {
