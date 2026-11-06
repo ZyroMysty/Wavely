@@ -1088,6 +1088,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let a = app.clone();
+    p.on_open_artist(move || a.open_current_artist());
+    let a = app.clone();
+    ui.global::<ColorPick>().on_apply(move |c| {
+        a.setting_input("accent", &format!("#{:02x}{:02x}{:02x}", c.red(), c.green(), c.blue()));
+    });
+    let a = app.clone();
+    ui.global::<YouTube>().on_account_menu(move |x, y| a.open_account_menu(x, y));
+    let a = app.clone();
+    ui.global::<Nav>().on_device_menu(move |x, y| a.open_device_menu(x, y));
+    let a = app.clone();
     p.on_toggle_like(move || {
         let track = a.state.lock().unwrap().current().cloned();
         if let Some(track) = track {

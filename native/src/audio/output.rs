@@ -22,6 +22,8 @@ pub struct Shared {
     out_channels: AtomicU32,
     /// Tempo (f32-Bits)
     pub rate: AtomicU32,
+    /// Tempo ohne Änderung der Tonhöhe
+    pub preserve_pitch: AtomicBool,
     /// Blende: Ziel und Schritt pro Sample (f32-Bits)
     fade_target: AtomicU32,
     fade_step: AtomicU32,
@@ -36,6 +38,7 @@ impl Default for Shared {
             out_rate: AtomicU32::new(48_000),
             out_channels: AtomicU32::new(2),
             rate: AtomicU32::new(1.0f32.to_bits()),
+            preserve_pitch: AtomicBool::new(true),
             fade_target: AtomicU32::new(1.0f32.to_bits()),
             fade_step: AtomicU32::new(1.0f32.to_bits()),
         }
@@ -48,6 +51,9 @@ struct Buffer {
     /// Songzeit (Sekunden) am Ende des Puffers
     end_seconds: f64,
     resampler: Resampler,
+    stretch: super::stretch::Stretch,
+    /// Zwischenpuffer für das Tempo mit Tonhöhe
+    scratch: VecDeque<f32>,
 }
 
 /// Lineare Umrechnung der Abtastrate (z. B. 44,1 kHz → 48 kHz), Zustand über Pakete hinweg
@@ -72,6 +78,7 @@ impl Shared {
         b.samples.clear();
         b.end_seconds = seconds;
         b.resampler = Resampler::default();
+        b.stretch.reset();
     }
 
     pub fn set_fade(&self, target: f32, seconds: f32) {
@@ -110,11 +117,20 @@ impl Shared {
             b.end_seconds = pts;
         }
         b.end_seconds = b.end_seconds.max(pts) + frames as f64 / in_rate as f64;
-        let Buffer { samples, resampler, .. } = &mut *b;
-        // Tempo: schneller abspielen = Eingang als höhere Abtastrate behandeln
+        let Buffer { samples, resampler, stretch, scratch, .. } = &mut *b;
         let tempo = load_f32(&self.rate);
-        let effective = ((in_rate as f32) * tempo).round() as u32;
-        resampler.process(input, in_channels, effective, out_rate as u32, out_channels, samples);
+        if (tempo - 1.0).abs() > 0.001 && self.preserve_pitch.load(Ordering::Relaxed) {
+            // Erst auf die Geräte-Abtastrate, dann zeitlich strecken (Tonhöhe bleibt)
+            scratch.clear();
+            resampler.process(input, in_channels, in_rate, out_rate as u32, out_channels, scratch);
+            let frames: Vec<f32> = scratch.drain(..).collect();
+            stretch.process(&frames, out_channels, out_rate as u32, tempo, samples);
+        } else {
+            stretch.reset();
+            // Tempo: schneller abspielen = Eingang als höhere Abtastrate behandeln
+            let effective = ((in_rate as f32) * tempo).round() as u32;
+            resampler.process(input, in_channels, effective, out_rate as u32, out_channels, samples);
+        }
     }
 }
 

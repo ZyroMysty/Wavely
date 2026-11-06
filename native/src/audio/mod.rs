@@ -4,6 +4,7 @@
 pub mod dsp;
 mod output;
 pub mod source;
+mod stretch;
 
 use std::{
     sync::{
@@ -79,6 +80,11 @@ impl Engine {
     }
 
     /// Tempo (1 = normal); die Tonhöhe ändert sich mit
+    /// Beim Tempo die Tonhöhe beibehalten
+    pub fn set_preserve_pitch(&self, on: bool) {
+        self.shared.preserve_pitch.store(on, Ordering::Relaxed);
+    }
+
     pub fn set_rate(&self, rate: f32) {
         self.shared.rate.store(rate.clamp(0.5, 2.0).to_bits(), Ordering::Relaxed);
     }
@@ -254,7 +260,8 @@ fn decoder_thread(rx: mpsc::Receiver<Command>, shared: Arc<Shared>, events: impl
         }
 
         // Puffer voll genug: kurz warten
-        if shared.buffered_seconds() > 1.0 {
+        // (2 Sekunden: genug Luft, falls der Rechner kurz beschäftigt ist)
+        if shared.buffered_seconds() > 2.0 {
             thread::sleep(Duration::from_millis(20));
             continue;
         }

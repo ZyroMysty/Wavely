@@ -37,6 +37,7 @@ export global Player {
     in property <bool> can-like;
     in property <bool> liked;
     callback toggle-like();
+    callback open-artist();
 
     callback toggle-play();
     callback next();
@@ -79,6 +80,7 @@ export global Nav {
     callback toggle-panel(string);
     in property <bool> sleep-active;
     callback sleep-menu(length, length);
+    callback device-menu(length, length);
     callback mini-player();
     in property <bool> together-active;
     callback together-menu(length, length);
@@ -103,6 +105,8 @@ export global YouTube {
     // "checking" | "loggedOut" | "loggedIn"
     in property <string> status: "checking";
     in property <string> account-name;
+    in property <string> account-initial;
+    callback account-menu(length, length);
     callback search(string);
     callback login();
 }
@@ -149,6 +153,15 @@ export global Side {
 }
 
 
+// Eigene Akzentfarbe wählen (Farbton 0–360, Sättigung und Helligkeit 0–1)
+export global ColorPick {
+    in-out property <bool> open;
+    in-out property <float> hue;
+    in-out property <float> sat: 1;
+    in-out property <float> val: 1;
+    callback apply(color);
+}
+
 // Feedback-Dialog
 export global Feedback {
     in-out property <bool> open;
@@ -174,6 +187,15 @@ export global Toast {
 }
 
 
+// Wavely-Logo (App-Symbol mit abgerundeten Ecken)
+component Logo inherits Image {
+    in property <length> size: 30px;
+    width: size;
+    height: size;
+    source: @image-url("../../src-tauri/icons/64x64.png");
+    image-rendering: smooth;
+}
+
 component Sidebar inherits Rectangle {
     width: Nav.collapsed ? 64px : 240px;
     background: Theme.surface;
@@ -195,6 +217,10 @@ component Sidebar inherits Rectangle {
             padding-left: Nav.collapsed ? 0 : 8px;
             spacing: 10px;
             alignment: Nav.collapsed ? center : stretch;
+            Logo {
+                y: (parent.height - self.height) / 2;
+                size: 30px;
+            }
             if !Nav.collapsed: Text {
                 text: "Wavely";
                 font-size: 18px;
@@ -400,10 +426,22 @@ component YouTubeView inherits Rectangle {
                 text: "Anmelden";
                 clicked => { YouTube.login(); }
             }
-            if Nav.view == "youtube" && YouTube.status == "loggedIn" && YouTube.account-name != "": Text {
-                text: YouTube.account-name;
-                color: Theme.text-dim;
-                vertical-alignment: center;
+            if Nav.view == "youtube" && YouTube.status == "loggedIn" && YouTube.account-name != "": Rectangle {
+                y: (parent.height - self.height) / 2;
+                width: 38px;
+                height: 38px;
+                border-radius: 19px;
+                background: avatar-touch.has-hover ? Theme.accent.brighter(0.1) : Theme.accent;
+                Text {
+                    text: YouTube.account-initial;
+                    color: #fff;
+                    font-weight: 700;
+                    font-size: 16px;
+                }
+                avatar-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { YouTube.account-menu(self.absolute-position.x - 200px, self.absolute-position.y + 44px); }
+                }
             }
         }
         PageView {
@@ -597,11 +635,16 @@ component PlayerBar inherits Rectangle {
                     font-weight: 600;
                     overflow: elide;
                 }
-                Text {
+                artist-text := Text {
                     text: Player.error != "" ? Player.error : Player.loading ? "Lädt…" : Player.artist;
-                    color: Player.error != "" ? Theme.accent : Theme.text-dim;
+                    color: Player.error != "" ? Theme.accent : artist-touch.has-hover ? Theme.text : Theme.text-dim;
                     font-size: 13px;
                     overflow: elide;
+                    artist-touch := TouchArea {
+                        enabled: Player.error == "" && !Player.loading && Player.has-track;
+                        mouse-cursor: pointer;
+                        clicked => { Player.open-artist(); }
+                    }
                 }
             }
             if Player.can-like: IconButton {
@@ -626,6 +669,11 @@ component PlayerBar inherits Rectangle {
                 icon: Icons.group;
                 on: Nav.together-active;
                 clicked => { Nav.together-menu(self.absolute-position.x - 220px, self.absolute-position.y - 160px); }
+            }
+            IconButton {
+                y: (parent.height - self.height) / 2;
+                icon: Icons.devices;
+                clicked => { Nav.device-menu(self.absolute-position.x - 220px, self.absolute-position.y - 8px); }
             }
             IconButton {
                 y: (parent.height - self.height) / 2;
@@ -958,6 +1006,108 @@ export component AppWindow inherits Window {
     }
 
 
+    // Farbauswahl
+    if ColorPick.open: Rectangle {
+        background: #00000080;
+        TouchArea { clicked => { ColorPick.open = false; } }
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 360px;
+            height: clayout.preferred-height;
+            background: Theme.surface;
+            border-radius: 14px;
+            border-width: 1px;
+            border-color: Theme.border;
+            TouchArea { }
+            clayout := VerticalLayout {
+                padding: 20px;
+                spacing: 14px;
+                Text { text: "Eigene Akzentfarbe"; font-size: 18px; font-weight: 700; color: Theme.text; }
+                // Sättigung (waagerecht) und Helligkeit (senkrecht)
+                Rectangle {
+                    height: 170px;
+                    border-radius: 8px;
+                    clip: true;
+                    background: Colors.hsv(ColorPick.hue, 1, 1);
+                    Rectangle { background: @linear-gradient(90deg, #ffffff 0%, #ffffff00 100%); }
+                    Rectangle { background: @linear-gradient(180deg, #00000000 0%, #000000 100%); }
+                    Rectangle {
+                        x: ColorPick.sat * parent.width - 8px;
+                        y: (1 - ColorPick.val) * parent.height - 8px;
+                        width: 16px;
+                        height: 16px;
+                        border-radius: 8px;
+                        border-width: 2px;
+                        border-color: #fff;
+                        background: Colors.hsv(ColorPick.hue, ColorPick.sat, ColorPick.val);
+                    }
+                    TouchArea {
+                        mouse-cursor: crosshair;
+                        pointer-event(e) => {
+                            if (e.kind == PointerEventKind.down) {
+                                ColorPick.sat = max(0, min(1, self.mouse-x / self.width));
+                                ColorPick.val = max(0, min(1, 1 - self.mouse-y / self.height));
+                            }
+                        }
+                        moved => {
+                            if (self.pressed) {
+                                ColorPick.sat = max(0, min(1, self.mouse-x / self.width));
+                                ColorPick.val = max(0, min(1, 1 - self.mouse-y / self.height));
+                            }
+                        }
+                    }
+                }
+                // Farbton
+                Rectangle {
+                    height: 16px;
+                    border-radius: 8px;
+                    background: @linear-gradient(90deg, #ff0000 0%, #ffff00 16.7%, #00ff00 33.3%, #00ffff 50%, #0000ff 66.7%, #ff00ff 83.3%, #ff0000 100%);
+                    Rectangle {
+                        x: ColorPick.hue / 360 * parent.width - 8px;
+                        width: 16px;
+                        height: 16px;
+                        border-radius: 8px;
+                        border-width: 2px;
+                        border-color: #fff;
+                        background: Colors.hsv(ColorPick.hue, 1, 1);
+                    }
+                    TouchArea {
+                        mouse-cursor: pointer;
+                        pointer-event(e) => {
+                            if (e.kind == PointerEventKind.down) {
+                                ColorPick.hue = max(0, min(359.9, self.mouse-x / self.width * 360));
+                            }
+                        }
+                        moved => {
+                            if (self.pressed) {
+                                ColorPick.hue = max(0, min(359.9, self.mouse-x / self.width * 360));
+                            }
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Rectangle {
+                        width: 38px;
+                        height: 38px;
+                        border-radius: 19px;
+                        background: Colors.hsv(ColorPick.hue, ColorPick.sat, ColorPick.val);
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    PillButton { primary: false; text: "Abbrechen"; clicked => { ColorPick.open = false; } }
+                    PillButton {
+                        text: "Übernehmen";
+                        clicked => {
+                            ColorPick.apply(Colors.hsv(ColorPick.hue, ColorPick.sat, ColorPick.val));
+                            ColorPick.open = false;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Feedback
     if Feedback.open: Rectangle {
         background: #00000080;
@@ -993,7 +1143,10 @@ export component AppWindow inherits Window {
                     border-color: ftext.has-focus ? Theme.accent : Theme.border;
                     if ftext.text == "": Text {
                         x: 12px; y: 10px;
-                        text: "Was ist passiert oder was wünschst du dir?";
+                        text: Feedback.kind == "bug" ? "Was ist passiert? Was hast du gerade gemacht, und was hättest du erwartet?"
+                            : Feedback.kind == "idea" ? "Was würdest du dir in Wavely wünschen?" : "Was möchtest du uns sagen?";
+                        width: parent.width - 24px;
+                        wrap: word-wrap;
                         color: Theme.text-dim;
                     }
                     ftext := TextInput {
@@ -1016,7 +1169,7 @@ export component AppWindow inherits Window {
                         x: 12px;
                         height: parent.height;
                         vertical-alignment: center;
-                        text: "E-Mail für Rückfragen (optional)";
+                        text: "Kontakt für Rückfragen (freiwillig): E-Mail oder Discord-Name";
                         color: Theme.text-dim;
                     }
                     fcontact := TextInput {
@@ -1036,8 +1189,15 @@ export component AppWindow inherits Window {
                         height: 20px;
                         y: 0;
                         border-radius: 4px;
-                        background: Feedback.with-info ? Theme.accent : Theme.hover;
-                        TouchArea { clicked => { Feedback.with-info = !Feedback.with-info; } }
+                        background: Feedback.with-info ? Theme.accent : transparent;
+                        border-width: Feedback.with-info ? 0px : 2px;
+                        border-color: Theme.text-dim;
+                        if Feedback.with-info: Icon {
+                            path: Icons.check;
+                            size: 16px;
+                            color: #fff;
+                        }
+                        TouchArea { mouse-cursor: pointer; clicked => { Feedback.with-info = !Feedback.with-info; } }
                     }
                     Text {
                         text: "Wavely-Version mitschicken";

@@ -10,6 +10,24 @@ use crate::{
     App,
 };
 
+/// Farbe → (Farbton 0–360, Sättigung 0–1, Helligkeit 0–1)
+fn rgb_to_hsv(c: slint::Color) -> (f32, f32, f32) {
+    let (r, g, b) = (c.red() as f32 / 255.0, c.green() as f32 / 255.0, c.blue() as f32 / 255.0);
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let d = max - min;
+    let h = if d == 0.0 {
+        0.0
+    } else if max == r {
+        60.0 * ((g - b) / d).rem_euclid(6.0)
+    } else if max == g {
+        60.0 * ((b - r) / d + 2.0)
+    } else {
+        60.0 * ((r - g) / d + 4.0)
+    };
+    (h, if max == 0.0 { 0.0 } else { d / max }, max)
+}
+
 /// Dienste zum Ein- und Ausschalten (wie modules.svelte.js)
 const MODULES: &[(&str, &str, &str)] = &[
     ("youtube", "YouTube Music", "Bibliothek, Suche und Likes (abgespielt wird über YouTube trotzdem)"),
@@ -127,7 +145,7 @@ pub const TABS: &[(&str, &str, &[&str])] = &[
     ("account", "Wavely-Konto", &["Wavely-Konto"]),
     ("appearance", "Darstellung", &["Darstellung"]),
     ("playback", "Wiedergabe", &["Wiedergabe"]),
-    ("sound", "Klang", &["Klang"]),
+    ("sound", "Audio", &["Audio"]),
     ("services", "Dienste", &["Dienste", "YouTube Music", "Spotify", "SoundCloud", "Last.fm", "Discord"]),
     ("library", "Bibliothek", &["Bibliothek"]),
     ("offline", "Offline", &["Offline"]),
@@ -172,10 +190,19 @@ fn full_page(app: &Arc<App>) -> PageData {
     match app.account.logged_in() {
         Some(session) => {
             let status = app.sync_status.lock().unwrap().clone();
-            let admin = if app.account.admin.load(Ordering::Relaxed) { " · Admin" } else { "" };
-            p.info(&session.name, &format!("{}{admin}", session.email));
-            p.info("Abgleich", if status.is_empty() { "Playlists und Verlauf werden abgeglichen…" } else { &status });
-            p.button("account-logout", "Abmelden", "Deine Daten bleiben auf diesem PC und im Konto erhalten.", "Abmelden");
+            let ready = !status.is_empty();
+            p.rows.push(RowData {
+                kind: "account",
+                text: session.name.clone(),
+                subtext: session.email.clone(),
+                label: session.name.trim().chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or("?".into()),
+                number: ready as i32,
+                cards: vec![option(
+                    String::new(),
+                    if ready { "Verlauf, Rückblick und Wavely-Playlists sind auf allen Geräten gleich" } else { "Playlists und Verlauf werden abgeglichen…" },
+                )],
+                ..Default::default()
+            });
         }
         None => {
             let busy = *app.account_busy.lock().unwrap();
@@ -196,7 +223,7 @@ fn full_page(app: &Arc<App>) -> PageData {
         kind: "setting",
         label: "swatches".into(),
         text: "Akzentfarbe".into(),
-        subtext: "Farbe für Hervorhebungen".into(),
+        subtext: "Für Buttons, Hervorhebungen und den Fortschrittsbalken".into(),
         number: ACCENTS.iter().position(|(_, hex)| hex.eq_ignore_ascii_case(&s.accent)).map(|i| i as i32).unwrap_or(-1),
         cards: ACCENTS.iter().map(|(name, hex)| CardData {
             title: name.to_string(),
@@ -207,8 +234,6 @@ fn full_page(app: &Arc<App>) -> PageData {
         }).collect(),
         ..Default::default()
     });
-    let custom = !ACCENTS.iter().any(|(_, hex)| hex.eq_ignore_ascii_case(&s.accent));
-    p.input("accent", "Eigene Akzentfarbe", "Als Farbwert, z. B. #ff4f7b", "#rrggbb", if custom { &s.accent } else { "" }, "Übernehmen");
     p.toggle("sidebarCollapsed", "Seitenleiste einklappen", "Nur Symbole anzeigen, mehr Platz für Musik", s.sidebar_collapsed);
     p.button("appearance-reset", "Darstellung zurücksetzen", "Dunkles Design mit pinker Akzentfarbe", "Zurücksetzen");
 
@@ -243,7 +268,7 @@ fn full_page(app: &Arc<App>) -> PageData {
     p.toggle("miniMinimizesMain", "Mini-Player minimiert das Hauptfenster", "Beim Öffnen des Mini-Players (Strg + M)", s.mini_minimizes_main);
 
     // Klang
-    p.heading("Klang");
+    p.heading("Audio");
     p.toggle("normalize", "Lautstärke angleichen", "Leise und laute Songs gleich laut abspielen", s.normalize);
     let presets: Vec<(String, String)> = EQ_PRESETS
         .iter()
@@ -261,12 +286,22 @@ fn full_page(app: &Arc<App>) -> PageData {
             ..Default::default()
         });
     }
-    p.choice(
-        "playbackRate",
-        "Tempo",
-        "Die Tonhöhe ändert sich mit",
-        &[("0.75", "0,75×"), ("0.9", "0,9×"), ("1", "1×"), ("1.1", "1,1×"), ("1.25", "1,25×"), ("1.5", "1,5×")],
-        &format!("{}", s.playback_rate),
+    // Tempo als Regler (0,5× – 2×) mit „Normal“
+    p.rows.push(RowData {
+        kind: "setting",
+        label: "slider".into(),
+        text: "Tempo".into(),
+        subtext: format!("Schneller oder langsamer abspielen ({}×)", format!("{}", (s.playback_rate * 100.0).round() / 100.0).replace('.', ",")),
+        values: vec![((s.playback_rate - 0.5) / 1.5).clamp(0.0, 1.0)],
+        number: ((s.playback_rate - 1.0).abs() > 0.001) as i32,
+        cards: vec![option("playbackRate".into(), "Normal")],
+        ..Default::default()
+    });
+    p.toggle(
+        "preservePitch",
+        "Tonhöhe beibehalten",
+        "Aus: Schneller klingt höher, langsamer tiefer – wie bei „Sped up“- und „Slowed“-Versionen",
+        s.preserve_pitch,
     );
     let devices: Vec<(String, String)> = std::iter::once((String::new(), "Windows-Standard".to_string()))
         .chain(crate::audio::device_names().into_iter().map(|n| (n.clone(), n)))
@@ -279,9 +314,12 @@ fn full_page(app: &Arc<App>) -> PageData {
         p.heading("Windows");
         let autostart = crate::instance::autostart_enabled();
         p.toggle("autostart", "Mit Windows starten", "Wavely startet automatisch nach der Anmeldung", autostart);
-        if autostart {
-            p.toggle("startMinimized", "Minimiert starten", "Beim automatischen Start nur in der Taskleiste", s.start_minimized);
-        }
+        p.toggle(
+            "startMinimized",
+            "Minimiert starten",
+            if autostart { "Beim automatischen Start nur in der Taskleiste, ohne Fenster in den Vordergrund zu holen" } else { "Wirkt, wenn „Mit Windows starten“ an ist" },
+            s.start_minimized,
+        );
     }
 
     // Tastenkürzel
@@ -355,10 +393,13 @@ fn full_page(app: &Arc<App>) -> PageData {
         p.input(
             "spotifyClientId",
             "Eigene Spotify Client ID",
-            "Für Premium nötig: App auf developer.spotify.com, Redirect URI http://127.0.0.1:43827/callback",
+            "Für Spotify Premium nötig (siehe unten)",
             "Standard (Wavely)",
             if is_default { "" } else { &client_id },
             "Speichern",
+        );
+        p.text(
+            "Spotify verlangt seit 2026, dass der Inhaber einer Entwickler-App selbst Premium hat (höchstens 5 Nutzer). Lege dazu auf developer.spotify.com eine App an (Redirect URI: http://127.0.0.1:43827/callback, „Web API“ und „Web Playback SDK“) und trage hier ihre Client ID ein.",
         );
         if !is_default {
             p.button("spotify-client-default", "Standard-Client-ID", "Zurück zur Client ID von Wavely", "Zurücksetzen");
@@ -412,8 +453,8 @@ fn full_page(app: &Arc<App>) -> PageData {
     p.toggle("autoUpdateCheck", "Automatisch nach Updates suchen", "Beim Start und alle paar Stunden; installiert wird erst, wenn du es bestätigst", s.auto_update_check);
     p.button("changelog", "Versionsverlauf", "Was sich in jeder Wavely-Version geändert hat", "Anzeigen");
     p.info("Verwendete Projekte", "Slint, Symphonia, cpal, wry, RustyPipe (GPL-3.0), yt-dlp (Unlicense), LRCLIB (Liedtexte), lofty, discord-rich-presence");
-    p.info("Arbeitsspeicher", &format!("{:.1} MB privat", crate::host::private_bytes() as f64 / 1_048_576.0));
     if app.account.admin.load(Ordering::Relaxed) {
+        p.info("Arbeitsspeicher", &format!("{:.1} MB privat", crate::host::private_bytes() as f64 / 1_048_576.0));
         let queue = app.state.lock().unwrap().queue.len();
         p.info(
             "Diagnose",
@@ -483,6 +524,18 @@ impl App {
             self.settings_changed();
             return true;
         }
+        if action == "color-picker" {
+            let accent = self.settings.lock().unwrap().accent.clone();
+            let (h, s, v) = crate::parse_hex(&accent).map(rgb_to_hsv).unwrap_or((343.0, 0.7, 1.0));
+            self.ui(move |ui| {
+                let c = ui.global::<crate::ColorPick>();
+                c.set_hue(h);
+                c.set_sat(s);
+                c.set_val(v);
+                c.set_open(true);
+            });
+            return true;
+        }
         if action == "spotify-client-default" {
             self.set_spotify_client_id(None);
             return true;
@@ -521,6 +574,7 @@ impl App {
                 ("miniMinimizesMain", None) => s.mini_minimizes_main = !s.mini_minimizes_main,
                 ("startMinimized", None) => s.start_minimized = !s.start_minimized,
                 ("autoUpdateCheck", None) => s.auto_update_check = !s.auto_update_check,
+                ("preservePitch", None) => s.preserve_pitch = !s.preserve_pitch,
                 ("playbackRate", Some(v)) => s.playback_rate = v.parse().unwrap_or(1.0),
                 ("outputDevice", Some(v)) => s.output_device = v,
                 ("eqPreset", Some(v)) => {
@@ -567,6 +621,29 @@ impl App {
                 self.save_settings();
                 self.apply_appearance();
                 self.settings_changed();
+            }
+            "playbackRate" => {
+                // Regler 0–1 → 0,5× – 2× in Schritten von 0,05
+                let Ok(v) = value.parse::<f32>() else { return };
+                let rate = ((0.5 + v.clamp(0.0, 1.0) * 1.5) * 20.0).round() / 20.0;
+                self.settings.lock().unwrap().playback_rate = rate;
+                self.save_settings();
+                self.apply_sound();
+                self.settings_changed();
+            }
+            "accountName" => {
+                if value.is_empty() {
+                    return;
+                }
+                let app = self.clone();
+                let name = value.to_string();
+                self.rt.spawn(async move {
+                    match app.account.rename(&name).await {
+                        Ok(()) => app.toast("Name geändert", false),
+                        Err(e) => app.toast(&e, true),
+                    }
+                    app.settings_changed();
+                });
             }
             "spotifyClientId" => {
                 if value.is_empty() {
@@ -635,6 +712,7 @@ impl App {
         self.engine.send(crate::audio::Command::Dsp(dsp));
         self.engine.send(crate::audio::Command::Device(device));
         self.engine.set_rate(rate);
+        self.engine.set_preserve_pitch(self.settings.lock().unwrap().preserve_pitch);
         self.ui(move |ui| {
             let model: Vec<f32> = gains.to_vec();
             ui.global::<crate::Page>().set_eq_gains(slint::ModelRc::from(std::rc::Rc::new(slint::VecModel::from(model))));

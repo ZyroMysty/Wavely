@@ -157,6 +157,17 @@ impl Account {
         Ok(self.start_session(&value))
     }
 
+    /// Anzeigenamen ändern (wie updateProfile)
+    pub async fn rename(&self, name: &str) -> Result<(), String> {
+        let token = self.id_token().await?;
+        self.auth_request("update", json!({ "idToken": token, "displayName": name.trim(), "returnSecureToken": false })).await?;
+        if let Some(session) = self.session.lock().unwrap().as_mut() {
+            session.name = name.trim().to_string();
+        }
+        self.save();
+        Ok(())
+    }
+
     pub async fn reset_password(&self, email: &str) -> Result<(), String> {
         self.auth_request("sendOobCode", json!({ "requestType": "PASSWORD_RESET", "email": email.trim() })).await.map(|_| ())
     }

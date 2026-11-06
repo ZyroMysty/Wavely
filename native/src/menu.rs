@@ -192,6 +192,29 @@ impl App {
             self.sleep_action(arg);
             return;
         }
+        if let Some(device) = id.strip_prefix("device:") {
+            self.close_menu();
+            self.setting_action(&format!("outputDevice={device}"));
+            self.toast(if device.is_empty() { "Ausgabe: Windows-Standard" } else { device }, false);
+            return;
+        }
+        match id {
+            "account:" => {
+                self.close_menu();
+                return;
+            }
+            "account:settings" => {
+                self.close_menu();
+                self.show_view("settings");
+                return;
+            }
+            "account:logout" => {
+                self.close_menu();
+                self.youtube_logout();
+                return;
+            }
+            _ => {}
+        }
         // Auswahl einer Einstellung (Menü einer Auswahl-Zeile)
         if let Some(action) = id.strip_prefix("set:") {
             self.close_menu();
@@ -389,6 +412,74 @@ impl App {
     }
 
     /// Likes und Kontoname von YouTube Music laden
+    /// Kleines Menü anzeigen (Einträge: Kennung, Text, Symbol)
+    fn simple_menu(self: &Arc<Self>, entries: Vec<(String, String, &'static str)>, x: f32, y: f32) {
+        let items: Vec<crate::MenuItem> = entries
+            .into_iter()
+            .map(|(id, label, icon)| crate::MenuItem { id: id.into(), label: label.into(), icon: icon.into(), separator: false, chevron: false })
+            .collect();
+        *self.menu.lock().unwrap() = None;
+        self.ui(move |ui| {
+            let m = ui.global::<crate::Menu>();
+            m.set_items(ModelRc::from(std::rc::Rc::new(VecModel::from(items))));
+            m.set_x(x);
+            m.set_y(y);
+            m.set_open(true);
+        });
+    }
+
+    /// Konto-Knopf oben rechts (YouTube Music)
+    pub fn open_account_menu(self: &Arc<Self>, x: f32, y: f32) {
+        let name = self.ui.upgrade().map(|ui| ui.global::<crate::YouTube>().get_account_name().to_string()).unwrap_or_default();
+        self.simple_menu(
+            vec![
+                ("account:".into(), name, crate::icon::YOUTUBE),
+                ("account:settings".into(), "Einstellungen".into(), crate::icon::SETTINGS),
+                ("account:logout".into(), "Abmelden".into(), crate::icon::LOGOUT),
+            ],
+            x,
+            y,
+        );
+    }
+
+    /// Ausgabegerät wählen (Player-Leiste)
+    pub fn open_device_menu(self: &Arc<Self>, x: f32, y: f32) {
+        let current = self.settings.lock().unwrap().output_device.clone();
+        let mut entries = vec![(String::new(), "Windows-Standard".to_string())];
+        entries.extend(crate::audio::device_names().into_iter().map(|n| (n.clone(), n)));
+        let count = entries.len() as f32;
+        let entries = entries
+            .into_iter()
+            .map(|(id, label)| {
+                let icon = if id == current { crate::icon::CHECK } else { crate::icon::DEVICES };
+                (format!("device:{id}"), label, icon)
+            })
+            .collect();
+        // Menü über dem Knopf (etwa 40 px pro Eintrag)
+        self.simple_menu(entries, x, (y - count * 40.0 - 12.0).max(8.0));
+    }
+
+    /// Klick auf den Künstler in der Player-Leiste
+    pub fn open_current_artist(self: &Arc<Self>) {
+        let Some(track) = self.state.lock().unwrap().current().cloned() else { return };
+        let artist = track.artists.iter().find(|a| a.id.is_some()).cloned();
+        match (track.source.as_str(), artist) {
+            ("youtube", Some(a)) => self.yt_open(YtPage::Artist { id: a.id.unwrap_or_default(), name: a.name }),
+            ("spotify", Some(a)) => self.open(crate::nav::PageKind::Sp(crate::spotify_view::SpPage::Artist { id: a.id.unwrap_or_default(), name: a.name })),
+            _ => {
+                // Ohne Künstler-ID: bei YouTube Music suchen
+                let name = track.artists.first().map(|a| a.name.clone()).or(track.artist.clone()).unwrap_or_default();
+                let name = name.split(',').next().unwrap_or("").trim().to_string();
+                if !name.is_empty() {
+                    if let Some(ui) = self.ui.upgrade() {
+                        ui.global::<crate::YouTube>().set_query(name.clone().into());
+                    }
+                    self.yt_open(YtPage::Search(name));
+                }
+            }
+        }
+    }
+
     pub fn yt_init(self: &Arc<Self>) {
         self.yt_init_with(true);
     }
@@ -435,7 +526,12 @@ impl App {
                 app.sync_player();
             }
             let name = name.unwrap_or_default();
-            app.ui(move |ui| ui.global::<crate::YouTube>().set_account_name(name.into()));
+            let initial = name.trim().chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_default();
+            app.ui(move |ui| {
+                let y = ui.global::<crate::YouTube>();
+                y.set_account_name(name.into());
+                y.set_account_initial(initial.into());
+            });
             // Prüfung fertig: Bibliothek mit Inhalt zeigen
             app.yt_checking.store(false, Ordering::Relaxed);
             let a = app.clone();

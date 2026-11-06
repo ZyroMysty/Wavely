@@ -46,6 +46,8 @@ pub struct Settings {
     pub modules: std::collections::BTreeMap<String, bool>,
     /// Beim Start und alle paar Stunden nach Updates suchen
     pub auto_update_check: bool,
+    /// Beim Tempo die Tonhöhe beibehalten
+    pub preserve_pitch: bool,
 }
 
 impl Settings {
@@ -62,6 +64,7 @@ impl Default for Settings {
             start_view: "home".into(),
             modules: Default::default(),
             auto_update_check: true,
+            preserve_pitch: true,
             volume: 0.6,
             autoplay: true,
             discord_enabled: true,

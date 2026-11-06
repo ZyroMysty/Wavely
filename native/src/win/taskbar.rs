@@ -7,7 +7,7 @@
 
 use std::{
     cell::RefCell,
-    sync::atomic::{AtomicU32, Ordering},
+    sync::atomic::{AtomicIsize, AtomicU32, Ordering},
 };
 
 use windows::{
@@ -35,6 +35,9 @@ const ID_PREVIOUS: u32 = 1;
 const ID_PLAY: u32 = 2;
 const ID_NEXT: u32 = 3;
 const ID_LIKE: u32 = 4;
+
+/// Bildschirm, auf dem das Fenster zuletzt war (für den Taskleisten-Wechsel)
+static LAST_MONITOR: AtomicIsize = AtomicIsize::new(0);
 
 /// Nachrichten-ID von „TaskbarButtonCreated“ (ohne RefCell lesbar, siehe subclass_proc)
 static CREATED_MSG: AtomicU32 = AtomicU32::new(0);
@@ -187,6 +190,28 @@ unsafe extern "system" fn subclass_proc(
     _data: usize,
 ) -> LRESULT {
     let created_msg = CREATED_MSG.load(Ordering::Relaxed);
+    // Fenster auf einen anderen Bildschirm gezogen: Button neu anmelden, damit Windows ihn auf der
+    // Taskleiste dieses Bildschirms zeigt („Taskleisten-Schaltflächen anzeigen: wo das Fenster geöffnet ist“)
+    if msg == windows::Win32::UI::WindowsAndMessaging::WM_WINDOWPOSCHANGED {
+        let monitor = unsafe {
+            windows::Win32::Graphics::Gdi::MonitorFromWindow(hwnd, windows::Win32::Graphics::Gdi::MONITOR_DEFAULTTONEAREST)
+        };
+        let last = LAST_MONITOR.swap(monitor.0 as isize, Ordering::Relaxed);
+        if last != 0 && last != monitor.0 as isize {
+            let list = TASKBAR.with(|t| {
+                let mut t = t.try_borrow_mut().ok()?;
+                let taskbar = t.as_mut()?;
+                taskbar.added = false;
+                Some(taskbar.list.clone())
+            });
+            if let Some(list) = list {
+                unsafe {
+                    let _ = list.DeleteTab(hwnd);
+                    let _ = list.AddTab(hwnd);
+                }
+            }
+        }
+    }
     if created_msg != 0 && msg == created_msg {
         add_buttons();
     } else if msg == WM_COMMAND && ((wparam.0 >> 16) & 0xffff) as u32 == THBN_CLICKED {

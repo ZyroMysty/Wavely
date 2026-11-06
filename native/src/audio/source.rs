@@ -21,13 +21,29 @@ pub struct HttpSource {
     pos: u64,
     chunk_start: u64,
     chunk: Vec<u8>,
+    /// Nächstes Stück, das schon im Hintergrund lädt: (Start, Ergebnis)
+    next: Option<(u64, std::sync::Mutex<std::sync::mpsc::Receiver<Result<(Vec<u8>, u64), String>>>)>,
 }
 
 impl HttpSource {
     /// Holt gleich das erste Stück (dabei kommt auch die Gesamtgröße mit).
     pub fn open(fetch: FetchChunk) -> Result<Self, String> {
         let (chunk, len) = fetch(0, CHUNK)?;
-        Ok(Self { fetch, len, pos: 0, chunk_start: 0, chunk })
+        Ok(Self { fetch, len, pos: 0, chunk_start: 0, chunk, next: None })
+    }
+
+    /// Nächstes Stück vorab laden, damit die Wiedergabe beim Wechsel nicht auf das Netz warten muss
+    fn prefetch(&mut self) {
+        let end = self.chunk_start + self.chunk.len() as u64;
+        if self.next.is_some() || end >= self.len {
+            return;
+        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        let fetch = self.fetch.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(fetch(end, CHUNK));
+        });
+        self.next = Some((end, std::sync::Mutex::new(rx)));
     }
 }
 
@@ -38,7 +54,15 @@ impl Read for HttpSource {
         }
         let in_chunk = self.pos >= self.chunk_start && self.pos < self.chunk_start + self.chunk.len() as u64;
         if !in_chunk {
-            let (data, len) = (self.fetch)(self.pos, CHUNK).map_err(io::Error::other)?;
+            // Vorab geladenes Stück passt → nehmen, sonst jetzt laden
+            let ready = match self.next.take() {
+                Some((start, rx)) if start == self.pos => rx.into_inner().ok().and_then(|rx| rx.recv().ok()).and_then(|r| r.ok()),
+                _ => None,
+            };
+            let (data, len) = match ready {
+                Some(result) => result,
+                None => (self.fetch)(self.pos, CHUNK).map_err(io::Error::other)?,
+            };
             if data.is_empty() {
                 return Ok(0);
             }
@@ -50,6 +74,10 @@ impl Read for HttpSource {
         let n = buf.len().min(self.chunk.len() - offset);
         buf[..n].copy_from_slice(&self.chunk[offset..offset + n]);
         self.pos += n as u64;
+        // Ab der Hälfte des Stücks das nächste holen
+        if self.pos >= self.chunk_start + self.chunk.len() as u64 / 2 {
+            self.prefetch();
+        }
         Ok(n)
     }
 }
@@ -75,5 +103,38 @@ impl MediaSource for HttpSource {
     }
     fn byte_len(&self) -> Option<u64> {
         Some(self.len)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Beim Lesen über viele Stücke (mit Vorladen und Springen) kommen genau die richtigen Bytes
+    #[test]
+    fn reads_across_chunks() {
+        let data: Arc<Vec<u8>> = Arc::new((0..3_000_000u32).map(|i| (i % 251) as u8).collect());
+        let d = data.clone();
+        let fetch: FetchChunk = Arc::new(move |start, len| {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            let end = (start + len).min(d.len() as u64) as usize;
+            Ok((d[start as usize..end].to_vec(), d.len() as u64))
+        });
+        let mut source = HttpSource::open(fetch).unwrap();
+        let mut out = Vec::new();
+        let mut buf = [0u8; 4096];
+        loop {
+            let n = source.read(&mut buf).unwrap();
+            if n == 0 {
+                break;
+            }
+            out.extend_from_slice(&buf[..n]);
+        }
+        assert_eq!(out.len(), data.len());
+        assert!(out == *data);
+        // Springen mitten in ein anderes Stück
+        source.seek(SeekFrom::Start(1_234_567)).unwrap();
+        let n = source.read(&mut buf).unwrap();
+        assert_eq!(&buf[..n], &data[1_234_567..1_234_567 + n]);
     }
 }

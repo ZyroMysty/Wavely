@@ -3,7 +3,7 @@
 
 import { Theme } from "theme.slint";
 import { Icon, Icons } from "icons.slint";
-import { IconButton, PillButton } from "controls.slint";
+import { IconButton, PillButton, Slider } from "controls.slint";
 import { ListView } from "std-widgets.slint";
 
 export struct TrackRow {
@@ -319,6 +319,7 @@ export component PageView inherits Rectangle {
                 : row.kind == "stats" ? 110px
                 : row.kind == "bars" ? 130px
                 : row.kind == "login" ? (login-mode == "register" ? 300px : 250px) + (row.subtext != "" ? 30px : 0px)
+                : row.kind == "account" ? 162px
                 : 40px;
 
             if row.kind == "hero": HorizontalLayout {
@@ -479,6 +480,25 @@ export component PageView inherits Rectangle {
                                     clicked => { Page.action(sw.id); }
                                 }
                             }
+                            // Eigene Farbe
+                            Rectangle {
+                                y: (parent.height - self.height) / 2;
+                                width: 26px;
+                                height: 26px;
+                                border-radius: 13px;
+                                background: row.number < 0 ? Theme.accent : Theme.surface-2;
+                                border-width: row.number < 0 ? 3px : 0px;
+                                border-color: Theme.text;
+                                Icon {
+                                    path: Icons.plus;
+                                    size: 16px;
+                                    color: row.number < 0 ? #fff : Theme.text-dim;
+                                }
+                                TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { Page.action("color-picker"); }
+                                }
+                            }
                         }
                         // Eingabefeld mit Knopf
                         if row.label == "input": HorizontalLayout {
@@ -496,6 +516,25 @@ export component PageView inherits Rectangle {
                                 primary: false;
                                 text: row.cards[1].title;
                                 clicked => { Page.input(row.cards[0].id, field.text); }
+                            }
+                        }
+                        // Regler mit „Normal“-Knopf (Tempo)
+                        if row.label == "slider": HorizontalLayout {
+                            alignment: end;
+                            spacing: 12px;
+                            Slider {
+                                y: (parent.height - self.height) / 2;
+                                width: 200px;
+                                maximum: 1;
+                                value: row.values[0];
+                                released(v) => { Page.input(row.cards[0].id, "\{v}"); }
+                            }
+                            PillButton {
+                                y: (parent.height - self.height) / 2;
+                                primary: false;
+                                opacity: row.number == 1 ? 1 : 0.5;
+                                text: row.cards[0].title;
+                                clicked => { Page.action(row.cards[0].id + "=1"); }
                             }
                         }
                         if row.label == "button": PillButton {
@@ -697,6 +736,111 @@ export component PageView inherits Rectangle {
             }
 
             // Anmeldung beim Wavely-Konto
+            // Wavely-Konto (angemeldet): Bild, Name (änderbar), E-Mail, Abmelden, Abgleich
+            if row.kind == "account": HorizontalLayout {
+                padding-left: root.side-padding;
+                padding-right: root.side-padding;
+                padding-bottom: 6px;
+                property <bool> editing;
+                Rectangle {
+                    background: Theme.surface;
+                    border-radius: Theme.radius;
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    VerticalLayout {
+                        HorizontalLayout {
+                            height: 92px;
+                            padding-left: 20px;
+                            padding-right: 20px;
+                            spacing: 14px;
+                            Rectangle {
+                                y: (parent.height - self.height) / 2;
+                                width: 48px;
+                                height: 48px;
+                                border-radius: 24px;
+                                background: Theme.accent;
+                                Text {
+                                    text: row.label;
+                                    color: #fff;
+                                    font-size: 20px;
+                                    font-weight: 700;
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                spacing: 2px;
+                                horizontal-stretch: 1;
+                                if !editing: HorizontalLayout {
+                                    spacing: 6px;
+                                    alignment: start;
+                                    Text {
+                                        text: row.text;
+                                        color: Theme.text;
+                                        font-weight: 700;
+                                        font-size: 16px;
+                                        vertical-alignment: center;
+                                    }
+                                    IconButton {
+                                        size: 24px;
+                                        icon: Icons.edit;
+                                        icon-size: 14px;
+                                        clicked => { editing = true; }
+                                    }
+                                }
+                                if editing: HorizontalLayout {
+                                    spacing: 8px;
+                                    alignment: start;
+                                    name-field := LoginField {
+                                        width: 220px;
+                                        placeholder: "Name";
+                                        text: row.text;
+                                        accepted => { Page.input("accountName", self.text); editing = false; }
+                                    }
+                                    PillButton {
+                                        primary: false;
+                                        text: "Speichern";
+                                        clicked => { Page.input("accountName", name-field.text); editing = false; }
+                                    }
+                                }
+                                Text {
+                                    text: row.subtext;
+                                    color: Theme.text-dim;
+                                    font-size: 13px;
+                                    overflow: elide;
+                                }
+                            }
+                            PillButton {
+                                y: (parent.height - self.height) / 2;
+                                primary: false;
+                                width: 140px;
+                                icon: Icons.logout;
+                                text: "Abmelden";
+                                clicked => { Page.action("account-logout"); }
+                            }
+                        }
+                        Rectangle { height: 1px; background: Theme.border; }
+                        HorizontalLayout {
+                            padding-left: 20px;
+                            padding-right: 20px;
+                            spacing: 12px;
+                            VerticalLayout {
+                                alignment: center;
+                                spacing: 2px;
+                                horizontal-stretch: 1;
+                                Text { text: "Abgleich"; color: Theme.text; font-weight: 600; }
+                                Text { text: row.cards[0].title; color: Theme.text-dim; font-size: 13px; overflow: elide; }
+                            }
+                            Icon {
+                                y: (parent.height - self.height) / 2;
+                                path: row.number == 1 ? Icons.check : Icons.refresh;
+                                size: 20px;
+                                color: row.number == 1 ? Theme.accent : Theme.text-dim;
+                            }
+                        }
+                    }
+                }
+            }
+
             if row.kind == "login": HorizontalLayout {
                 padding-left: root.side-padding;
                 padding-right: root.side-padding;
