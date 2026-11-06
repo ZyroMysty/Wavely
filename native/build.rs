@@ -21,6 +21,8 @@ fn main() {
     {
         let mut res = winresource::WindowsResource::new();
         res.set_icon("../src-tauri/icons/icon.ico");
+        res.set("FileDescription", "Wavely Native");
+        res.set("ProductName", "Wavely Native");
         let _ = res.compile();
     }
 }

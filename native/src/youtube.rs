@@ -63,6 +63,10 @@ pub async fn build(app: &Arc<App>, page: &YtPage, logged_in: bool) -> PageData {
                 return p;
             }
             p.title("Deine Bibliothek");
+            if app.yt_checking.load(std::sync::atomic::Ordering::Relaxed) {
+                p.message("Anmeldung bei YouTube Music wird geprüft…");
+                return p;
+            }
             match ytm::ytm_library(ytm).await {
                 Ok(library) => {
                     p.heading("Playlists");

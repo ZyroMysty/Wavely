@@ -69,6 +69,8 @@ pub struct App {
     /// Zählt Seitenwechsel: verspätete Ergebnisse alter Seiten werden verworfen
     pub page_token: AtomicU64,
     pub yt_logged_in: AtomicBool,
+    /// YouTube-Anmeldung wird gerade geprüft (Bibliothek zeigt so lange einen Hinweis)
+    pub yt_checking: AtomicBool,
     /// Gelikte YouTube-Songs (Video-IDs)
     pub liked: Mutex<std::collections::HashSet<String>>,
     /// Eigene YouTube-Playlists (ID, Name), zu denen man Songs hinzufügen kann
@@ -765,7 +767,11 @@ impl App {
     }
 
     fn lastfm_data(&self, track: &Track, started_at: u64) -> Option<services::lastfm::Scrobble> {
-        if !self.settings.lock().unwrap().lastfm_scrobble || std::env::var_os("WAVELY_TEST_STEPS").is_some() {
+        let on = {
+            let s = self.settings.lock().unwrap();
+            s.lastfm_scrobble && s.module_on("lastfm")
+        };
+        if !on || std::env::var_os("WAVELY_TEST_STEPS").is_some() {
             return None;
         }
         let artist = track
@@ -882,6 +888,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         page: Mutex::new(Default::default()),
         page_token: AtomicU64::new(0),
         yt_logged_in: AtomicBool::new(false),
+        yt_checking: AtomicBool::new(true),
         history: Mutex::new(load_history(&store)),
         settings: Mutex::new(settings.clone()),
         account: account::Account::new(&paths),
@@ -997,6 +1004,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let a = app.clone();
     pg.on_action(move |id| a.page_action(&id));
     let a = app.clone();
+    pg.on_input(move |id, value| a.setting_input(&id, &value));
+    let a = app.clone();
     pg.on_track_menu(move |row, x, y| {
         let Some((track, index)) = a.page_track(row as usize) else { return };
         let playlist = match a.current_page() {
@@ -1104,7 +1113,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     app.local_scan();
     app.apply_quality();
     app.start_sync();
-    let start_view = app.settings.lock().unwrap().start_view.clone();
+    app.apply_modules();
+    let start_view = {
+        let s = app.settings.lock().unwrap();
+        if s.module_on(&s.start_view) { s.start_view.clone() } else { "home".into() }
+    };
     app.show_view(if start_view.is_empty() { "home" } else { &start_view });
     app.yt_init();
 
@@ -1112,7 +1125,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Nach Updates suchen (nicht in Tests)
     if !testing {
         let a = app.clone();
-        slint::Timer::single_shot(std::time::Duration::from_secs(8), move || a.check_update(false));
+        slint::Timer::single_shot(std::time::Duration::from_secs(8), move || {
+            if a.settings.lock().unwrap().auto_update_check {
+                a.check_update(false);
+            }
+        });
     }
 
     // yt-dlp aktuell halten, liegengebliebene Scrobbles nachreichen
@@ -1288,6 +1305,12 @@ fn run_test_steps(app: Arc<App>, steps: String) {
             "mini" => app.open_mini_player(),
             #[cfg(windows)]
             "mini-close" => win::mini::close_player(),
+            // Fenster an eine Bildschirmstelle setzen (Taskleisten-Test mit zwei Bildschirmen)
+            "pos" if nums.len() == 2 => {
+                if let Some(ui) = app.ui.upgrade() {
+                    ui.window().set_position(slint::PhysicalPosition::new(nums[0] as i32, nums[1] as i32));
+                }
+            }
             // Fenstergröße (für Bilder langer Seiten)
             "size" if nums.len() == 2 => {
                 if let Some(ui) = app.ui.upgrade() {

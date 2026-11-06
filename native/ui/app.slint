@@ -61,6 +61,16 @@ export global Nav {
     ];
     in-out property <bool> collapsed;
     in-out property <string> panel;
+    // Dienste an/aus (Einstellungen → Dienste)
+    in property <bool> youtube-on: true;
+    in property <bool> spotify-on: true;
+    in property <bool> soundcloud-on: true;
+    in property <bool> local-on: true;
+    in property <bool> together-on: true;
+    public pure function shown(id: string) -> bool {
+        return (id != "youtube" || youtube-on) && (id != "spotify" || spotify-on)
+            && (id != "soundcloud" || soundcloud-on) && (id != "local" || local-on);
+    }
     // Wavely-Playlists in der Seitenleiste (id, Name) und ihre Songanzahl
     in property <[NavItem]> playlists;
     in property <[int]> playlist-counts;
@@ -206,7 +216,8 @@ component Sidebar inherits Rectangle {
         VerticalLayout {
             spacing: 2px;
             for item in Nav.items: Rectangle {
-                height: 38px;
+                visible: Nav.shown(item.id);
+                height: Nav.shown(item.id) ? 38px : 0px;
                 border-radius: 8px;
                 property <bool> active: Nav.view == item.id;
                 background: active ? Theme.accent-soft : touch.has-hover ? Theme.hover : transparent;
@@ -610,7 +621,7 @@ component PlayerBar inherits Rectangle {
             preferred-width: 0px;
             alignment: end;
             spacing: 4px;
-            IconButton {
+            if Nav.together-on: IconButton {
                 y: (parent.height - self.height) / 2;
                 icon: Icons.group;
                 on: Nav.together-active;

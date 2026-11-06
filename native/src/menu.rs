@@ -394,9 +394,15 @@ impl App {
     }
 
     fn yt_init_with(self: &Arc<Self>, may_refresh: bool) {
+        if may_refresh {
+            self.yt_checking.store(true, Ordering::Relaxed);
+        }
         let app = self.clone();
         self.rt.spawn(async move {
             let logged_in = ytm::ytm_status(&app.ytm).await.unwrap_or(false);
+            if !logged_in {
+                app.yt_checking.store(false, Ordering::Relaxed);
+            }
             app.yt_logged_in.store(logged_in, Ordering::Relaxed);
             app.ui(move |ui| ui.global::<crate::YouTube>().set_status(if logged_in { "loggedIn" } else { "loggedOut" }.into()));
             let a = app.clone();
@@ -430,17 +436,17 @@ impl App {
             }
             let name = name.unwrap_or_default();
             app.ui(move |ui| ui.global::<crate::YouTube>().set_account_name(name.into()));
-            // Nach dem Auffrischen: Bibliothek mit Inhalt neu zeigen
-            if !may_refresh {
-                let a = app.clone();
-                let _ = slint::invoke_from_event_loop(move || a.refresh_if_showing(|p| matches!(p, crate::nav::PageKind::Yt(YtPage::Library))));
-            }
+            // Prüfung fertig: Bibliothek mit Inhalt zeigen
+            app.yt_checking.store(false, Ordering::Relaxed);
+            let a = app.clone();
+            let _ = slint::invoke_from_event_loop(move || a.refresh_if_showing(|p| matches!(p, crate::nav::PageKind::Yt(YtPage::Library))));
         });
     }
 
     /// Die Anmeldung gilt nicht mehr → Anmelden-Knopf zeigen
     fn yt_expired(self: &Arc<Self>) {
         self.yt_logged_in.store(false, Ordering::Relaxed);
+        self.yt_checking.store(false, Ordering::Relaxed);
         self.ui(|ui| ui.global::<crate::YouTube>().set_status("loggedOut".into()));
         self.toast("Die YouTube-Music-Anmeldung ist abgelaufen – bitte neu anmelden.", true);
         let a = self.clone();

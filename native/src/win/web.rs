@@ -29,6 +29,7 @@ struct Web {
     view: wry::WebView,
     /// Beim Schließen (auch über das X)
     on_close: Option<Box<dyn FnOnce()>>,
+    closing: bool,
 }
 
 thread_local! {
@@ -58,6 +59,10 @@ pub fn open(
     on_ipc: impl Fn(String) + 'static,
     on_close: impl FnOnce() + 'static,
 ) -> Result<(), String> {
+    // Wird gerade geschlossen: sofort weg, dann neu öffnen
+    if is_closing(id) {
+        close(id);
+    }
     if let Some(hwnd) = WEBS.with(|w| w.borrow().get(id).map(|web| web.hwnd)) {
         unsafe {
             let _ = ShowWindow(hwnd, SW_RESTORE);
@@ -139,7 +144,7 @@ pub fn open(
         if options.visible {
             let _ = view.focus();
         }
-        WEBS.with(|w| w.borrow_mut().insert(id.to_string(), Web { hwnd, view, on_close: Some(Box::new(on_close)) }));
+        WEBS.with(|w| w.borrow_mut().insert(id.to_string(), Web { hwnd, view, on_close: Some(Box::new(on_close)), closing: false }));
     }
     Ok(())
 }
@@ -176,6 +181,32 @@ pub fn eval(id: &str, script: &str) {
             let _ = web.view.evaluate_script(script);
         }
     });
+}
+
+/// Fenster verstecken und erst nach `seconds` schließen: Der Browser schreibt Cookies nur alle
+/// paar Sekunden auf die Festplatte, sonst wäre eine frische Anmeldung beim nächsten Mal weg.
+pub fn close_later(id: &str, seconds: u64) {
+    let found = WEBS.with(|w| {
+        w.borrow_mut().get_mut(id).map(|web| {
+            web.closing = true;
+            web.hwnd
+        })
+    });
+    let Some(hwnd) = found else { return };
+    unsafe {
+        let _ = ShowWindow(hwnd, SW_HIDE);
+    }
+    let id = id.to_string();
+    slint::Timer::single_shot(std::time::Duration::from_secs(seconds), move || {
+        if WEBS.with(|w| w.borrow().get(&id).is_some_and(|web| web.hwnd == hwnd)) {
+            close(&id);
+        }
+    });
+}
+
+/// Wird gerade über `close_later` geschlossen
+pub fn is_closing(id: &str) -> bool {
+    WEBS.with(|w| w.borrow().get(id).is_some_and(|web| web.closing))
 }
 
 /// Fenster schließen (Browser wird beendet, Speicher wieder frei)

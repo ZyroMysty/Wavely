@@ -10,6 +10,16 @@ use crate::{
     App,
 };
 
+/// Dienste zum Ein- und Ausschalten (wie modules.svelte.js)
+const MODULES: &[(&str, &str, &str)] = &[
+    ("youtube", "YouTube Music", "Bibliothek, Suche und Likes (abgespielt wird über YouTube trotzdem)"),
+    ("spotify", "Spotify", "Bibliothek, Suche und Premium-Wiedergabe"),
+    ("soundcloud", "SoundCloud", "Likes, Playlists, Suche und Künstler"),
+    ("local", "Lokale Musik", "Musikordner auf diesem PC"),
+    ("lastfm", "Last.fm", "Scrobbeln und „Hört gerade“"),
+    ("together", "Zusammen hören", "Knopf in der Player-Leiste"),
+];
+
 /// Equalizer-Voreinstellungen (wie sound.svelte.js)
 pub const EQ_PRESETS: &[(&str, &str, [f32; 10])] = &[
     ("flat", "Aus (neutral)", [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
@@ -91,6 +101,21 @@ impl PageData {
         });
     }
 
+    /// Eingabefeld mit Knopf: `value` steht anfangs im Feld
+    fn input(&mut self, key: &str, title: &str, description: &str, placeholder: &str, value: &str, button: &str) {
+        self.rows.push(RowData {
+            kind: "setting",
+            label: "input".into(),
+            text: title.into(),
+            subtext: description.into(),
+            cards: vec![
+                CardData { title: placeholder.into(), subtitle: value.into(), art: None, round: false, target: Target::Action(key.into()) },
+                option(String::new(), button),
+            ],
+            ..Default::default()
+        });
+    }
+
     /// Nur Text (Titel + Beschreibung)
     fn info(&mut self, title: &str, description: &str) {
         self.rows.push(RowData { kind: "setting", label: "none".into(), text: title.into(), subtext: description.into(), ..Default::default() });
@@ -103,7 +128,8 @@ pub const TABS: &[(&str, &str, &[&str])] = &[
     ("appearance", "Darstellung", &["Darstellung"]),
     ("playback", "Wiedergabe", &["Wiedergabe"]),
     ("sound", "Klang", &["Klang"]),
-    ("services", "Dienste", &["YouTube Music", "Spotify", "SoundCloud", "Last.fm", "Discord"]),
+    ("services", "Dienste", &["Dienste", "YouTube Music", "Spotify", "SoundCloud", "Last.fm", "Discord"]),
+    ("library", "Bibliothek", &["Bibliothek"]),
     ("offline", "Offline", &["Offline"]),
     ("windows", "Windows", &["Windows", "Tastenkürzel"]),
     ("about", "Über Wavely", &["Über Wavely"]),
@@ -116,18 +142,20 @@ pub fn page(app: &Arc<App>) -> PageData {
     let all = full_page(app);
     let mut p = PageData { tracks: all.tracks, ..Default::default() };
     p.title(label);
-    let mut keep = false;
+    // Abschnitte einsammeln und in der Reihenfolge des Reiters zeigen
+    let mut groups: Vec<(String, Vec<RowData>)> = Vec::new();
     for row in all.rows.into_iter().skip(1) {
         if row.kind == "heading" {
-            keep = sections.contains(&row.text.as_str());
-            // Überschrift nur, wenn der Reiter mehrere Abschnitte hat
-            if keep && sections.len() > 1 {
-                p.rows.push(row);
-            }
-            continue;
+            groups.push((row.text.clone(), vec![row]));
+        } else if let Some((_, rows)) = groups.last_mut() {
+            rows.push(row);
         }
-        if keep {
-            p.rows.push(row);
+    }
+    for section in sections.iter() {
+        if let Some((_, rows)) = groups.iter_mut().find(|(name, _)| name == section) {
+            // Überschrift nur, wenn der Reiter mehrere Abschnitte hat
+            let skip = if sections.len() > 1 { 0 } else { 1 };
+            p.rows.extend(std::mem::take(rows).into_iter().skip(skip));
         }
     }
     p.spacer();
@@ -179,22 +207,36 @@ fn full_page(app: &Arc<App>) -> PageData {
         }).collect(),
         ..Default::default()
     });
+    let custom = !ACCENTS.iter().any(|(_, hex)| hex.eq_ignore_ascii_case(&s.accent));
+    p.input("accent", "Eigene Akzentfarbe", "Als Farbwert, z. B. #ff4f7b", "#rrggbb", if custom { &s.accent } else { "" }, "Übernehmen");
+    p.toggle("sidebarCollapsed", "Seitenleiste einklappen", "Nur Symbole anzeigen, mehr Platz für Musik", s.sidebar_collapsed);
+    p.button("appearance-reset", "Darstellung zurücksetzen", "Dunkles Design mit pinker Akzentfarbe", "Zurücksetzen");
 
     // Wiedergabe
     p.heading("Wiedergabe");
     p.toggle("autoplay", "Autoplay", "Nach dem Ende der Warteschlange passende Songs abspielen", s.autoplay);
-    p.choice(
-        "startView",
-        "Startansicht",
-        "Was beim Öffnen von Wavely angezeigt wird",
-        &[("home", "Startseite"), ("youtube", "YouTube Music"), ("local", "Lokale Musik")],
-        &s.start_view,
-    );
-    p.choice(
+    let views: Vec<(String, String)> = [
+        ("home", "Startseite"),
+        ("youtube", "YouTube Music"),
+        ("spotify", "Spotify"),
+        ("soundcloud", "SoundCloud"),
+        ("local", "Lokale Musik"),
+        ("offline", "Offline"),
+    ]
+    .iter()
+    .filter(|(id, _)| s.module_on(id))
+    .map(|(id, label)| (id.to_string(), label.to_string()))
+    .collect();
+    p.select("startView", "Startansicht", "Womit Wavely beim Öffnen startet", &views, &s.start_view);
+    let qualities: Vec<(String, String)> = [("low", "Datensparend (~64 kbit)"), ("high", "Hoch (~130 kbit)"), ("premium", "Premium (256 kbit)")]
+        .iter()
+        .map(|(id, label)| (id.to_string(), label.to_string()))
+        .collect();
+    p.select(
         "streamQuality",
         "Streaming-Qualität",
-        "„Premium“ braucht YouTube Premium (256 kbit)",
-        &[("low", "Niedrig"), ("high", "Hoch"), ("premium", "Premium")],
+        "Für Songs über YouTube. „Premium“ gibt es nur mit YouTube Premium.",
+        &qualities,
         &s.stream_quality,
     );
 
@@ -260,7 +302,28 @@ fn full_page(app: &Arc<App>) -> PageData {
         &s.discord_display,
     );
 
+    // Dienste ein- und ausschalten
+    p.heading("Dienste");
+    for (id, name, hint) in MODULES {
+        p.toggle(&format!("module:{id}"), name, hint, s.module_on(id));
+    }
+
+    // Bibliothek (lokale Musikordner)
+    if s.module_on("local") {
+        p.heading("Bibliothek");
+        let folders = crate::services::library::load_settings(&app.paths).folders;
+        if folders.is_empty() {
+            p.info("Musikordner", "Noch keine Ordner hinzugefügt (MP3, FLAC, M4A, OGG, OPUS, WAV)");
+        }
+        for folder in &folders {
+            let name = std::path::Path::new(folder).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or(folder.clone());
+            p.button(&format!("local-remove:{folder}"), &name, folder, "Entfernen");
+        }
+        p.button("local-add", "Ordner hinzufügen", "Ordner mit lokalen Musikdateien", "Hinzufügen");
+    }
+
     // YouTube Music
+    if s.module_on("youtube") {
     p.heading("YouTube Music");
     if app.yt_logged_in.load(Ordering::Relaxed) {
         p.button("youtube-logout", "Angemeldet", "Likes, Bibliothek und Verlauf von YouTube Music", "Abmelden");
@@ -268,22 +331,50 @@ fn full_page(app: &Arc<App>) -> PageData {
     } else {
         p.button("youtube-login", "Nicht angemeldet", "Suchen geht auch ohne Anmeldung", "Mit Google anmelden");
     }
+    }
 
     // Spotify & SoundCloud
-    p.heading("Spotify");
-    if app.spotify_logged_in() {
-        p.button("spotify-logout", "Angemeldet", "Gespielt wird über den passenden Song bei YouTube Music", "Abmelden");
-    } else {
-        p.button("spotify-login", "Nicht angemeldet", "Anmeldung im Browser", "Anmelden");
+    if s.module_on("spotify") {
+        p.heading("Spotify");
+        if app.spotify_logged_in() {
+            p.button("spotify-logout", "Angemeldet", "Bibliothek und Playlists von Spotify", "Abmelden");
+        } else {
+            p.button("spotify-login", "Nicht angemeldet", "Anmeldung im Browser", "Anmelden");
+        }
+        let premium = app.spotify_playback.lock().unwrap().premium;
+        p.info(
+            "Spotify-Wiedergabe",
+            match premium {
+                Some(true) => "Premium erkannt: Spotify-Songs laufen direkt über Spotify.",
+                Some(false) => "Spotify Free: Spotify-Songs laufen über YouTube Music.",
+                None => "Mit Premium laufen Spotify-Songs direkt über Spotify, sonst über YouTube Music.",
+            },
+        );
+        let client_id = app.spotify.client_id.lock().unwrap().clone();
+        let is_default = client_id == crate::services::spotify::DEFAULT_CLIENT_ID;
+        p.input(
+            "spotifyClientId",
+            "Eigene Spotify Client ID",
+            "Für Premium nötig: App auf developer.spotify.com, Redirect URI http://127.0.0.1:43827/callback",
+            "Standard (Wavely)",
+            if is_default { "" } else { &client_id },
+            "Speichern",
+        );
+        if !is_default {
+            p.button("spotify-client-default", "Standard-Client-ID", "Zurück zur Client ID von Wavely", "Zurücksetzen");
+        }
     }
-    p.heading("SoundCloud");
-    if app.soundcloud_logged_in() {
-        p.button("soundcloud-logout", "Angemeldet", "Likes und Playlists von SoundCloud", "Abmelden");
-    } else {
-        p.button("soundcloud-login", "Nicht angemeldet", "Suchen und Abspielen geht auch ohne Anmeldung", "Anmelden");
+    if s.module_on("soundcloud") {
+        p.heading("SoundCloud");
+        if app.soundcloud_logged_in() {
+            p.button("soundcloud-logout", "Angemeldet", "Likes und Playlists von SoundCloud", "Abmelden");
+        } else {
+            p.button("soundcloud-login", "Nicht angemeldet", "Suchen und Abspielen geht auch ohne Anmeldung", "Anmelden");
+        }
     }
 
     // Last.fm
+    if s.module_on("lastfm") {
     p.heading("Last.fm");
     match crate::services::lastfm::lastfm_status_now(&app.lastfm) {
         status if !status.available => p.info("Nicht verfügbar", "Last.fm ist in dieser Version nicht eingerichtet."),
@@ -295,6 +386,7 @@ fn full_page(app: &Arc<App>) -> PageData {
             }
             None => p.button("lastfm-login", "Nicht verbunden", "Gehörte Songs in deinem Last.fm-Profil eintragen", "Verbinden"),
         },
+    }
     }
 
     // Offline
@@ -315,8 +407,11 @@ fn full_page(app: &Arc<App>) -> PageData {
     p.info(&format!("Wavely {} (native Testversion)", env!("CARGO_PKG_VERSION")), "Ohne Browser-Technik: Oberfläche mit Slint, eigene Audio-Engine");
     match app.update.lock().unwrap().as_ref() {
         Some(update) => p.button("update-install", &format!("Update {} verfügbar", update.version), update.notes.as_deref().unwrap_or(""), "Installieren"),
-        None => p.button("update-check", "Updates", "Neue native Testversionen werden automatisch gesucht", "Jetzt suchen"),
+        None => p.button("update-check", "Updates", "Neue Versionen kommen von GitHub und werden vor der Installation geprüft", "Jetzt suchen"),
     }
+    p.toggle("autoUpdateCheck", "Automatisch nach Updates suchen", "Beim Start und alle paar Stunden; installiert wird erst, wenn du es bestätigst", s.auto_update_check);
+    p.button("changelog", "Versionsverlauf", "Was sich in jeder Wavely-Version geändert hat", "Anzeigen");
+    p.info("Verwendete Projekte", "Slint, Symphonia, cpal, wry, RustyPipe (GPL-3.0), yt-dlp (Unlicense), LRCLIB (Liedtexte), lofty, discord-rich-presence");
     p.info("Arbeitsspeicher", &format!("{:.1} MB privat", crate::host::private_bytes() as f64 / 1_048_576.0));
     if app.account.admin.load(Ordering::Relaxed) {
         let queue = app.state.lock().unwrap().queue.len();
@@ -358,6 +453,51 @@ impl App {
             self.install_update();
             return true;
         }
+        if action == "changelog" {
+            let _ = std::process::Command::new("rundll32")
+                .args(["url.dll,FileProtocolHandler", "https://github.com/ZyroMysty/Wavely/releases"])
+                .spawn();
+            return true;
+        }
+        if action == "appearance-reset" {
+            {
+                let mut s = self.settings.lock().unwrap();
+                s.theme = "dark".into();
+                s.accent = "#ff4f7b".into();
+                s.sidebar_collapsed = false;
+            }
+            self.ui(|ui| ui.global::<crate::Nav>().set_collapsed(false));
+            self.save_settings();
+            self.apply_appearance();
+            self.settings_changed();
+            return true;
+        }
+        if action == "toggle:sidebarCollapsed" {
+            let collapsed = {
+                let mut s = self.settings.lock().unwrap();
+                s.sidebar_collapsed = !s.sidebar_collapsed;
+                s.sidebar_collapsed
+            };
+            self.ui(move |ui| ui.global::<crate::Nav>().set_collapsed(collapsed));
+            self.save_settings();
+            self.settings_changed();
+            return true;
+        }
+        if action == "spotify-client-default" {
+            self.set_spotify_client_id(None);
+            return true;
+        }
+        if let Some(id) = action.strip_prefix("toggle:module:") {
+            {
+                let mut s = self.settings.lock().unwrap();
+                let on = s.module_on(id);
+                s.modules.insert(id.to_string(), !on);
+            }
+            self.save_settings();
+            self.apply_modules();
+            self.settings_changed();
+            return true;
+        }
         #[cfg(windows)]
         if action == "toggle:autostart" {
             crate::instance::set_autostart(!crate::instance::autostart_enabled());
@@ -380,6 +520,7 @@ impl App {
                 ("globalShortcuts", None) => s.global_shortcuts = !s.global_shortcuts,
                 ("miniMinimizesMain", None) => s.mini_minimizes_main = !s.mini_minimizes_main,
                 ("startMinimized", None) => s.start_minimized = !s.start_minimized,
+                ("autoUpdateCheck", None) => s.auto_update_check = !s.auto_update_check,
                 ("playbackRate", Some(v)) => s.playback_rate = v.parse().unwrap_or(1.0),
                 ("outputDevice", Some(v)) => s.output_device = v,
                 ("eqPreset", Some(v)) => {
@@ -410,6 +551,70 @@ impl App {
         self.apply_quality();
         self.settings_changed();
         true
+    }
+
+    /// Eingabefeld der Einstellungen bestätigt
+    pub fn setting_input(self: &Arc<Self>, key: &str, value: &str) {
+        let value = value.trim();
+        match key {
+            "accent" => {
+                let hex = if value.starts_with('#') { value.to_string() } else { format!("#{value}") };
+                if crate::parse_hex(&hex).is_none() {
+                    self.toast("Bitte einen Farbwert wie #ff4f7b eingeben", true);
+                    return;
+                }
+                self.settings.lock().unwrap().accent = hex.to_lowercase();
+                self.save_settings();
+                self.apply_appearance();
+                self.settings_changed();
+            }
+            "spotifyClientId" => {
+                if value.is_empty() {
+                    return;
+                }
+                self.set_spotify_client_id(Some(value.to_string()));
+            }
+            _ => {}
+        }
+    }
+
+    /// Eigene Spotify Client ID (oder `None` = Standard). Meldet bei Spotify ab.
+    fn set_spotify_client_id(self: &Arc<Self>, id: Option<String>) {
+        let app = self.clone();
+        self.rt.spawn(async move {
+            let reset = id.is_none();
+            match crate::services::spotify::spotify_set_client_id(&app.spotify, id).await {
+                Ok(()) => {
+                    let _ = crate::services::spotify::spotify_logout(&app.spotify).await;
+                    app.toast(
+                        if reset { "Standard-Client-ID wiederhergestellt – bitte neu anmelden" } else { "Client ID gespeichert – bitte bei Spotify neu anmelden" },
+                        false,
+                    );
+                }
+                Err(e) => app.toast(&e, true),
+            }
+            app.settings_changed();
+        });
+    }
+
+    /// Ein- und ausgeschaltete Dienste in Seitenleiste und Player-Leiste übernehmen
+    pub fn apply_modules(self: &Arc<Self>) {
+        let s = self.settings.lock().unwrap().clone();
+        let on: Vec<bool> = ["youtube", "spotify", "soundcloud", "local", "together"].iter().map(|id| s.module_on(id)).collect();
+        let app = self.clone();
+        self.ui(move |ui| {
+            let n = ui.global::<crate::Nav>();
+            n.set_youtube_on(on[0]);
+            n.set_spotify_on(on[1]);
+            n.set_soundcloud_on(on[2]);
+            n.set_local_on(on[3]);
+            n.set_together_on(on[4]);
+            // Angezeigter Dienst abgeschaltet → Startseite
+            let view = n.get_view().to_string();
+            if !n.invoke_shown(view.into()) {
+                app.show_view("home");
+            }
+        });
     }
 
     /// Klang-Einstellungen an die Audio-Engine geben

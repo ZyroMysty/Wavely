@@ -105,7 +105,10 @@ impl App {
                         let _ = library::save_settings(&app.paths, &settings);
                     }
                     let a = app.clone();
-                    let _ = slint::invoke_from_event_loop(move || a.local_scan());
+                    let _ = slint::invoke_from_event_loop(move || {
+                        a.local_scan();
+                        a.settings_changed();
+                    });
                 });
                 true
             }
@@ -119,6 +122,7 @@ impl App {
                     settings.folders.retain(|f| f != folder);
                     let _ = library::save_settings(&self.paths, &settings);
                     self.local_scan();
+                    self.settings_changed();
                     true
                 }
                 None => false,

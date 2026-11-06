@@ -42,6 +42,16 @@ pub struct Settings {
     pub mini_minimizes_main: bool,
     /// Beim automatischen Start mit Windows minimiert starten
     pub start_minimized: bool,
+    /// Dienste an/aus (fehlt = an), wie `modules` der bisherigen Wavely
+    pub modules: std::collections::BTreeMap<String, bool>,
+    /// Beim Start und alle paar Stunden nach Updates suchen
+    pub auto_update_check: bool,
+}
+
+impl Settings {
+    pub fn module_on(&self, id: &str) -> bool {
+        self.modules.get(id).copied().unwrap_or(true)
+    }
 }
 
 impl Default for Settings {
@@ -50,6 +60,8 @@ impl Default for Settings {
             theme: "dark".into(),
             accent: "#ff4f7b".into(),
             start_view: "home".into(),
+            modules: Default::default(),
+            auto_update_check: true,
             volume: 0.6,
             autoplay: true,
             discord_enabled: true,

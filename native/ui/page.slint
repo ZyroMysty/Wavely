@@ -255,6 +255,8 @@ export global Page {
     callback track-menu(int, length, length);
     // Wavely-Konto: Name, E-Mail, Passwort, "login" | "register"
     callback login(string, string, string, string);
+    // Eingabefeld einer Einstellung bestätigt (Kennung, Text)
+    callback input(string, string);
     callback reset-password(string);
     // Auswahl-Zeile angeklickt (Zeile, Position fürs Menü)
     callback select(int, length, length);
@@ -476,6 +478,24 @@ export component PageView inherits Rectangle {
                                     mouse-cursor: pointer;
                                     clicked => { Page.action(sw.id); }
                                 }
+                            }
+                        }
+                        // Eingabefeld mit Knopf
+                        if row.label == "input": HorizontalLayout {
+                            alignment: end;
+                            spacing: 8px;
+                            field := LoginField {
+                                y: (parent.height - self.height) / 2;
+                                width: 220px;
+                                placeholder: row.cards[0].title;
+                                text: row.cards[0].subtitle;
+                                accepted => { Page.input(row.cards[0].id, self.text); }
+                            }
+                            PillButton {
+                                y: (parent.height - self.height) / 2;
+                                primary: false;
+                                text: row.cards[1].title;
+                                clicked => { Page.input(row.cards[0].id, field.text); }
                             }
                         }
                         if row.label == "button": PillButton {

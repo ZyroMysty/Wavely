@@ -50,12 +50,16 @@ impl App {
     }
 
     fn youtube_login_check(self: &Arc<Self>) {
+        if web::is_closing("ytm-login") {
+            return;
+        }
         let cookies = web::cookies("ytm-login", "https://music.youtube.com");
         if !cookies.iter().any(|(name, _)| name == "SAPISID") {
             return; // Noch nicht angemeldet
         }
         let cookie = cookies.iter().map(|(n, v)| format!("{n}={v}")).collect::<Vec<_>>().join("; ");
-        web::close("ytm-login");
+        // Erst später schließen, damit die Anmeldung im Browser-Ordner gespeichert ist (fürs Auffrischen)
+        web::close_later("ytm-login", 45);
         let app = self.clone();
         self.rt.spawn(async move {
             match app.ytm.rp.user_auth_set_cookie(cookie).await {
@@ -75,7 +79,7 @@ impl App {
     /// `done(true)`, wenn es geklappt hat. Nur im UI-Thread aufrufen.
     pub fn youtube_refresh(self: &Arc<Self>, done: impl FnOnce(bool) + Send + 'static) {
         let profile = self.yt_profile();
-        if !profile.join("EBWebView").exists() || web::is_open("ytm-refresh") || web::is_open("ytm-login") {
+        if !profile.join("EBWebView").exists() || web::is_open("ytm-refresh") || (web::is_open("ytm-login") && !web::is_closing("ytm-login")) {
             done(false);
             return;
         }
@@ -89,6 +93,24 @@ impl App {
         let on_load = {
             let finish = finish.clone();
             move |url: String| {
+                eprintln!("[yt-refresh] geladen: {}", url.split('?').next().unwrap_or(""));
+                if std::env::var_os("WAVELY_TEST_STEPS").is_some() {
+                    slint::Timer::single_shot(std::time::Duration::from_millis(500), || {
+                        for site in ["https://www.youtube.com", "https://accounts.google.com", "https://www.google.com"] {
+                            let names: Vec<String> = web::cookies("ytm-refresh", site).into_iter().map(|(n, _)| n).collect();
+                            eprintln!("[yt-refresh] {site}: {names:?}");
+                        }
+                    });
+                }
+                // Zustimmungs- oder Anmeldeseite: Im Browser ist niemand mehr angemeldet
+                if url.starts_with("https://consent.") || url.starts_with("https://accounts.google.com") {
+                    let finish = finish.clone();
+                    slint::Timer::single_shot(std::time::Duration::from_millis(100), move || {
+                        web::close("ytm-refresh");
+                        finish(false);
+                    });
+                    return;
+                }
                 if !url.starts_with("https://music.youtube.com") {
                     return;
                 }
@@ -96,11 +118,13 @@ impl App {
                 let finish = finish.clone();
                 // Kurz warten, bis die Seite ihre Cookies erneuert hat
                 slint::Timer::single_shot(std::time::Duration::from_secs(2), move || {
-                    if !web::is_open("ytm-refresh") {
+                    if !web::is_open("ytm-refresh") || web::is_closing("ytm-refresh") {
                         return;
                     }
                     let cookies = web::cookies("ytm-refresh", "https://music.youtube.com");
-                    web::close("ytm-refresh");
+                    // Erneuerte Cookies vom Browser noch speichern lassen
+                    web::close_later("ytm-refresh", 45);
+                    eprintln!("[yt-refresh] {} Cookies, SAPISID: {}", cookies.len(), cookies.iter().any(|(n, _)| n == "SAPISID"));
                     if !cookies.iter().any(|(name, _)| name == "SAPISID") {
                         finish(false);
                         return;
@@ -108,7 +132,9 @@ impl App {
                     let cookie = cookies.iter().map(|(n, v)| format!("{n}={v}")).collect::<Vec<_>>().join("; ");
                     let a = app.clone();
                     app.rt.spawn(async move {
-                        let ok = a.ytm.rp.user_auth_set_cookie(cookie).await.is_ok();
+                        let result = a.ytm.rp.user_auth_set_cookie(cookie).await;
+                        eprintln!("[yt-refresh] übernommen: {result:?}");
+                        let ok = result.is_ok();
                         finish(ok);
                     });
                 });
@@ -135,7 +161,7 @@ impl App {
         }
         // Lädt die Seite nicht, nach 30 Sekunden aufgeben
         slint::Timer::single_shot(std::time::Duration::from_secs(30), move || {
-            if web::is_open("ytm-refresh") {
+            if web::is_open("ytm-refresh") && !web::is_closing("ytm-refresh") {
                 web::close("ytm-refresh");
                 finish(false);
             }

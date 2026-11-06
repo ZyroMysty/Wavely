@@ -21,7 +21,7 @@ use crate::resolve::normalize;
 /// Standard-Client-ID der Wavely-Spotify-App (öffentlich, kein Geheimnis). In den Einstellungen kann
 /// eine eigene ID eingetragen werden – nötig für Spotify Connect, weil seit Februar 2026 der Inhaber
 /// einer Entwickler-App selbst Premium haben muss und nur 5 Nutzer erlaubt sind.
-const DEFAULT_CLIENT_ID: &str = "5d9c0db17c284f5a959e0baa2294f80e";
+pub const DEFAULT_CLIENT_ID: &str = "5d9c0db17c284f5a959e0baa2294f80e";
 /// Muss genau so im Spotify-Dashboard als Redirect URI eingetragen sein
 const REDIRECT_URI: &str = "http://127.0.0.1:43827/callback";
 const SCOPES: &str = "user-read-private playlist-read-private playlist-read-collaborative user-library-read \
