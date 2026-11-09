@@ -843,6 +843,14 @@ export component AppWindow inherits Window {
     }
     init => { keys.focus(); }
 
+    // Erzwingt ein vollständiges Neuzeichnen (siehe `force_full_repaint` in main.rs): Ein Wechsel
+    // macht diese fensterfüllende, unsichtbare Fläche „schmutzig“, also zeichnet Slint das ganze
+    // Fenster neu und gibt es komplett an Windows weiter. Beide Farben sind voll durchsichtig.
+    in property <bool> repaint-flip;
+    Rectangle {
+        background: repaint-flip ? #ffffff00 : #00000000;
+    }
+
     VerticalLayout {
         HorizontalLayout {
             vertical-stretch: 1;

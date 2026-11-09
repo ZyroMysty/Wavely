@@ -169,6 +169,14 @@ impl App {
             }
             "next" => self.next(),
             "previous" => self.previous(),
+            // Windows hat Fensterinhalt verworfen (Wiederherstellen nach Minimieren, Aufdecken)
+            "repaint" => self.force_full_repaint(),
+            "restored" => {
+                // Sofort und noch einmal nach der Wiederherstellen-Animation
+                self.force_full_repaint();
+                let app = self.clone();
+                slint::Timer::single_shot(std::time::Duration::from_millis(250), move || app.force_full_repaint());
+            }
             "like" => {
                 let track = self.state.lock().unwrap().current().cloned();
                 if let Some(track) = track {

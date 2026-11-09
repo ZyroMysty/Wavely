@@ -7,13 +7,14 @@
 
 use std::{
     cell::RefCell,
-    sync::atomic::{AtomicIsize, AtomicU32, Ordering},
+    sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering},
 };
 
 use windows::{
     core::w,
     Win32::{
         Foundation::{HWND, LPARAM, LRESULT, WPARAM},
+        Graphics::Gdi::GetUpdateRect,
         System::{
             Com::{CoCreateInstance, CLSCTX_INPROC_SERVER},
             Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD},
@@ -24,7 +25,8 @@ use windows::{
                 THBF_HIDDEN, THB_FLAGS, THB_ICON, THB_TOOLTIP, THUMBBUTTON, THUMBBUTTONFLAGS,
             },
             WindowsAndMessaging::{
-                CreateIcon, DestroyIcon, GetSystemMetrics, RegisterWindowMessageW, HICON, SM_CXSMICON, WM_COMMAND,
+                CreateIcon, DestroyIcon, GetSystemMetrics, IsIconic, RegisterWindowMessageW, HICON, SIZE_MAXIMIZED,
+                SIZE_MINIMIZED, SIZE_RESTORED, SM_CXSMICON, WM_COMMAND, WM_PAINT, WM_SIZE,
             },
         },
     },
@@ -38,6 +40,9 @@ const ID_LIKE: u32 = 4;
 
 /// Bildschirm, auf dem das Fenster zuletzt war (für den Taskleisten-Wechsel)
 static LAST_MONITOR: AtomicIsize = AtomicIsize::new(0);
+
+/// Fenster war minimiert (für das Neuzeichnen beim Wiederherstellen)
+static WAS_MINIMIZED: AtomicBool = AtomicBool::new(false);
 
 /// Nachrichten-ID von „TaskbarButtonCreated“ (ohne RefCell lesbar, siehe subclass_proc)
 static CREATED_MSG: AtomicU32 = AtomicU32::new(0);
@@ -210,6 +215,26 @@ unsafe extern "system" fn subclass_proc(
                     let _ = list.AddTab(hwnd);
                 }
             }
+        }
+    }
+    // Fensterinhalt, den Windows verworfen hat, vollständig neu zeichnen lassen (siehe
+    // App::force_full_repaint): Slint zeichnet minimiert weiter, Windows wirft diese Bilder weg.
+    if msg == WM_SIZE {
+        match wparam.0 as u32 {
+            SIZE_MINIMIZED => WAS_MINIMIZED.store(true, Ordering::Relaxed),
+            SIZE_RESTORED | SIZE_MAXIMIZED => {
+                if WAS_MINIMIZED.swap(false, Ordering::Relaxed) {
+                    super::action("restored");
+                }
+            }
+            _ => {}
+        }
+    } else if msg == WM_PAINT {
+        // Nur echte Aufforderungen von Windows (ungültiger Bereich), nicht die internen
+        // WM_PAINT, mit denen winit jedes einzelne Bild anstößt
+        let invalid = unsafe { GetUpdateRect(hwnd, None, false) }.as_bool();
+        if invalid && !unsafe { IsIconic(hwnd) }.as_bool() {
+            super::action("repaint");
         }
     }
     if created_msg != 0 && msg == created_msg {

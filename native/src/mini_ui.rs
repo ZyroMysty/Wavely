@@ -42,23 +42,9 @@ impl App {
                 "next" => self.next(),
                 "mute" => self.toggle_mute(),
                 "like" => self.windows_action("like"),
-                "closed" => {
-                    // Fenster kommt aus der Taskleiste zurück: Größe neu setzen und neu zeichnen,
-                    // sonst bleibt ein Teil des alten Bildes stehen
-                    for delay in [60u64, 250, 600] {
-                        let weak = self.ui.clone();
-                        slint::Timer::single_shot(std::time::Duration::from_millis(delay), move || {
-                            if let Some(ui) = weak.upgrade() {
-                                let window = ui.window();
-                                window.set_minimized(false);
-                                let size = window.size();
-                                window.set_size(slint::PhysicalSize::new(size.width + 1, size.height));
-                                window.set_size(size);
-                                window.request_redraw();
-                            }
-                        });
-                    }
-                }
+                // Das Neuzeichnen beim Zurückholen des Hauptfensters übernimmt win::taskbar
+                // (WM_SIZE nach dem Minimieren bzw. WM_PAINT); hier nur zur Sicherheit einmal
+                "closed" => self.force_full_repaint(),
                 _ => {}
             },
             Value::Object(obj) => match obj.get("action").and_then(Value::as_str) {

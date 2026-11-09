@@ -162,6 +162,19 @@ pub fn format_time(seconds: f64) -> String {
 }
 
 impl App {
+    /// Ganzes Fenster neu zeichnen und komplett an Windows übergeben (im UI-Thread aufrufen).
+    ///
+    /// Slint zeichnet mit dem Software-Renderer nur geänderte Bereiche. Minimiert behält Slint
+    /// aber die alte Fenstergröße und zeichnet weiter (z. B. den Fortschrittsbalken); diese Bilder
+    /// verwirft Windows, Slint hält sie trotzdem für angezeigt. Nach dem Wiederherstellen kämen
+    /// dann nur noch die kleinen Änderungen an – der Rest bliebe durchsichtig oder alt.
+    pub fn force_full_repaint(&self) {
+        if let Some(ui) = self.ui.upgrade() {
+            ui.set_repaint_flip(!ui.get_repaint_flip());
+            ui.window().request_redraw();
+        }
+    }
+
     /// Änderung im UI-Thread ausführen
     fn ui(self: &Arc<Self>, f: impl FnOnce(&AppWindow) + Send + 'static) {
         let weak = self.ui.clone();
