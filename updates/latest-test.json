@@ -1,11 +1,11 @@
 {
-  "version": "0.17.0-native.2",
-  "notes": "- Das Fenster ist nach dem Minimieren und Wiederherstellen (auch nach dem Mini-Player) nicht mehr teilweise durchsichtig oder veraltet, sondern wird immer komplett neu gezeichnet",
-  "pub_date": "2026-11-09T09:23:16.527Z",
+  "version": "0.17.0-native.3",
+  "notes": "- Jede Seite und jeder Einstellungs-Reiter hat eine eigene Scrollposition: neue Seiten beginnen oben, „Zurück“ und der Wechsel zurück zu einer Ansicht stellen die vorige Position wieder her\n- Knopf „Neu laden“ oben rechts auf allen Seiten (bei „Lokale Musik“ werden die Ordner neu eingelesen)\n- YouTube Music, SoundCloud und Spotify zeigen beim Zurückkehren sofort den letzten Stand statt alles neu zu laden\n- Gleichmäßige Abstände unter Überschriften, keine doppelte Überschrift mehr in den Einstellungen",
+  "pub_date": "2026-11-09T21:17:50.928Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUbTAyc0pRaXl0NFRmL0l1RXNwWTBOc1A3N1IxcnVmMjlxSkI0WlB5UUpDcndUT2x6aU5VclZRaDNQTy9salhqOS9MTHVjcnJ1akh3dWpyZm5MNnhjUEl5MDlnSFdMTXcwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MjEzMDc3CWZpbGU6V2F2ZWx5LU5hdGl2ZV8wLjE3LjAtbmF0aXZlLjJfeDY0LXNldHVwLmV4ZQpIOGcwQnhPMCsvQ2lTemFmY0twZVVLUVZ6UmtZWlF6MHZWM3NPcDdWYmQ5NFU1d3ZvdStaTk9zdktnd3F1b0g3MTNQUlo2ZmMvNlYrS003Z1dZUzZCUT09Cg==",
-      "url": "https://github.com/ZyroMysty/Wavely/releases/download/v0.17.0-native.2/Wavely-Native_0.17.0-native.2_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUbTAyc0pRaXl0NFZKOXZLRkVCaGJlZnRuNmI1dDlYUFpzZzcyVWw1Nmk3NXIzMFRRR1VwTGJpczJ4OERtZ2JZN0FybC95NTJ1U0xHdTBTdDhiejk0Uk1mS0Vya2xJNXdnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MjU5MDExCWZpbGU6V2F2ZWx5LU5hdGl2ZV8wLjE3LjAtbmF0aXZlLjNfeDY0LXNldHVwLmV4ZQorTHladHZpS21qOGNWOGJZMHQyZEtpU1Y4YzdteHgwaVM4a3B0Q0FXQ2M5cFNDdlNQOFNMVU9pTHdySkhJQ3lVdEc2R2NMK2pkSzZsc1UrY0VBbGJEZz09Cg==",
+      "url": "https://github.com/ZyroMysty/Wavely/releases/download/v0.17.0-native.3/Wavely-Native_0.17.0-native.3_x64-setup.exe"
     }
   }
 }
