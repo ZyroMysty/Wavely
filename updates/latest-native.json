@@ -1,6 +1,6 @@
 {
-  "version": "0.17.0-native.1",
-  "notes": "- Native Testversion ohne Browser-Technik: Oberfläche und Audio sind komplett neu in Rust gebaut und brauchen rund 40 statt 160 MB Arbeitsspeicher\n- Eigene Audio-Engine mit Equalizer, Lautstärke-Angleichung, Tempo (mit oder ohne gleiche Tonhöhe) und Auswahl des Ausgabegeräts\n- Anmeldung bei YouTube Music und SoundCloud in einem kleinen Fenster nur bei Bedarf; die YouTube-Anmeldung frischt sich im Hintergrund selbst auf\n- Einstellungen als Reiter, Dienste ein- und ausschaltbar, eigene Akzentfarbe",
-  "url": "https://github.com/ZyroMysty/Wavely/releases/download/v0.17.0-native.1/Wavely-Native_0.17.0-native.1_x64-setup.exe",
-  "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUbTAyc0pRaXl0NFJhQTZsME1FSHlEblp4VEZOdkJGaVBKd0xiWC8zZlVJRW0zY2xpNWxPTXFPWXNqNi85K1FTaXNsUm1FdHIzMlZMRG9YR3JZRmxMdjY3ZHNJbXRBREFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzOTY2MDY0CWZpbGU6V2F2ZWx5LU5hdGl2ZV8wLjE3LjAtbmF0aXZlLjFfeDY0LXNldHVwLmV4ZQpsTFltR1J3OHc4bUdDbDlVQmNpb1dHdHhsSVFPaDFBMmk5NjUraHplbXNBTlE5VkdHNFhIc2V4WGVEemxaU05UWjd3RlVaeTZ1VzRMbS8zWm1SaFNBUT09Cg=="
+  "version": "0.17.0-native.2",
+  "notes": "- Das Fenster ist nach dem Minimieren und Wiederherstellen (auch nach dem Mini-Player) nicht mehr teilweise durchsichtig oder veraltet, sondern wird immer komplett neu gezeichnet",
+  "url": "https://github.com/ZyroMysty/Wavely/releases/download/v0.17.0-native.2/Wavely-Native_0.17.0-native.2_x64-setup.exe",
+  "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUbTAyc0pRaXl0NFRmL0l1RXNwWTBOc1A3N1IxcnVmMjlxSkI0WlB5UUpDcndUT2x6aU5VclZRaDNQTy9salhqOS9MTHVjcnJ1akh3dWpyZm5MNnhjUEl5MDlnSFdMTXcwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MjEzMDc3CWZpbGU6V2F2ZWx5LU5hdGl2ZV8wLjE3LjAtbmF0aXZlLjJfeDY0LXNldHVwLmV4ZQpIOGcwQnhPMCsvQ2lTemFmY0twZVVLUVZ6UmtZWlF6MHZWM3NPcDdWYmQ5NFU1d3ZvdStaTk9zdktnd3F1b0g3MTNQUlo2ZmMvNlYrS003Z1dZUzZCUT09Cg=="
 }
