@@ -5,6 +5,9 @@ Neue Punkte kommen zuerst unter „Unveröffentlicht“. Beim Veröffentlichen w
 ## Unveröffentlicht
 - YouTube-Songs spielen wieder mit der Audioqualität „Premium“: klappt die Premium-Abfrage nicht, nimmt Wavely automatisch „Hoch“ (aus 0.15.1)
 
+## 0.17.0-native.2 – 2026-11-09
+- Das Fenster ist nach dem Minimieren und Wiederherstellen (auch nach dem Mini-Player) nicht mehr teilweise durchsichtig oder veraltet, sondern wird immer komplett neu gezeichnet
+
 ## 0.17.0-native.1 – 2026-11-06
 - Native Testversion ohne Browser-Technik: Oberfläche und Audio sind komplett neu in Rust gebaut und brauchen rund 40 statt 160 MB Arbeitsspeicher
 - Eigene Audio-Engine mit Equalizer, Lautstärke-Angleichung, Tempo (mit oder ohne gleiche Tonhöhe) und Auswahl des Ausgabegeräts

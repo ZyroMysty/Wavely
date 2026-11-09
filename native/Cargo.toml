@@ -1,6 +1,6 @@
 [package]
 name = "wavely-native"
-version = "0.17.0-native.1"
+version = "0.17.0-native.2"
 edition = "2021"
 
 [[bin]]
