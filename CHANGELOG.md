@@ -7,6 +7,9 @@ Neue Punkte kommen zuerst unter „Unveröffentlicht“. Beim Veröffentlichen w
 
 ## 0.17.0-native.3 – 2026-11-09
 - Jede Seite und jeder Einstellungs-Reiter hat eine eigene Scrollposition: neue Seiten beginnen oben, „Zurück“ und der Wechsel zurück zu einer Ansicht stellen die vorige Position wieder her
+- Knopf „Neu laden“ oben rechts auf allen Seiten (bei „Lokale Musik“ werden die Ordner neu eingelesen)
+- YouTube Music, SoundCloud und Spotify zeigen beim Zurückkehren sofort den letzten Stand statt alles neu zu laden
+- Gleichmäßige Abstände unter Überschriften, keine doppelte Überschrift mehr in den Einstellungen
 
 ## 0.17.0-native.2 – 2026-11-09
 - Das Fenster ist nach dem Minimieren und Wiederherstellen (auch nach dem Mini-Player) nicht mehr teilweise durchsichtig oder veraltet, sondern wird immer komplett neu gezeichnet
