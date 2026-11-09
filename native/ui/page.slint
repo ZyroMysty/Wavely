@@ -248,6 +248,9 @@ export global Page {
     in property <string> error;
     // Index des laufenden Songs unter den Songs der Seite (-1: keiner)
     in property <string> current-id;
+    // Scrollposition der Seitenliste (≤ 0). Alle Seiten teilen sich eine Liste; Rust setzt sie
+    // beim Seitenwechsel zurück bzw. stellt sie beim Zurückgehen wieder her (nav.rs).
+    in-out property <length> scroll-y;
     callback back();
     callback play(int);
     callback card(int, int);
@@ -307,6 +310,7 @@ export component PageView inherits Rectangle {
     property <bool> account-confirm;
 
     ListView {
+        content-y <=> Page.scroll-y;
         for row[ri] in Page.rows: Rectangle {
             // Höhe je nach Art der Zeile
             height: row.kind == "hero" ? 248px

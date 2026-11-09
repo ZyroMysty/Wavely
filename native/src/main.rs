@@ -99,6 +99,8 @@ pub struct App {
     pub recap_range: Mutex<String>,
     /// Gewählter Reiter der Einstellungen
     pub settings_tab: Mutex<String>,
+    /// Scrollposition je Seite (siehe nav.rs)
+    pub scroll: Mutex<nav::ScrollMemory>,
     /// Gefundenes Update
     pub update: Mutex<Option<updater::Manifest>>,
     /// Zusammen hören
@@ -916,6 +918,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         sleep_until: Mutex::new(None),
         recap_range: Mutex::new("month".into()),
         settings_tab: Mutex::new("account".into()),
+        scroll: Default::default(),
         update: Mutex::new(None),
         room: Mutex::new(None),
         room_generation: AtomicU64::new(0),
@@ -1316,6 +1319,15 @@ fn run_test_steps(app: Arc<App>, steps: String) {
             "tab" => {
                 if let Some(ui) = app.ui.upgrade() {
                     ui.global::<SettingsTabs>().invoke_select(arg.into());
+                }
+            }
+            // scroll=600: Seite um 600 px nach unten scrollen; scroll=? gibt die Position aus
+            "scroll" => {
+                if let Some(ui) = app.ui.upgrade() {
+                    match arg.parse::<f32>() {
+                        Ok(y) => ui.global::<Page>().set_scroll_y(-y),
+                        Err(_) => eprintln!("[test] scroll = {}", -ui.global::<Page>().get_scroll_y()),
+                    }
                 }
             }
             "feedback" => {
