@@ -101,6 +101,8 @@ pub struct App {
     pub settings_tab: Mutex<String>,
     /// Scrollposition je Seite (siehe nav.rs)
     pub scroll: Mutex<nav::ScrollMemory>,
+    /// Zuletzt geladener Stand von Netz-Seiten (YouTube, SoundCloud, Spotify) mit Fingerabdruck
+    pub page_cache: Mutex<std::collections::HashMap<String, (pages::PageData, String)>>,
     /// Gefundenes Update
     pub update: Mutex<Option<updater::Manifest>>,
     /// Zusammen hören
@@ -919,6 +921,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         recap_range: Mutex::new("month".into()),
         settings_tab: Mutex::new("account".into()),
         scroll: Default::default(),
+        page_cache: Default::default(),
         update: Mutex::new(None),
         room: Mutex::new(None),
         room_generation: AtomicU64::new(0),
@@ -1013,6 +1016,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pg = ui.global::<Page>();
     let a = app.clone();
     pg.on_back(move || a.back());
+    let a = app.clone();
+    pg.on_refresh(move || a.refresh_page());
     let a = app.clone();
     pg.on_play(move |row| a.page_play(row as usize));
     let a = app.clone();
@@ -1216,6 +1221,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let Some(ui) = weak.upgrade() else { return };
             let handler = a.clone();
             win::init(ui.window(), move |action| {
+                // Testfenster: Medientasten und Tastenkürzel gehören der echten App – sonst startet
+                // ein Tastendruck im Testfenster unbemerkt die Wiedergabe (landet im Verlauf)
+                if testing && !matches!(action, "repaint" | "restored") {
+                    return;
+                }
                 let a = handler.clone();
                 let action = action.to_string();
                 let _ = slint::invoke_from_event_loop(move || a.windows_action(&action));

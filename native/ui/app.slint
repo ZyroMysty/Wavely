@@ -435,6 +435,15 @@ component YouTubeView inherits Rectangle {
                 accepted(q) => { YouTube.search(q); }
             }
             Rectangle { horizontal-stretch: 1; }
+            IconButton {
+                y: (parent.height - self.height) / 2;
+                size: 38px;
+                icon: Icons.refresh;
+                icon-size: 20px;
+                tooltip: "Neu laden";
+                enabled: !Page.loading;
+                clicked => { Page.refresh(); }
+            }
             if Nav.view == "youtube" && YouTube.status == "loggedOut": PillButton {
                 text: "Anmelden";
                 clicked => { YouTube.login(); }
@@ -488,6 +497,17 @@ component GenericView inherits Rectangle {
         PageView {
             vertical-stretch: 1;
         }
+    }
+    // „Neu laden“ oben rechts über der Seite (neben der großen Überschrift)
+    IconButton {
+        x: parent.width - self.width - 28px;
+        y: 22px;
+        size: 38px;
+        icon: Icons.refresh;
+        icon-size: 20px;
+        tooltip: "Neu laden";
+        enabled: !Page.loading;
+        clicked => { Page.refresh(); }
     }
 }
 

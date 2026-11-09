@@ -252,6 +252,8 @@ export global Page {
     // beim Seitenwechsel zurück bzw. stellt sie beim Zurückgehen wieder her (nav.rs).
     in-out property <length> scroll-y;
     callback back();
+    // Knopf „Neu laden“ oben rechts
+    callback refresh();
     callback play(int);
     callback card(int, int);
     callback action(string);
@@ -314,7 +316,7 @@ export component PageView inherits Rectangle {
         for row[ri] in Page.rows: Rectangle {
             // Höhe je nach Art der Zeile
             height: row.kind == "hero" ? 248px
-                : row.kind == "heading" ? 60px
+                : row.kind == "heading" ? (row.number == 1 ? 84px : 62px)
                 : row.kind == "track" ? 56px
                 : row.kind == "cards" ? grid.height + 8px
                 : row.kind == "buttons" ? 56px
@@ -379,10 +381,12 @@ export component PageView inherits Rectangle {
                 }
             }
 
+            // Große Überschrift (Seitentitel) bzw. Abschnitt: gleichmäßiger Abstand zur Zeile darunter
             if row.kind == "heading": HorizontalLayout {
                 padding-left: root.side-padding;
                 padding-right: root.side-padding;
-                padding-top: 24px;
+                padding-top: row.number == 1 ? 24px : 20px;
+                padding-bottom: row.number == 1 ? 18px : 12px;
                 Text {
                     text: row.text;
                     font-size: row.number == 1 ? 30px : 20px;

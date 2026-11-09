@@ -173,34 +173,22 @@ impl App {
         let back = depth > 1;
         match page {
             PageKind::Yt(yt) => {
-                self.set_page(youtube::loading(&yt), back, true);
-                let app = self.clone();
-                self.rt.spawn(async move {
+                let loading = youtube::loading(&yt);
+                self.load_remote(token, back, loading, move |app| async move {
                     let logged_in = app.yt_logged_in.load(Ordering::Relaxed);
-                    let data = youtube::build(&app, &yt, logged_in).await;
-                    if app.page_token.load(Ordering::SeqCst) == token {
-                        app.set_page(data, back, false);
-                    }
+                    youtube::build(&app, &yt, logged_in).await
                 });
             }
             PageKind::Sc(sc) => {
-                self.set_page(crate::soundcloud_view::loading(&sc), back, true);
-                let app = self.clone();
-                self.rt.spawn(async move {
-                    let data = crate::soundcloud_view::build(&app, &sc).await;
-                    if app.page_token.load(Ordering::SeqCst) == token {
-                        app.set_page(data, back, false);
-                    }
+                let loading = crate::soundcloud_view::loading(&sc);
+                self.load_remote(token, back, loading, move |app| async move {
+                    crate::soundcloud_view::build(&app, &sc).await
                 });
             }
             PageKind::Sp(sp) => {
-                self.set_page(crate::spotify_view::loading(&sp), back, true);
-                let app = self.clone();
-                self.rt.spawn(async move {
-                    let data = crate::spotify_view::build(&app, &sp).await;
-                    if app.page_token.load(Ordering::SeqCst) == token {
-                        app.set_page(data, back, false);
-                    }
+                let loading = crate::spotify_view::loading(&sp);
+                self.load_remote(token, back, loading, move |app| async move {
+                    crate::spotify_view::build(&app, &sp).await
                 });
             }
             PageKind::Playlist(id) => {
@@ -248,6 +236,44 @@ impl App {
         }
     }
 
+    /// Seite aus dem Netz laden. War sie schon einmal offen, erscheint sofort der letzte Stand
+    /// (statt „wird geladen“) und wird nur ersetzt, wenn sich wirklich etwas geändert hat – sonst
+    /// würde jeder Ansichtswechsel die Liste neu aufbauen und die Scrollposition verlieren.
+    fn load_remote<F, Fut>(self: &Arc<Self>, token: u64, back: bool, loading: pages::PageData, build: F)
+    where
+        F: FnOnce(Arc<App>) -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = pages::PageData> + Send + 'static,
+    {
+        let key = self.page_key();
+        let cached = self.page_cache.lock().unwrap().get(&key).cloned();
+        let shown = match cached {
+            Some((data, fingerprint)) => {
+                self.set_page(data, back, false);
+                Some(fingerprint)
+            }
+            None => {
+                self.set_page(loading, back, true);
+                None
+            }
+        };
+        let app = self.clone();
+        self.rt.spawn(async move {
+            let data = build(app.clone()).await;
+            if app.page_token.load(Ordering::SeqCst) != token {
+                return;
+            }
+            let fingerprint = format!("{:?}", data.rows);
+            if shown.as_ref() != Some(&fingerprint) {
+                app.set_page(data.clone(), back, false);
+            }
+            let mut cache = app.page_cache.lock().unwrap();
+            if cache.len() > 50 {
+                cache.clear();
+            }
+            cache.insert(key, (data, fingerprint));
+        });
+    }
+
     fn set_page(self: &Arc<Self>, data: pages::PageData, can_go_back: bool, loading: bool) {
         *self.page.lock().unwrap() = data.clone();
         let key = self.page_key();
@@ -284,6 +310,20 @@ impl App {
                 });
             }
         });
+    }
+
+    /// Knopf „Neu laden“: Seite frisch holen (ohne gespeicherten Stand), Scrollposition bleibt
+    pub fn refresh_page(self: &Arc<Self>) {
+        let view = self.current_view();
+        let page = self.current_page().unwrap_or_else(|| root_of(&view));
+        if matches!(page, PageKind::Local) {
+            // Lokale Musik: Ordner neu einlesen
+            self.page_action("local-refresh");
+            return;
+        }
+        let key = self.page_key();
+        self.page_cache.lock().unwrap().remove(&key);
+        self.render();
     }
 
     /// Kennung der angezeigten Seite für die Scrollposition

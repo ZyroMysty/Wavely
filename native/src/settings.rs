@@ -200,7 +200,8 @@ pub fn page(app: &Arc<App>) -> PageData {
     for section in sections.iter() {
         if let Some((_, rows)) = groups.iter_mut().find(|(name, _)| name == section) {
             // Überschrift nur, wenn der Reiter mehrere Abschnitte hat
-            let skip = if sections.len() > 1 { 0 } else { 1 };
+            // (und nicht doppelt, wenn der Abschnitt so heißt wie der Reiter, z. B. „Dienste“)
+            let skip = if sections.len() > 1 && section != &label { 0 } else { 1 };
             p.rows.extend(std::mem::take(rows).into_iter().skip(skip));
         }
     }
