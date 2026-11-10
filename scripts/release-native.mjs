@@ -1,4 +1,4 @@
-// Native Testversion als GitHub-Pre-Release veröffentlichen (wie release.mjs --test).
+// Wavely Native auf GitHub veröffentlichen.
 //
 //   node scripts/build-native.mjs
 //   node scripts/release-native.mjs
@@ -7,7 +7,10 @@
 // die native App sucht dort nach Updates (native/src/updater.rs). Außerdem bekommt der Test-Kanal
 // der alten Wavely (updates/latest-test.json auf main) diese Version: Admins der alten App
 // aktualisieren so auf Wavely Native, der Installer ersetzt dabei die alte App.
-// Normale Nutzer bekommen davon nichts mit: ein Pre-Release ist nie „latest“, latest.json bleibt.
+//
+// Version mit „-native“ (z. B. 1.1.0-native.1): Testversion als Pre-Release, normale Nutzer merken nichts.
+// Version ohne Zusatz (z. B. 1.0.0): volles Release, wird „latest“ und bekommt eine latest.json –
+// damit aktualisieren alle Nutzer der alten Wavely auf Wavely Native.
 //
 // --replace: Installer einer schon veröffentlichten Version austauschen (gleiche Versionsnummer)
 // Das GitHub-Token kommt aus der Git-Anmeldung (Git Credential Manager), es wird nirgends gespeichert.
@@ -19,7 +22,8 @@ const REPO = "ZyroMysty/Wavely";
 const root = join(import.meta.dirname, "..");
 const version = readFileSync(join(root, "native", "Cargo.toml"), "utf8").match(/^version\s*=\s*"([^"]+)"/m)[1];
 const tag = `v${version}`;
-if (!version.includes("-native")) throw new Error(`„${version}“ ist keine native Testversion.`);
+const isTest = version.includes("-");
+if (isTest && !version.includes("-native")) throw new Error(`„${version}“: Testversionen heißen z. B. 1.1.0-native.1.`);
 
 const changelog = readFileSync(join(root, "CHANGELOG.md"), "utf8").replace(/\r/g, "");
 const section = changelog.split(/^## /m).find((part) => part.startsWith(`${version} `) || part.startsWith(`${version}\n`));
@@ -61,7 +65,9 @@ const replace = process.argv.includes("--replace");
 const existing = await fetch(`https://api.github.com/repos/${REPO}/releases/tags/${tag}`, { headers: { Authorization: `Bearer ${token}` } });
 if (existing.ok && !replace) throw new Error(`Release ${tag} gibt es schon – Version in native/Cargo.toml erhöhen (oder --replace).`);
 
-const body = `Native Testversion ohne Browser-Technik. Admins der bisherigen Wavely bekommen sie als Test-Update; sie ersetzt dabei die alte App (Einstellungen, Anmeldungen und Playlists werden übernommen).\n\n${notes}`;
+const body = isTest
+  ? `Native Testversion ohne Browser-Technik. Admins der bisherigen Wavely bekommen sie als Test-Update; sie ersetzt dabei die alte App (Einstellungen, Anmeldungen und Playlists werden übernommen).\n\n${notes}`
+  : `Wavely Native: komplett neu gebaut, ohne Browser-Technik. Die bisherige Wavely aktualisiert sich automatisch darauf und wird dabei ersetzt (Einstellungen, Anmeldungen und Playlists werden übernommen).\n\n${notes}`;
 const name = basename(installer);
 let release;
 if (existing.ok) {
@@ -72,16 +78,16 @@ if (existing.ok) {
     await github(`/releases/assets/${asset.id}`, { method: "DELETE" });
   }
 } else {
-  console.log(`Erstelle Testversion ${tag}…`);
+  console.log(`Erstelle ${isTest ? "Testversion" : "Release"} ${tag}…`);
   release = await github("/releases", {
     method: "POST",
     body: JSON.stringify({
       tag_name: tag,
       target_commitish: head,
-      name: `Wavely Native ${version} (Testversion)`,
+      name: isTest ? `Wavely Native ${version} (Testversion)` : `Wavely Native ${version}`,
       body,
-      prerelease: true,
-      make_latest: "false",
+      prerelease: isTest,
+      make_latest: isTest ? "false" : "true",
     }),
   });
 }
@@ -97,7 +103,7 @@ manifest.url = `https://github.com/${REPO}/releases/download/${tag}/${name}`;
 writeFileSync(manifestFile, JSON.stringify(manifest, null, 2) + "\n");
 execFileSync("git", ["add", "updates/latest-native.json"], { cwd: root });
 if (git("status", "--porcelain", "updates/latest-native.json")) {
-  execFileSync("git", ["commit", "-q", "-m", `Native Testversion ${version}`], { cwd: root });
+  execFileSync("git", ["commit", "-q", "-m", isTest ? `Native Testversion ${version}` : `Wavely Native ${version}`], { cwd: root });
   execFileSync("git", ["push", "-q", "origin", "HEAD"], { cwd: root, stdio: "inherit" });
 }
 console.log("  Update-Kanal aktualisiert: updates/latest-native.json");
@@ -121,4 +127,14 @@ await github(testPath, {
   }),
 });
 console.log("  Test-Kanal der alten Wavely aktualisiert: updates/latest-test.json (main)");
+
+// Volles Release: latest.json am Release – die alte Wavely sucht unter releases/latest/download/latest.json
+if (!isTest) {
+  const jsonUrl = release.upload_url.replace(/\{.*\}$/, "?name=latest.json");
+  for (const asset of (release.assets ?? []).filter((a) => a.name === "latest.json")) {
+    await github(`/releases/assets/${asset.id}`, { method: "DELETE" });
+  }
+  await github(jsonUrl, { method: "POST", body: JSON.stringify(latestTest, null, 2), headers: { "Content-Type": "application/json" } });
+  console.log("  latest.json hochgeladen: alle Nutzer der alten Wavely bekommen das Update");
+}
 console.log(`Fertig: ${release.html_url}`);
