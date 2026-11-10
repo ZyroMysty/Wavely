@@ -731,6 +731,17 @@ impl App {
             n.set_soundcloud_on(on[2]);
             n.set_local_on(on[3]);
             n.set_together_on(on[4]);
+            // Einstellungs-Reiter „Bibliothek“ gibt es nur mit lokaler Musik (sonst wäre er leer)
+            let tabs: Vec<crate::NavItem> = TABS
+                .iter()
+                .filter(|(id, _, _)| *id != "library" || on[3])
+                .map(|(id, label, _)| crate::NavItem { id: (*id).into(), label: (*label).into(), icon: Default::default() })
+                .collect();
+            let st = ui.global::<crate::SettingsTabs>();
+            st.set_tabs(slint::ModelRc::from(std::rc::Rc::new(slint::VecModel::from(tabs))));
+            if !on[3] && *app.settings_tab.lock().unwrap() == "library" {
+                st.invoke_select("account".into());
+            }
             // Angezeigter Dienst abgeschaltet → Startseite
             let view = n.get_view().to_string();
             if !n.invoke_shown(view.into()) {
