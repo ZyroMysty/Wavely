@@ -48,7 +48,10 @@ Section "Wavely Native"
   File "${SOURCE}\yt-dlp.exe"
   WriteUninstaller "$INSTDIR\uninstall.exe"
   CreateShortCut "$SMPROGRAMS\Wavely Native.lnk" "$INSTDIR\wavely-native.exe"
-  WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayName" "Wavely Native (Testversion)"
+  ; Symbol-Zwischenspeicher von Windows auffrischen, damit Taskleiste und Startmenü das neue Logo zeigen
+  System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
+  nsExec::Exec '"$SYSDIR\ie4uinit.exe" -show'
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayName" "Wavely Native"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayVersion" "${VERSION}"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "Publisher" "ZyroMysty"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayIcon" "$INSTDIR\wavely-native.exe"

@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <!-- Variante für kleine Größen (bis 32 px): Kachel randlos, Motiv größer, ohne die feinen Bögen -->
+  <!-- Variante für kleine Größen (bis 32 px): Kachel randlos, Motiv größer, Bögen kräftiger -->
   <defs>
     <linearGradient id="g" gradientUnits="userSpaceOnUse" x1="90" y1="560" x2="940" y2="480">
       <stop offset="0" stop-color="#FF5A8A"/>
@@ -13,5 +13,9 @@
     <path fill="url(#g)" d="M290 470 C318 512 336 543 358 543 C414 543 436 340 512 340 C588 340 610 543 666 543 C688 543 706 512 734 470 L734 574 C706 646 688 684 649 684 C590 684 576 492 512 492 C448 492 434 684 375 684 C336 684 318 646 290 574 Z"/>
     <circle cx="197" cy="522" r="113" fill="url(#g)"/>
     <circle cx="827" cy="522" r="113" fill="url(#g)"/>
+    <g fill="none" stroke="#15121F" stroke-width="36" stroke-linecap="round">
+      <path d="M152 536 C152 484 242 484 242 536"/>
+      <path d="M782 536 C782 484 872 484 872 536"/>
+    </g>
   </g>
 </svg>

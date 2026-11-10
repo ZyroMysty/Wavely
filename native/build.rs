@@ -19,6 +19,8 @@ fn main() {
     // Programmsymbol in der exe (Explorer, Taskleiste)
     #[cfg(windows)]
     {
+        // Ohne diese Zeile bliebe nach einem Logo-Wechsel das alte Symbol in der exe
+        println!("cargo:rerun-if-changed=../src-tauri/icons/icon.ico");
         let mut res = winresource::WindowsResource::new();
         res.set_icon("../src-tauri/icons/icon.ico");
         res.set("FileDescription", "Wavely Native");

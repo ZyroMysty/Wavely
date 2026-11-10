@@ -5,6 +5,16 @@ Neue Punkte kommen zuerst unter „Unveröffentlicht“. Beim Veröffentlichen w
 ## Unveröffentlicht
 - YouTube-Songs spielen wieder mit der Audioqualität „Premium“: klappt die Premium-Abfrage nicht, nimmt Wavely automatisch „Hoch“ (aus 0.15.1)
 
+## 1.0.0 – 2026-11-10
+- Neues Logo: eine Welle zwischen zwei Kreisen auf dunkler Kachel – in Taskleiste, Startmenü, Installer und Mini-Player
+- Warteschlange: Songs per Ziehen umsortieren, Knopf „Leeren“
+- Seltener gebrauchte Knöpfe der Wiedergabeleiste (Zusammen hören, Schlaf-Timer, Klang, Mini-Player) stecken in einem Drei-Punkte-Menü; aktive Funktionen bleiben sichtbar. Unter Einstellungen → Darstellung lassen sich wieder alle Knöpfe einblenden
+- Der Verlauf lässt sich zusätzlich über eine Lasche am rechten Fensterrand aus- und einklappen
+- Die Anmeldefenster für Google und SoundCloud merken sich das Konto (keine Zwei-Faktor-Abfrage bei jeder Anmeldung); neuer Knopf „Anmeldefenster zurücksetzen“
+- Der Einstellungs-Reiter „Bibliothek“ verschwindet, wenn „Lokale Musik“ ausgeschaltet ist
+- Wiedergabeleiste und Zeitangaben springen nicht mehr, auch nicht beim gemeinsamen Hören; Gäste laufen trotz abweichender PC-Uhr synchron
+- Liedtext-Knopf zeigt eine Sprechblase mit Note statt eines Mikrofons
+
 ## 0.17.0-native.3 – 2026-11-09
 - Jede Seite und jeder Einstellungs-Reiter hat eine eigene Scrollposition: neue Seiten beginnen oben, „Zurück“ und der Wechsel zurück zu einer Ansicht stellen die vorige Position wieder her
 - Knopf „Neu laden“ oben rechts auf allen Seiten (bei „Lokale Musik“ werden die Ordner neu eingelesen)
