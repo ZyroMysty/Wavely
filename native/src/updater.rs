@@ -1,4 +1,4 @@
-//! Updates der nativen Testversion: `updates/latest-native.json` im Branch „native“ verweist auf
+//! Updates von Wavely Native: `updates/latest-native.json` im Branch „native“ verweist auf
 //! einen GitHub-Release mit dem Installer. Der Installer ist mit dem Wavely-Schlüssel signiert
 //! (gleiches Verfahren wie Tauri: minisign); ohne gültige Signatur wird nichts installiert.
 
@@ -53,11 +53,23 @@ impl App {
             .await;
             match result {
                 Ok(m) if newer(&m.version, env!("CARGO_PKG_VERSION")) => {
-                    *app.update.lock().unwrap() = Some(m.clone());
-                    app.toast(&format!("Update auf {} verfügbar – unter Einstellungen → Über Wavely installieren", m.version), false);
+                    // Hinweis-Fenster nur einmal pro Version (oder wenn selbst gesucht)
+                    let known = app.update.lock().unwrap().replace(m.clone()).is_some_and(|old| old.version == m.version);
+                    if manual || !known {
+                        let notes = m.notes.clone().unwrap_or_default();
+                        // Markdown-Spiegelstriche als Aufzählungspunkte
+                        let notes = notes.lines().map(|l| l.strip_prefix("- ").map(|r| format!("•  {r}")).unwrap_or(l.to_string())).collect::<Vec<_>>().join("\n");
+                        let version = m.version.clone();
+                        app.ui(move |ui| {
+                            let n = slint::ComponentHandle::global::<crate::UpdateNotice>(ui);
+                            n.set_version(version.into());
+                            n.set_notes(notes.into());
+                            n.set_open(true);
+                        });
+                    }
                     app.settings_changed();
                 }
-                Ok(_) if manual => app.toast("Wavely Native ist aktuell", false),
+                Ok(_) if manual => app.toast("Wavely ist aktuell", false),
                 Err(e) if manual => app.toast(&format!("Update-Suche fehlgeschlagen: {e}"), true),
                 _ => {}
             }

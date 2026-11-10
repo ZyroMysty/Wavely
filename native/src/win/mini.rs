@@ -396,7 +396,7 @@ unsafe fn font_family(dwrite: &IDWriteFactory) -> PCWSTR {
 }
 
 /// Taskleisten-Symbol aus der Wavely.exe
-unsafe fn set_icon(hwnd: HWND) {
+pub unsafe fn set_icon(hwnd: HWND) {
     let Ok(exe) = std::env::current_exe() else { return };
     let path: Vec<u16> = exe.as_os_str().to_string_lossy().encode_utf16().chain(std::iter::once(0)).collect();
     let (mut large, mut small) = (HICON::default(), HICON::default());

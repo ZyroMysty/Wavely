@@ -1223,12 +1223,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     app.yt_init();
 
 
-    // Nach Updates suchen (nicht in Tests)
+    // Update-Hinweis: „Jetzt installieren“
+    let a = app.clone();
+    ui.global::<UpdateNotice>().on_install(move || a.install_update());
+
+    // Nach Updates suchen: kurz nach dem Start, danach alle 4 Stunden (nicht in Tests)
     if !testing {
         let a = app.clone();
-        slint::Timer::single_shot(std::time::Duration::from_secs(8), move || {
-            if a.settings.lock().unwrap().auto_update_check {
-                a.check_update(false);
+        rt.spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(8)).await;
+            loop {
+                if a.settings.lock().unwrap().auto_update_check {
+                    a.check_update(false);
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(4 * 3600)).await;
             }
         });
     }
@@ -1417,6 +1425,14 @@ fn run_test_steps(app: Arc<App>, steps: String) {
             }
             "together" => app.open_together_menu(900.0, 560.0),
             "more" => app.open_more_menu(1300.0, 900.0),
+            "update-notice" => {
+                if let Some(ui) = app.ui.upgrade() {
+                    let n = ui.global::<UpdateNotice>();
+                    n.set_version("9.9.9".into());
+                    n.set_notes("- Erster Punkt der Neuerungen mit etwas längerem Text, damit er sauber umbricht und nichts überlappt\n- Zweiter Punkt".into());
+                    n.set_open(true);
+                }
+            }
             #[cfg(windows)]
             "mini" => app.open_mini_player(),
             #[cfg(windows)]

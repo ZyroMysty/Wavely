@@ -223,7 +223,7 @@ impl App {
             PageKind::Placeholder(title) => {
                 let mut data = pages::PageData::default();
                 data.title(title);
-                data.message("Kommt in einer der nächsten nativen Testversionen.");
+                data.message("Kommt in einer der nächsten Versionen.");
                 self.set_page(data, back, false);
             }
         }

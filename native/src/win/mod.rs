@@ -42,4 +42,7 @@ pub fn init(window: &slint::Window, on_action: impl Fn(&str) + Send + Sync + 'st
     }
     media::init(hwnd);
     taskbar::init(hwnd);
+    // Taskleisten-Symbol aus der exe (enthält eigene Fassungen für kleine Größen) statt des
+    // herunterskalierten großen Logos, das Slint setzt
+    unsafe { mini::set_icon(hwnd) };
 }

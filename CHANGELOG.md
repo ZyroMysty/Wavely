@@ -5,6 +5,11 @@ Neue Punkte kommen zuerst unter „Unveröffentlicht“. Beim Veröffentlichen w
 ## Unveröffentlicht
 - YouTube-Songs spielen wieder mit der Audioqualität „Premium“: klappt die Premium-Abfrage nicht, nimmt Wavely automatisch „Hoch“ (aus 0.15.1)
 
+## 1.0.1 – 2026-11-10
+- Gefundene Updates erscheinen als Hinweis-Fenster mit den Neuerungen und „Jetzt installieren“; Wavely sucht beim Start und danach alle 4 Stunden
+- Größeres Logo in der Seitenleiste, schärferes Symbol in der Taskleiste
+- Update-Eintrag in den Einstellungen überlappt nicht mehr, „Testversion“ ist aus der App verschwunden
+
 ## 1.0.0 – 2026-11-10
 - Neues Logo: eine Welle zwischen zwei Kreisen auf dunkler Kachel – in Taskleiste, Startmenü, Installer und Mini-Player
 - Warteschlange: Songs per Ziehen umsortieren, Knopf „Leeren“

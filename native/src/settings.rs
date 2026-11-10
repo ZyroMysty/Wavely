@@ -487,9 +487,10 @@ fn full_page(app: &Arc<App>) -> PageData {
 
     // Über
     p.heading("Über Wavely");
-    p.info(&format!("Wavely {} (native Testversion)", env!("CARGO_PKG_VERSION")), "Ohne Browser-Technik: Oberfläche mit Slint, eigene Audio-Engine");
+    p.info(&format!("Wavely {}", env!("CARGO_PKG_VERSION")), "Ohne Browser-Technik: Oberfläche mit Slint, eigene Audio-Engine");
     match app.update.lock().unwrap().as_ref() {
-        Some(update) => p.button("update-install", &format!("Update {} verfügbar", update.version), update.notes.as_deref().unwrap_or(""), "Installieren"),
+        // Kurz halten: die Neuerungen zeigt der Update-Hinweis
+        Some(update) => p.button("update-install", &format!("Update auf {} verfügbar", update.version), "Wird geprüft und installiert, Wavely startet danach neu", "Installieren"),
         None => p.button("update-check", "Updates", "Neue Versionen kommen von GitHub und werden vor der Installation geprüft", "Jetzt suchen"),
     }
     p.toggle("autoUpdateCheck", "Automatisch nach Updates suchen", "Beim Start und alle paar Stunden; installiert wird erst, wenn du es bestätigst", s.auto_update_check);
