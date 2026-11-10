@@ -91,8 +91,9 @@ const ICONS: &[(&str, &str)] = &[
     ("pin", "M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z"),
     ("expandWindow", "M19 19H5V5h7V3H5a2 2 0 00-2 2v14a2 2 0 002 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"),
 ];
-/// Welle des Wavely-Logos (Logo.svelte, Ansicht 2..62)
-const LOGO_WAVE: &str = "M13 23 C16 33 18 42 22.5 42 C27 42 28 24 32 24 C36 24 37 42 41.5 42 C46 42 48 33 51 23";
+/// Wavely-Logo (assets/logo.svg, Ansicht 0..1024, Kachel 16..1008): Welle und die Bögen in den Kreisen
+const LOGO_WAVE: &str = "M290 470 C318 512 336 543 358 543 C414 543 436 350 512 350 C588 350 610 543 666 543 C688 543 706 512 734 470 L734 574 C706 646 688 674 649 674 C590 674 576 482 512 482 C448 482 434 674 375 674 C336 674 318 646 290 574 Z";
+const LOGO_EYES: &str = "M155 534 C155 489 239 489 239 534 M785 534 C785 489 869 489 869 534";
 
 // --- Fenster-Zustand ----------------------------------------------------------------
 
@@ -158,6 +159,7 @@ struct Mini {
     target: Option<ID2D1HwndRenderTarget>,
     icons: HashMap<&'static str, ID2D1PathGeometry>,
     wave: ID2D1PathGeometry,
+    eyes: ID2D1PathGeometry,
     round: ID2D1StrokeStyle,
     formats: HashMap<(u32, bool, bool), IDWriteTextFormat>,
     state: PlayerState,
@@ -309,7 +311,8 @@ unsafe fn open(main: HWND, command: Box<dyn Fn(Value)>, pinned: bool, size: (f64
     for (name, path) in ICONS {
         icons.insert(*name, path_geometry(&factory, path, true)?);
     }
-    let wave = path_geometry(&factory, LOGO_WAVE, false)?;
+    let wave = path_geometry(&factory, LOGO_WAVE, true)?;
+    let eyes = path_geometry(&factory, LOGO_EYES, false)?;
     let round = factory.CreateStrokeStyle(
         &D2D1_STROKE_STYLE_PROPERTIES {
             startCap: D2D1_CAP_STYLE_ROUND,
@@ -335,6 +338,7 @@ unsafe fn open(main: HWND, command: Box<dyn Fn(Value)>, pinned: bool, size: (f64
             target: None,
             icons,
             wave,
+            eyes,
             round,
             formats: HashMap::new(),
             state: PlayerState { volume: 0.6, ..Default::default() },
@@ -920,28 +924,36 @@ impl Mini {
             return Ok(());
         }
 
-        // Kein Cover: Wavely-Logo (Verlauf mit Welle)
+        // Kein Cover: Wavely-Logo (dunkle Kachel, Welle mit zwei Kreisen im Verlauf)
+        let k = rect.w / 992.0;
+        let dark = target.CreateSolidColorBrush(&color(hex(0x15121f), 1.0), None)?;
+        target.FillRoundedRectangle(&D2D1_ROUNDED_RECT { rect: rect.d2d(), radiusX: 236.0 * k, radiusY: 236.0 * k }, &dark);
+        // Ab hier in Logo-Koordinaten (auch der Verlauf)
+        target.SetTransform(&Matrix3x2 { M11: k, M12: 0.0, M21: 0.0, M22: k, M31: rect.x - 16.0 * k, M32: rect.y - 16.0 * k });
         let stops = target.CreateGradientStopCollection(
             &[
-                D2D1_GRADIENT_STOP { position: 0.0, color: color(hex(0xff4f7b), 1.0) },
-                D2D1_GRADIENT_STOP { position: 1.0, color: color(hex(0x8b5cf6), 1.0) },
+                D2D1_GRADIENT_STOP { position: 0.0, color: color(hex(0xff5a8a), 1.0) },
+                D2D1_GRADIENT_STOP { position: 0.38, color: color(hex(0xd062db), 1.0) },
+                D2D1_GRADIENT_STOP { position: 0.62, color: color(hex(0x9c6cf4), 1.0) },
+                D2D1_GRADIENT_STOP { position: 1.0, color: color(hex(0x6378ff), 1.0) },
             ],
             D2D1_GAMMA_2_2,
             D2D1_EXTEND_MODE_CLAMP,
         )?;
         let gradient = target.CreateLinearGradientBrush(
             &D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES {
-                startPoint: Vector2 { X: rect.x, Y: rect.y },
-                endPoint: Vector2 { X: rect.x + rect.w, Y: rect.y + rect.h },
+                startPoint: Vector2 { X: 90.0, Y: 560.0 },
+                endPoint: Vector2 { X: 940.0, Y: 480.0 },
             },
             None,
             &stops,
         )?;
-        let k = rect.w / 60.0;
-        target.FillRoundedRectangle(&D2D1_ROUNDED_RECT { rect: rect.d2d(), radiusX: 17.0 * k, radiusY: 17.0 * k }, &gradient);
-        let white = target.CreateSolidColorBrush(&color(hex(0xffffff), 1.0), None)?;
-        target.SetTransform(&Matrix3x2 { M11: k, M12: 0.0, M21: 0.0, M22: k, M31: rect.x - 2.0 * k, M32: rect.y - 2.0 * k });
-        target.DrawGeometry(&self.wave, &white, 6.0, &self.round);
+        target.FillGeometry(&self.wave, &gradient, None);
+        for cx in [197.0, 827.0] {
+            let circle = D2D1_ELLIPSE { point: Vector2 { X: cx, Y: 522.0 }, radiusX: 113.0, radiusY: 113.0 };
+            target.FillEllipse(&circle, &gradient);
+        }
+        target.DrawGeometry(&self.eyes, &dark, 27.0, &self.round);
         target.SetTransform(&Matrix3x2::identity());
         Ok(())
     }
