@@ -254,6 +254,11 @@ impl App {
                 true
             }
             #[cfg(windows)]
+            "login-windows-reset" => {
+                self.reset_login_windows();
+                true
+            }
+            #[cfg(windows)]
             "soundcloud-login" => {
                 self.soundcloud_login();
                 true

@@ -1,6 +1,11 @@
 //! Anmeldungen, die einen Browser brauchen (Google/YouTube Music, SoundCloud): kleines
-//! WebView2-Fenster mit eigenem, frischem Profil. Sobald das Login-Cookie da ist, wird es
-//! übernommen und das Fenster geschlossen (wie bisher in ytm.rs/soundcloud.rs).
+//! WebView2-Fenster mit eigenem Profil. Sobald das Login-Cookie da ist, wird es übernommen und
+//! das Fenster geschlossen (wie bisher in ytm.rs/soundcloud.rs).
+//!
+//! Das Profil bleibt erhalten (auch beim Abmelden in Wavely): Google erkennt so das Gerät wieder
+//! („Gerät speichern“, keine Zwei-Faktor-Abfrage jedes Mal) und bietet das Konto zur Auswahl an.
+//! Für einen kompletten Neuanfang (z. B. anderes Konto) gibt es `reset_login_windows`.
+//! Das Profil enthält Anmeldedaten: nur im App-Ordner, nie in Diagnose oder Berichte aufnehmen.
 
 use std::sync::{atomic::Ordering, Arc};
 
@@ -18,7 +23,7 @@ impl App {
 
     pub fn youtube_login(self: &Arc<Self>) {
         let data_dir = self.yt_profile();
-        let _ = std::fs::remove_dir_all(&data_dir);
+        // Ordner einer alten Version (wurde früher bei jeder Anmeldung neu angelegt)
         let _ = std::fs::remove_dir_all(self.paths.cache.join("login-webview"));
         self.toast("Anmeldefenster wird geöffnet…", false);
         let app = self.clone();
@@ -171,8 +176,8 @@ impl App {
     pub fn youtube_logout(self: &Arc<Self>) {
         let app = self.clone();
         self.rt.spawn(async move {
+            // Nur die Anmeldung in Wavely entfernen, das Browserprofil bleibt (siehe oben)
             let _ = crate::services::ytm::ytm_logout(&app.ytm).await;
-            let _ = std::fs::remove_dir_all(app.yt_profile());
             app.yt_logged_in.store(false, Ordering::Relaxed);
             app.liked.lock().unwrap().clear();
             app.ui(|ui| {
@@ -187,9 +192,29 @@ impl App {
         });
     }
 
+    fn sc_profile(&self) -> std::path::PathBuf {
+        self.paths.cache.join("soundcloud-login-webview")
+    }
+
+    /// „Anmeldefenster zurücksetzen“: gespeicherte Google- und SoundCloud-Konten im Browserprofil
+    /// löschen (auch „Gerät speichern“). Danach fragen die Anmeldefenster wieder alles neu ab.
+    pub fn reset_login_windows(self: &Arc<Self>) {
+        if web::is_open("ytm-login") || web::is_open("ytm-refresh") || web::is_open("sc-login") {
+            self.toast("Bitte erst das Anmeldefenster schließen.", true);
+            return;
+        }
+        let yt = std::fs::remove_dir_all(self.yt_profile());
+        let sc = std::fs::remove_dir_all(self.sc_profile());
+        let gone = |r: &std::io::Result<()>| r.as_ref().map_or_else(|e| e.kind() == std::io::ErrorKind::NotFound, |_| true);
+        if gone(&yt) && gone(&sc) {
+            self.toast("Anmeldefenster zurückgesetzt", false);
+        } else {
+            self.toast("Anmeldefenster konnten nicht ganz zurückgesetzt werden (Datei in Benutzung?)", true);
+        }
+    }
+
     pub fn soundcloud_login(self: &Arc<Self>) {
-        let data_dir = self.paths.cache.join("soundcloud-login-webview");
-        let _ = std::fs::remove_dir_all(&data_dir);
+        let data_dir = self.sc_profile();
         let result = web::open(
             "sc-login",
             web::Options {
@@ -237,7 +262,6 @@ impl App {
                     app.toast(&format!("SoundCloud-Anmeldung fehlgeschlagen: {e}"), true);
                 }
             }
-            let _ = std::fs::remove_dir_all(app.paths.cache.join("soundcloud-login-webview"));
             app.settings_changed();
             let a = app.clone();
             let _ = slint::invoke_from_event_loop(move || a.refresh_if_showing(|p| matches!(p, crate::nav::PageKind::Sc(_))));

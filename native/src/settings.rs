@@ -397,6 +397,13 @@ fn full_page(app: &Arc<App>) -> PageData {
         p.toggle("syncYouTubeHistory", "Verlauf mit YouTube Music abgleichen", "In Wavely gehörte Songs auch im YouTube-Music-Verlauf speichern", s.sync_you_tube_history);
     } else {
         p.button("youtube-login", "Nicht angemeldet", "Suchen geht auch ohne Anmeldung", "Mit Google anmelden");
+        #[cfg(windows)]
+        p.button(
+            "login-windows-reset",
+            "Anmeldefenster zurücksetzen",
+            "Gespeicherte Google-Konten und „Gerät speichern“ vergessen – z. B. für ein anderes Konto",
+            "Zurücksetzen",
+        );
     }
     }
 
