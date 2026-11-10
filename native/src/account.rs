@@ -179,9 +179,33 @@ impl Account {
                 self.commit(writes).await?;
             }
         }
+        self.delete_doc(&format!("users/{}", session.uid)).await?;
         self.auth_request("delete", json!({ "idToken": id_token })).await?;
         self.logout();
         Ok(())
+    }
+
+    /// Profil-Dokument `users/{uid}` mit Name, Registrierung und „zuletzt aktiv“ anlegen bzw.
+    /// auffrischen. Ohne eigenes Dokument (nur Unterordner plays/playlists) zeigt die
+    /// Firebase-Konsole Nutzer nur grau/kursiv an. Keine E-Mail-Adresse im Dokument.
+    pub async fn touch_profile(&self) -> Result<(), String> {
+        let session = self.logged_in().ok_or("Nicht angemeldet")?;
+        let path = format!("users/{}", session.uid);
+        let mut data = json!({ "name": session.name, "lastActive": format_timestamp(now_ms() / 1000) });
+        let existing = self.get_doc(&path).await?;
+        if existing.as_ref().is_none_or(|d| d.get("createdAt").is_none()) {
+            // Registrierungsdatum aus dem Konto (für Konten von vor diesem Dokument)
+            let token = self.id_token().await?;
+            let created = self
+                .auth_request("lookup", json!({ "idToken": token }))
+                .await
+                .ok()
+                .and_then(|v| v["users"][0]["createdAt"].as_str().and_then(|s| s.parse::<u64>().ok()))
+                .map(|ms| ms / 1000)
+                .unwrap_or(now_ms() / 1000);
+            data["createdAt"] = json!(format_timestamp(created));
+        }
+        self.set_doc(&path, &data, true).await
     }
 
     /// Anzeigenamen ändern (wie updateProfile)
@@ -597,6 +621,7 @@ impl App {
         let app = self.clone();
         self.rt.spawn(async move {
             app.account.check_admin(&session.uid).await;
+            let _ = app.account.touch_profile().await;
             app.settings_changed();
             loop {
                 if app.sync_generation.load(Ordering::SeqCst) != generation || app.account.logged_in().is_none() {

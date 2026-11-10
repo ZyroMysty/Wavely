@@ -698,7 +698,10 @@ impl App {
                 let name = value.to_string();
                 self.rt.spawn(async move {
                     match app.account.rename(&name).await {
-                        Ok(()) => app.toast("Name geändert", false),
+                        Ok(()) => {
+                            let _ = app.account.touch_profile().await;
+                            app.toast("Name geändert", false)
+                        }
                         Err(e) => app.toast(&e, true),
                     }
                     app.settings_changed();
