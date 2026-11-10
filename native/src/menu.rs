@@ -191,7 +191,50 @@ impl App {
         self.ui(|ui| ui.global::<Menu>().set_open(false));
     }
 
+    /// Drei-Punkte-Menü der Wiedergabeleiste (seltene Knöpfe). Untermenüs öffnen an derselben Stelle.
+    pub fn open_more_menu(self: &Arc<Self>, x: f32, y: f32) {
+        *self.more_menu_at.lock().unwrap() = (x, y);
+        let together_on = self.settings.lock().unwrap().module_on("together");
+        let sleep_active = self.sleep_until.lock().unwrap().is_some() || self.sleep_end_of_track.load(Ordering::Relaxed);
+        let mut items = Vec::new();
+        if together_on {
+            let label = if self.room.lock().unwrap().is_some() { "Zusammen hören (aktiv)" } else { "Zusammen hören" };
+            items.push(item("more:together", label, icon::GROUP, false, true));
+        }
+        items.push(item("more:sleep", if sleep_active { "Schlaf-Timer (läuft)" } else { "Schlaf-Timer" }, icon::BEDTIME, false, true));
+        items.push(item("more:sound", "Klang (Equalizer, Tempo)", icon::EQUALIZER, false, false));
+        items.push(item("more:mini", "Mini-Player", icon::MINI_PLAYER, false, false));
+        *self.menu.lock().unwrap() = None;
+        self.ui(move |ui| {
+            let m = ui.global::<crate::Menu>();
+            m.set_items(slint::ModelRc::from(std::rc::Rc::new(slint::VecModel::from(items))));
+            m.set_x(x);
+            m.set_y(y);
+            m.set_open(true);
+        });
+    }
+
     pub fn menu_pick(self: &Arc<Self>, id: &str) {
+        if let Some(arg) = id.strip_prefix("more:") {
+            let (x, y) = *self.more_menu_at.lock().unwrap();
+            match arg {
+                "together" => self.open_together_menu(x, y),
+                "sleep" => self.open_sleep_menu(x, y),
+                "sound" => {
+                    self.close_menu();
+                    *self.settings_tab.lock().unwrap() = "sound".into();
+                    self.ui(|ui| ui.global::<crate::SettingsTabs>().set_current("sound".into()));
+                    self.show_view("settings");
+                }
+                "mini" => {
+                    self.close_menu();
+                    #[cfg(windows)]
+                    self.open_mini_player();
+                }
+                _ => self.close_menu(),
+            }
+            return;
+        }
         if let Some(arg) = id.strip_prefix("together:") {
             self.together_action(arg);
             return;

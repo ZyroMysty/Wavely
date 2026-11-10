@@ -84,6 +84,11 @@ export global Nav {
     callback mini-player();
     in property <bool> together-active;
     callback together-menu(length, length);
+    // Wiedergabeleiste: alle Knöpfe zeigen (Einstellung) statt Drei-Punkte-Menü
+    in property <bool> all-buttons;
+    // Equalizer an (Punkt am Drei-Punkte-Knopf)
+    in property <bool> eq-active;
+    callback more-menu(length, length);
     // Taste im Fenster: Name, Strg, Umschalt → behandelt?
     callback key(string, bool, bool) -> bool;
     callback open-playlist(string);
@@ -115,8 +120,15 @@ export global YouTube {
 
 export global Queue {
     in property <[TrackRow]> tracks;
+    // Ziehen zum Umsortieren: gezogene Zeile und Ziel (-1: kein Ziehen)
+    in-out property <int> drag-from: -1;
+    in-out property <int> drag-to: -1;
     callback jump(int);
     callback menu(int, length, length);
+    // Song von Stelle 1 an Stelle 2 verschieben
+    callback move(int, int);
+    // Alles außer dem laufenden Song entfernen
+    callback clear();
 }
 
 export struct MenuItem {
@@ -522,11 +534,21 @@ component QueuePanel inherits Rectangle {
     VerticalLayout {
         padding: 16px;
         spacing: 12px;
-        Text {
-            text: "Warteschlange";
-            font-size: 18px;
-            font-weight: 700;
-            color: Theme.text;
+        HorizontalLayout {
+            Text {
+                horizontal-stretch: 1;
+                text: "Warteschlange";
+                font-size: 18px;
+                font-weight: 700;
+                color: Theme.text;
+                vertical-alignment: center;
+            }
+            if Queue.tracks.length > 1: PillButton {
+                primary: false;
+                height: 32px;
+                text: "Leeren";
+                clicked => { Queue.clear(); }
+            }
         }
         ListView {
             vertical-stretch: 1;
@@ -535,8 +557,27 @@ component QueuePanel inherits Rectangle {
                 number: i + 1;
                 current: i == Player.queue-index;
                 show-album: false;
+                draggable: true;
+                opacity: Queue.drag-from == i ? 0.4 : 1;
                 play => { Queue.jump(i); }
                 menu(x, y) => { Queue.menu(i, x, y); }
+                drag-move(dy) => {
+                    Queue.drag-from = i;
+                    Queue.drag-to = max(0, min(Queue.tracks.length - 1, i + Math.round(dy / self.height)));
+                }
+                drag-end(dy) => {
+                    Queue.drag-from = -1;
+                    Queue.drag-to = -1;
+                    if (Math.round(dy / self.height) != 0) {
+                        Queue.move(i, max(0, min(Queue.tracks.length - 1, i + Math.round(dy / self.height))));
+                    }
+                }
+                // Einfügelinie: über bzw. unter der Zielzeile
+                if Queue.drag-from >= 0 && Queue.drag-to == i && Queue.drag-to != Queue.drag-from: Rectangle {
+                    y: Queue.drag-to > Queue.drag-from ? parent.height - 2px : 0;
+                    height: 2px;
+                    background: Theme.accent;
+                }
             }
         }
     }
@@ -704,45 +745,73 @@ component PlayerBar inherits Rectangle {
             preferred-width: 0px;
             alignment: end;
             spacing: 4px;
-            if Nav.together-on: IconButton {
+            // Seltene Knöpfe stecken im Drei-Punkte-Menü; was gerade aktiv ist, bleibt sichtbar
+            // (Verlauf bleibt immer sichtbar, dazu die Lasche am Fensterrand).
+            // Einstellung „Alle Knöpfe in der Wiedergabeleiste anzeigen“ zeigt wieder alle.
+            if Nav.together-on && (Nav.all-buttons || Nav.together-active): IconButton {
                 y: (parent.height - self.height) / 2;
                 icon: Icons.group;
+                tooltip: "Zusammen hören";
                 on: Nav.together-active;
                 clicked => { Nav.together-menu(self.absolute-position.x - 220px, self.absolute-position.y - 160px); }
             }
             IconButton {
                 y: (parent.height - self.height) / 2;
                 icon: Icons.devices;
+                tooltip: "Ausgabegerät";
                 clicked => { Nav.device-menu(self.absolute-position.x - 220px, self.absolute-position.y - 8px); }
             }
-            IconButton {
+            if Nav.all-buttons || Nav.sleep-active: IconButton {
                 y: (parent.height - self.height) / 2;
                 icon: Icons.bedtime;
+                tooltip: "Schlaf-Timer";
                 on: Nav.sleep-active;
                 clicked => { Nav.sleep-menu(self.absolute-position.x - 200px, self.absolute-position.y - 380px); }
             }
-            IconButton {
+            if Nav.all-buttons: IconButton {
                 y: (parent.height - self.height) / 2;
                 icon: Icons.mini-player;
+                tooltip: "Mini-Player";
                 clicked => { Nav.mini-player(); }
             }
             IconButton {
                 y: (parent.height - self.height) / 2;
                 icon: Icons.lyrics;
+                tooltip: "Liedtext";
                 on: Nav.panel == "lyrics";
                 clicked => { Nav.toggle-panel("lyrics"); }
             }
             IconButton {
                 y: (parent.height - self.height) / 2;
                 icon: Icons.history;
+                tooltip: "Verlauf";
                 on: Nav.panel == "history";
                 clicked => { Nav.toggle-panel("history"); }
             }
             IconButton {
                 y: (parent.height - self.height) / 2;
                 icon: Icons.queue;
+                tooltip: "Warteschlange";
                 on: Nav.panel == "queue";
                 clicked => { Nav.toggle-panel("queue"); }
+            }
+            if !Nav.all-buttons: Rectangle {
+                width: 32px;
+                more := IconButton {
+                    y: (parent.height - self.height) / 2;
+                    icon: Icons.more;
+                    tooltip: "Mehr";
+                    clicked => { Nav.more-menu(self.absolute-position.x - 220px, self.absolute-position.y - 8px); }
+                }
+                // Punkt: etwas aus dem Menü ist gerade aktiv
+                if Nav.together-active || Nav.sleep-active || Nav.eq-active: Rectangle {
+                    x: more.x + more.width - 9px;
+                    y: more.y + 3px;
+                    width: 7px;
+                    height: 7px;
+                    border-radius: 3.5px;
+                    background: Theme.accent;
+                }
             }
             IconButton {
                 y: (parent.height - self.height) / 2;
@@ -921,6 +990,31 @@ export component AppWindow inherits Window {
             if Nav.panel == "history" || Nav.panel == "lyrics": SidePanel { }
         }
         PlayerBar { }
+    }
+
+    // Verlauf: Lasche am rechten Fensterrand zum Aus- und Einklappen (zusätzlich zum Knopf unten).
+    // Sitzt bei offener Seitenleiste an deren Kante.
+    history-tab := Rectangle {
+        width: 14px;
+        height: 72px;
+        x: root.width - (Nav.panel != "" ? 360px : 0px) - self.width;
+        y: (root.height - 88px - self.height) / 2;
+        border-top-left-radius: 8px;
+        border-bottom-left-radius: 8px;
+        background: history-tab-touch.has-hover ? Theme.surface-2 : Theme.surface;
+        border-width: 1px;
+        border-color: Theme.border;
+        Icon {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            path: Nav.panel == "history" ? Icons.chevron : Icons.chevron-left;
+            size: 14px;
+            color: history-tab-touch.has-hover ? Theme.text : Theme.text-dim;
+        }
+        history-tab-touch := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { Nav.toggle-panel("history"); }
+        }
     }
 
     // Menü-Ebene

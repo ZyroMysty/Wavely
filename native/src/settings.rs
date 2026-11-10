@@ -264,6 +264,12 @@ fn full_page(app: &Arc<App>) -> PageData {
         ..Default::default()
     });
     p.toggle("sidebarCollapsed", "Seitenleiste einklappen", "Nur Symbole anzeigen, mehr Platz für Musik", s.sidebar_collapsed);
+    p.toggle(
+        "allPlayerButtons",
+        "Alle Knöpfe in der Wiedergabeleiste anzeigen",
+        "Sonst stecken Zusammen hören, Schlaf-Timer, Klang und Mini-Player im Drei-Punkte-Menü",
+        s.all_player_buttons,
+    );
     p.button("appearance-reset", "Darstellung zurücksetzen", "Dunkles Design mit pinker Akzentfarbe", "Zurücksetzen");
 
     // Wiedergabe
@@ -612,6 +618,7 @@ impl App {
             let mut s = self.settings.lock().unwrap();
             match (key.as_str(), value) {
                 ("autoplay", None) => s.autoplay = !s.autoplay,
+                ("allPlayerButtons", None) => s.all_player_buttons = !s.all_player_buttons,
                 ("syncYouTubeHistory", None) => s.sync_you_tube_history = !s.sync_you_tube_history,
                 ("discordEnabled", None) => s.discord_enabled = !s.discord_enabled,
                 ("lastfmScrobble", None) => s.lastfm_scrobble = !s.lastfm_scrobble,

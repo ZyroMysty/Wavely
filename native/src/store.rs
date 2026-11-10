@@ -31,6 +31,8 @@ pub struct Settings {
     pub stream_quality: String,
     pub download_quality: String,
     pub sidebar_collapsed: bool,
+    /// Wiedergabeleiste: alle Knöpfe statt Drei-Punkte-Menü
+    pub all_player_buttons: bool,
     pub lastfm_scrobble: bool,
     pub test_channel: bool,
     pub output_device: String,
@@ -78,6 +80,7 @@ impl Default for Settings {
             stream_quality: "high".into(),
             download_quality: "high".into(),
             sidebar_collapsed: false,
+            all_player_buttons: false,
             lastfm_scrobble: true,
             test_channel: false,
             output_device: String::new(),

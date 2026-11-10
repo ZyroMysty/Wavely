@@ -50,19 +50,45 @@ export component TrackLine inherits Rectangle {
     in property <int> number;
     in property <bool> current;
     in property <bool> show-album: true;
+    // Mit gedrückter Maus nach oben/unten ziehen (Warteschlange)
+    in property <bool> draggable;
     callback play();
     // Position (im Fenster) für das Menü
     callback menu(length, length);
+    // Ziehen: senkrechter Abstand zum Startpunkt; `drag-end` beim Loslassen
+    callback drag-move(length);
+    callback drag-end(length);
+    property <length> press-y;
+    property <bool> dragging;
     height: 56px;
     border-radius: 8px;
-    background: touch.has-hover ? Theme.surface-2 : transparent;
+    background: touch.has-hover || dragging ? Theme.surface-2 : transparent;
     touch := TouchArea {
+        mouse-cursor: root.dragging ? MouseCursor.grabbing : MouseCursor.default;
         double-clicked => {
             root.play();
         }
         pointer-event(e) => {
             if (e.kind == PointerEventKind.down && e.button == PointerEventButton.right) {
                 root.menu(self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+            }
+            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+                root.press-y = self.mouse-y;
+                root.dragging = false;
+            }
+            if (e.kind == PointerEventKind.up && e.button == PointerEventButton.left && root.dragging) {
+                root.dragging = false;
+                root.drag-end(self.mouse-y - root.press-y);
+            }
+        }
+        moved => {
+            if (self.pressed && root.draggable) {
+                if (!root.dragging && abs(self.mouse-y - root.press-y) > 6px) {
+                    root.dragging = true;
+                }
+                if (root.dragging) {
+                    root.drag-move(self.mouse-y - root.press-y);
+                }
             }
         }
     }

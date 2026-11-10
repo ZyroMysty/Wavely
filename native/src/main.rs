@@ -101,6 +101,8 @@ pub struct App {
     pub settings_tab: Mutex<String>,
     /// Scrollposition je Seite (siehe nav.rs)
     pub scroll: Mutex<nav::ScrollMemory>,
+    /// Stelle des Drei-Punkte-Menüs (Untermenüs öffnen dort)
+    pub more_menu_at: Mutex<(f32, f32)>,
     /// Zuletzt geladener Stand von Netz-Seiten (YouTube, SoundCloud, Spotify) mit Fingerabdruck
     pub page_cache: Mutex<std::collections::HashMap<String, (pages::PageData, String)>>,
     /// Gefundenes Update
@@ -281,6 +283,48 @@ impl App {
                 _ => p.set_has_cover(false),
             }
         });
+    }
+
+    /// Warteschlange umsortieren (Ziehen); der laufende Song spielt weiter
+    pub fn queue_move(self: &Arc<Self>, from: usize, to: usize) {
+        {
+            let mut s = self.state.lock().unwrap();
+            if from >= s.queue.len() || to >= s.queue.len() || from == to {
+                return;
+            }
+            let track = s.queue.remove(from);
+            s.queue.insert(to, track);
+            s.index = s.index.map(|cur| {
+                if cur == from {
+                    to
+                } else if from < cur && to >= cur {
+                    cur - 1
+                } else if from > cur && to <= cur {
+                    cur + 1
+                } else {
+                    cur
+                }
+            });
+            // Ohne Zufall ist das die neue „richtige“ Reihenfolge (auch nach Zufall an/aus)
+            if !s.shuffle {
+                s.original = s.queue.clone();
+            }
+        }
+        self.sync_queue();
+        self.sync_player();
+    }
+
+    /// „Leeren“: nur der laufende Song bleibt
+    pub fn queue_clear(self: &Arc<Self>) {
+        {
+            let mut s = self.state.lock().unwrap();
+            let current = s.current().cloned();
+            s.queue = current.into_iter().collect();
+            s.index = if s.queue.is_empty() { None } else { Some(0) };
+            s.original = s.queue.clone();
+        }
+        self.sync_queue();
+        self.sync_player();
     }
 
     fn sync_queue(self: &Arc<Self>) {
@@ -732,9 +776,9 @@ impl App {
 
     /// Design und Akzentfarbe anwenden
     pub fn apply_appearance(self: &Arc<Self>) {
-        let (theme, accent) = {
+        let (theme, accent, all_buttons, eq_active) = {
             let s = self.settings.lock().unwrap();
-            (s.theme.clone(), s.accent.clone())
+            (s.theme.clone(), s.accent.clone(), s.all_player_buttons, s.eq_enabled)
         };
         let dark = match theme.as_str() {
             "light" => false,
@@ -747,6 +791,9 @@ impl App {
             let t = ui.global::<Theme>();
             t.set_dark(dark);
             t.set_accent(color);
+            let n = ui.global::<Nav>();
+            n.set_all_buttons(all_buttons);
+            n.set_eq_active(eq_active);
             #[cfg(windows)]
             app.sync_mini_theme();
         });
@@ -937,6 +984,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         recap_range: Mutex::new("month".into()),
         settings_tab: Mutex::new("account".into()),
         scroll: Default::default(),
+        more_menu_at: Default::default(),
         page_cache: Default::default(),
         update: Mutex::new(None),
         room: Mutex::new(None),
@@ -1056,6 +1104,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let a = app.clone();
     q.on_jump(move |i| a.load(i as usize, 0.0));
     let a = app.clone();
+    q.on_move(move |from, to| a.queue_move(from as usize, to as usize));
+    let a = app.clone();
+    q.on_clear(move || a.queue_clear());
+    let a = app.clone();
     q.on_menu(move |i, x, y| {
         let track = a.state.lock().unwrap().queue.get(i as usize).cloned();
         if let Some(track) = track {
@@ -1107,6 +1159,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     n.on_toggle_panel(move |panel| a.toggle_panel(&panel));
     let a = app.clone();
     n.on_sleep_menu(move |x, y| a.open_sleep_menu(x, y));
+    let a = app.clone();
+    n.on_more_menu(move |x, y| a.open_more_menu(x, y));
     let a = app.clone();
     n.on_mini_player(move || {
         #[cfg(windows)]
@@ -1362,6 +1416,7 @@ fn run_test_steps(app: Arc<App>, steps: String) {
                 }
             }
             "together" => app.open_together_menu(900.0, 560.0),
+            "more" => app.open_more_menu(1300.0, 900.0),
             #[cfg(windows)]
             "mini" => app.open_mini_player(),
             #[cfg(windows)]
