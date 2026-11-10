@@ -165,6 +165,14 @@ pub fn format_time(seconds: f64) -> String {
     format!("{}:{:02}", s / 60, s % 60)
 }
 
+/// Position und Zeit in der Wiedergabeleiste anzeigen (nie hinter dem Songende)
+pub fn show_position(ui: &AppWindow, position: f64, duration: f64) {
+    let position = if duration > 0.0 { position.clamp(0.0, duration) } else { position.max(0.0) };
+    let p = ui.global::<Player>();
+    p.set_position(position as f32);
+    p.set_position_text(format_time(position).into());
+}
+
 impl App {
     /// Ganzes Fenster neu zeichnen und komplett an Windows übergeben (im UI-Thread aufrufen).
     ///
@@ -191,7 +199,7 @@ impl App {
 
     /// Player-Leiste und Warteschlange aus dem Zustand aktualisieren
     fn sync_player(self: &Arc<Self>) {
-        let (title, artist, has_track, playing, loading, error, duration, volume, muted, shuffle, repeat, index, art) = {
+        let (title, artist, has_track, playing, loading, error, duration, volume, muted, shuffle, repeat, index, art, position) = {
             let s = self.state.lock().unwrap();
             let t = s.current();
             (
@@ -208,6 +216,7 @@ impl App {
                 s.repeat,
                 s.index.map(|i| i as i32).unwrap_or(-1),
                 t.and_then(covers::cover_url),
+                s.position,
             )
         };
         let (can_like, liked) = {
@@ -231,6 +240,7 @@ impl App {
             p.set_error(error.into());
             p.set_duration(duration as f32);
             p.set_duration_text(format_time(duration).into());
+            show_position(ui, position, duration);
             p.set_volume(volume);
             p.set_muted(muted);
             p.set_shuffle(shuffle);
@@ -423,7 +433,12 @@ impl App {
     }
 
     pub fn seek(self: &Arc<Self>, seconds: f64) {
-        self.state.lock().unwrap().position = seconds;
+        let duration = {
+            let mut s = self.state.lock().unwrap();
+            s.position = seconds;
+            s.duration
+        };
+        self.ui(move |ui| show_position(ui, seconds, duration));
         #[cfg(windows)]
         if self.spotify_active() {
             self.spotify_command("seek", (seconds * 1000.0).round());
@@ -448,7 +463,11 @@ impl App {
             self.spotify_command("volume", gain as f64);
         }
         let app = self.clone();
-        self.ui(move |ui| ui.global::<Player>().set_muted(false));
+        self.ui(move |ui| {
+            let p = ui.global::<Player>();
+            p.set_volume(volume);
+            p.set_muted(false);
+        });
         drop(app);
     }
 
@@ -583,9 +602,7 @@ impl App {
                 self.ui(move |ui| {
                     #[cfg(windows)]
                     app.sync_mini();
-                    let p = ui.global::<Player>();
-                    p.set_position(position as f32);
-                    p.set_position_text(format_time(position.min(duration.max(position))).into());
+                    show_position(ui, position, duration);
                 });
             }
             Event::Playing(playing) => {
@@ -701,12 +718,11 @@ impl App {
         }
         self.sync_queue();
         self.sync_player();
-        let position = resume.position;
-        self.ui(move |ui| {
-            let p = ui.global::<Player>();
-            p.set_position(position as f32);
-            p.set_position_text(format_time(position).into());
-        });
+        let (position, duration) = {
+            let s = self.state.lock().unwrap();
+            (s.position, s.duration)
+        };
+        self.ui(move |ui| show_position(ui, position, duration));
     }
 
     pub fn save_settings(self: &Arc<Self>) {

@@ -138,8 +138,10 @@ export component Slider inherits Rectangle {
                 root.drag-value = max(0, min(1, self.mouse-x / self.width)) * maximum;
                 root.changed(root.drag-value);
             }
+            // Hier NICHT `root.value = …` setzen: das löst in Slint die Bindung von außen
+            // (z. B. `value: Player.position`) – danach bliebe der Balken stehen.
+            // Den neuen Wert setzt der Aufrufer (Rust) selbst.
             if (e.kind == PointerEventKind.up) {
-                root.value = root.drag-value;
                 root.released(root.drag-value);
             }
         }

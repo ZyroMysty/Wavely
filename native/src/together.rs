@@ -133,6 +133,8 @@ impl App {
             app.sync_together();
             let member = format!("rooms/{code}/members/{}", session.uid);
             let mut current_key = String::new();
+            // Uhr-Abstand zum Gastgeber (siehe `follow`)
+            let mut clock: (u64, Option<i64>) = (0, None);
             let mut tick = 0u32;
             loop {
                 if app.room_generation.load(Ordering::SeqCst) != generation {
@@ -144,8 +146,7 @@ impl App {
                 match app.account.get_doc(&format!("rooms/{code}")).await {
                     Ok(Some(room)) if !room["ended"].as_bool().unwrap_or(false) => {
                         let a = app.clone();
-                        let key = &mut current_key;
-                        a.follow(&room, key);
+                        a.follow(&room, &mut current_key, &mut clock);
                     }
                     Ok(_) => {
                         app.toast(&format!("{host_name} hat „Zusammen hören“ beendet"), false);
@@ -161,7 +162,14 @@ impl App {
     }
 
     /// Gast: Song, Stelle und Play/Pause des Gastgebers übernehmen
-    fn follow(self: &Arc<Self>, room: &Value, current_key: &mut String) {
+    ///
+    /// `at` ist die Uhrzeit des Gastgeber-PCs. Gehen die Uhren beider PCs auseinander, wäre die
+    /// erwartete Stelle dauerhaft falsch und der Gast würde alle 2 Sekunden spulen (springende
+    /// Wiedergabeleiste). Deshalb wird der Abstand geschätzt: der kleinste Wert von
+    /// „hier empfangen − dort geschrieben“ ist Uhr-Abstand plus kürzeste Übertragungszeit.
+    /// Gezählt wird nur ein frisch geänderter Stand (der erste beim Beitreten kann alt sein).
+    /// `clock` = (zuletzt gesehenes `at`, geschätzter Abstand in ms).
+    fn follow(self: &Arc<Self>, room: &Value, current_key: &mut String, clock: &mut (u64, Option<i64>)) {
         let Ok(track) = serde_json::from_value::<Track>(room["track"].clone()) else { return };
         if track.id.is_empty() {
             return;
@@ -169,7 +177,14 @@ impl App {
         let key = format!("{}:{}", track.source, track.id);
         let playing = room["playing"].as_bool().unwrap_or(false);
         let at = room["at"].as_u64().unwrap_or(0);
-        let elapsed = if playing { now_ms().saturating_sub(at) as f64 / 1000.0 } else { 0.0 };
+        let now = now_ms();
+        let seen = now as i64 - at as i64;
+        if clock.0 != 0 && clock.0 != at {
+            clock.1 = Some(clock.1.map_or(seen, |o| o.min(seen)));
+        }
+        clock.0 = at;
+        let offset = clock.1.unwrap_or(0);
+        let elapsed = if playing { ((seen - offset).max(0) as f64) / 1000.0 } else { 0.0 };
         let expected = room["position"].as_f64().unwrap_or(0.0) + elapsed;
         let app = self.clone();
         if key != *current_key {

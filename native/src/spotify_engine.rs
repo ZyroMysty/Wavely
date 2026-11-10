@@ -232,7 +232,7 @@ impl App {
             (started_now, finished)
         };
         if ours {
-            {
+            let duration = {
                 let mut s = self.state.lock().unwrap();
                 s.playing = playing;
                 s.position = position;
@@ -240,15 +240,15 @@ impl App {
                 if duration > 0.0 {
                     s.duration = duration;
                 }
-            }
+                s.duration
+            };
             self.stats_progress(position);
             self.lyrics_progress(position);
             self.ui(move |ui| {
                 use slint::ComponentHandle;
                 let p = ui.global::<crate::Player>();
                 p.set_playing(playing);
-                p.set_position(position as f32);
-                p.set_position_text(crate::format_time(position).into());
+                crate::show_position(ui, position, duration);
                 p.set_duration(duration as f32);
                 p.set_duration_text(crate::format_time(duration).into());
             });
