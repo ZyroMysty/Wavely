@@ -277,11 +277,17 @@ impl App {
                         if let Some(ui) = weak.upgrade() {
                             ui.global::<Player>().set_cover(image);
                             ui.global::<Player>().set_has_cover(true);
+                            ui.set_repaint_flip(!ui.get_repaint_flip());
                         }
                     });
                 }
                 _ => p.set_has_cover(false),
             }
+            // Liedanzeige links in der Wiedergabeleiste: Slint zeichnet nur Bereiche neu, die es für
+            // geändert hält, und übersieht diesen Teil manchmal (Titel, Cover und Herz blieben alt,
+            // bis zufällig etwas anderes dort neu gezeichnet wurde). sync_player läuft nur bei echten
+            // Änderungen (nicht beim Fortschritt), also hier das ganze Fenster neu zeichnen.
+            app.force_full_repaint();
         });
     }
 
